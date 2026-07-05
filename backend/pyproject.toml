@@ -3,7 +3,9 @@ name = "agenthowl-backend"
 version = "0.1.0"
 description = "AgentHowl 狼人杀游戏平台后端 — 规则引擎、运行时与 Agent 层"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = [
+    "pydantic>=2.6",
+]
 
 [dependency-groups]
 dev = [
@@ -24,4 +26,5 @@ python_version = "3.11"
 strict = true
 
 [tool.pytest.ini_options]
-testpaths = ["app/tests"]
+pythonpath = ["."]
+testpaths = ["tests"]
