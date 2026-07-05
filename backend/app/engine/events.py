@@ -44,6 +44,7 @@ class EventType(StrEnum):
     PLAYER_EXILED = "PLAYER_EXILED"
     ROLE_SKIPPED = "ROLE_SKIPPED"
     GAME_OVER = "GAME_OVER"
+    WITCH_POTION_CONSUMED = "WITCH_POTION_CONSUMED"
     # Stage 2/3 追加：LAST_WORDS, HUNTER_SHOT, IDIOT_REVEALED,
     # SHERIFF_CANDIDACY, SHERIFF_WITHDREW, SHERIFF_ELECTED, BADGE_PASSED,
     # WOLF_SELF_DESTRUCT ...
@@ -142,6 +143,12 @@ class RoleSkippedPayload(EventPayload):
 
 class GameOverPayload(EventPayload):
     winner: str | None  # "GOOD" | "WOLF" | None(平局)
+
+
+class WitchPotionConsumedPayload(EventPayload):
+    seat: int
+    antidote: bool = False
+    poison: bool = False
 
 
 def _replace_player(
@@ -290,6 +297,14 @@ def _reduce_dispatch(state: GameState, event: Event) -> dict[str, object]:
 
     if t == EventType.GAME_OVER and isinstance(p, GameOverPayload):
         return {"winner": p.winner, "phase": Phase.GAME_OVER}
+
+    if t == EventType.WITCH_POTION_CONSUMED and isinstance(p, WitchPotionConsumedPayload):
+        updates: dict[str, object] = {}
+        if p.antidote:
+            updates["witch_antidote"] = False
+        if p.poison:
+            updates["witch_poison"] = False
+        return {"players": _replace_player(state.players, p.seat, **updates)}
 
     # GAME_CREATED / GAME_STARTED 仅审计
     return {}
