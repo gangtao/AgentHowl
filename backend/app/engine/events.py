@@ -258,9 +258,13 @@ def _reduce_dispatch(state: GameState, event: Event) -> dict[str, object]:
         }
 
     if t == EventType.SEER_CHECKED and isinstance(p, SeerCheckedPayload):
+        log = {k: list(v) for k, v in state.seer_log.items()}
+        entry = {"round": state.round, "seat": p.target, "result": p.result.value}
+        log.setdefault(_actor(event), []).append(entry)
         return {
             "pending_night": state.pending_night.model_copy(update={"seer_check": p.target}),
             "acted_seats": state.acted_seats | {_actor(event)},
+            "seer_log": log,
         }
 
     if t == EventType.NIGHT_RESOLVED and isinstance(p, NightResolvedPayload):

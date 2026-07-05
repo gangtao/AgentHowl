@@ -51,6 +51,8 @@ class GameState(BaseModel):
     round: int = 0
     players: tuple[Player, ...]
     sheriff_seat: int | None = None
+    seer_log: dict[int, list[dict[str, int | str]]] = Field(default_factory=dict)
+    # seat -> [{"round": r, "seat": s, "result": "GOOD"/"WOLF"}]
 
     # 发言与投票收集
     speech_order: tuple[int, ...] = ()
