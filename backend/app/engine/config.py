@@ -97,7 +97,6 @@ def _default_roles() -> list[RoleSlot]:
 
 def _default_night_order() -> list[RoleType]:
     return [
-        RoleType.GUARD,
         RoleType.WEREWOLF,
         RoleType.WITCH,
         RoleType.SEER,
@@ -138,13 +137,6 @@ def _preset_12_yn_hunter_idiot() -> GameConfig:
     return GameConfig(
         config_id="std_12_yn_hunter_idiot",
         name="标准12人预女猎白",
-        night_order=[
-            RoleType.WEREWOLF,
-            RoleType.WITCH,
-            RoleType.SEER,
-            RoleType.HUNTER,
-            RoleType.IDIOT,
-        ],
     )
 
 

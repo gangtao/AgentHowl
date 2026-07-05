@@ -97,6 +97,22 @@ def test_validate_config_rejects_no_wolves() -> None:
         validate_config(config)
 
 
+def test_default_config_is_valid() -> None:
+    # 默认 GameConfig（默认 idiot 板 + 默认夜序）必须自洽
+    validate_config(GameConfig(config_id="default_check"))
+
+
+def test_validate_config_rejects_no_good_faction() -> None:
+    config = GameConfig(
+        config_id="bad_all_wolf",
+        num_players=2,
+        roles=[RoleSlot(role=RoleType.WEREWOLF, count=2)],
+        night_order=[RoleType.WEREWOLF],
+    )
+    with pytest.raises(ConfigError, match="好人"):
+        validate_config(config)
+
+
 def test_gameconfig_is_frozen() -> None:
     config = build_preset("std_9_kill_all")
     with pytest.raises(ValidationError):
