@@ -3,6 +3,7 @@ from app.engine.events import (
     DeathAnnouncedPayload,
     Event,
     EventType,
+    GuardProtectedPayload,
     PhaseChangedPayload,
     Visibility,
     reduce,
@@ -57,6 +58,13 @@ def test_death_announced_marks_dead() -> None:
     new = reduce(state, ev)
     assert next(p for p in new.players if p.seat == 2).alive is False
     assert next(p for p in new.players if p.seat == 0).alive is True
+
+
+def test_guard_protected_persists_last_guard_target() -> None:
+    state = _base_state()
+    ev = _evt(1, EventType.GUARD_PROTECTED, GuardProtectedPayload(target=3), actor=0)
+    new = reduce(state, ev)
+    assert next(pl for pl in new.players if pl.seat == 0).last_guard_target == 3
 
 
 def test_reduce_all_applies_in_order() -> None:

@@ -229,6 +229,7 @@ def _reduce_dispatch(state: GameState, event: Event) -> dict[str, object]:
         return {
             "pending_night": state.pending_night.model_copy(update={"guard_target": p.target}),
             "acted_seats": state.acted_seats | {_actor(event)},
+            "players": _replace_player(state.players, _actor(event), last_guard_target=p.target),
         }
 
     if t == EventType.WOLF_KILL_PROPOSED and isinstance(p, WolfKillProposedPayload):

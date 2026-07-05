@@ -228,3 +228,6 @@ def validate_config(config: GameConfig) -> None:
         raise ConfigError("板子必须至少有 1 名狼人")
     if not any(faction_of(slot.role) == Faction.GOOD for slot in config.roles):
         raise ConfigError("板子必须至少有 1 名好人")
+
+    if RoleType.WEREWOLF not in config.night_order:
+        raise ConfigError("night_order 必须包含狼人(WEREWOLF)，否则夜晚无法结算")

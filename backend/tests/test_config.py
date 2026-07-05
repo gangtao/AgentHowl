@@ -97,6 +97,20 @@ def test_validate_config_rejects_no_wolves() -> None:
         validate_config(config)
 
 
+def test_validate_config_requires_wolf_in_night_order() -> None:
+    config = GameConfig(
+        config_id="bad_no_wolf_night",
+        num_players=4,
+        roles=[
+            RoleSlot(role=RoleType.WEREWOLF, count=1),
+            RoleSlot(role=RoleType.VILLAGER, count=3),
+        ],
+        night_order=[RoleType.SEER],  # 有狼但夜序里没有狼
+    )
+    with pytest.raises(ConfigError):
+        validate_config(config)
+
+
 def test_default_config_is_valid() -> None:
     # 默认 GameConfig（默认 idiot 板 + 默认夜序）必须自洽
     validate_config(GameConfig(config_id="default_check"))

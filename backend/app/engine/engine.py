@@ -640,7 +640,7 @@ def _tally_and_continue(state: GameState) -> tuple[GameState, list[Event]]:
         return state, events
 
     # 平票
-    if state.tie_round == 0 and state.config.tie_rule.name.startswith("PK"):
+    if tie and state.tie_round == 0 and state.config.tie_rule.name.startswith("PK"):
         # 进入 PK：平票者发言 + 其余人重投（Stage 1 简化为直接重投，PK 发言在 Stage 3 补）
         state, e = _emit(
             state, EventType.PHASE_CHANGED, PhaseChangedPayload(to=Phase.VOTE_PK), Visibility.PUBLIC

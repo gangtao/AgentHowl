@@ -114,3 +114,25 @@ def test_replay_matches_live_state() -> None:
     )
     assert replayed.phase == live.phase
     assert [p.alive for p in replayed.players] == [p.alive for p in live.players]
+
+
+def test_all_abstain_vote_no_exile_no_pk() -> None:
+    from app.engine.engine import _tally_and_continue
+    from app.engine.events import EventType
+
+    state = _start()
+    # 构造一个 VOTE 阶段、全员弃票（votes 全为 None）的态
+    voters = {p.seat: None for p in state.players if p.alive}
+    vote_state = state.model_copy(
+        update={
+            "phase": Phase.VOTE,
+            "votes": voters,
+            "vote_candidates": (),
+            "tie_round": 0,
+        }
+    )
+    new, events = _tally_and_continue(vote_state)
+    # 不进入 PK；直接无人放逐
+    assert new.phase != Phase.VOTE_PK
+    assert any(e.type == EventType.PLAYER_EXILED for e in events)
+    assert new.day_exiled is None
