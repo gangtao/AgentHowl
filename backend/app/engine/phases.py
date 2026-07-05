@@ -1,0 +1,27 @@
+"""阶段枚举与转移逻辑。expected_actors 由 Task 6 补全。"""
+
+from __future__ import annotations
+
+from enum import StrEnum
+
+
+class Phase(StrEnum):
+    LOBBY = "LOBBY"
+    ROLE_ASSIGN = "ROLE_ASSIGN"
+    NIGHT_GUARD = "NIGHT_GUARD"
+    NIGHT_WEREWOLF = "NIGHT_WEREWOLF"
+    NIGHT_WITCH = "NIGHT_WITCH"
+    NIGHT_SEER = "NIGHT_SEER"
+    NIGHT_HUNTER_CONFIRM = "NIGHT_HUNTER_CONFIRM"
+    WIN_CHECK = "WIN_CHECK"
+    SHERIFF_ELECTION = "SHERIFF_ELECTION"
+    SHERIFF_PK = "SHERIFF_PK"
+    DEATH_ANNOUNCE = "DEATH_ANNOUNCE"
+    LAST_WORDS = "LAST_WORDS"
+    DAY_SPEECH = "DAY_SPEECH"
+    VOTE = "VOTE"
+    VOTE_PK = "VOTE_PK"
+    EXILE = "EXILE"
+    HUNTER_SHOOT = "HUNTER_SHOOT"
+    IDIOT_FLIP = "IDIOT_FLIP"
+    GAME_OVER = "GAME_OVER"
