@@ -1,0 +1,27 @@
+[project]
+name = "agenthowl-backend"
+version = "0.1.0"
+description = "AgentHowl 狼人杀游戏平台后端 — 规则引擎、运行时与 Agent 层"
+requires-python = ">=3.11"
+dependencies = []
+
+[dependency-groups]
+dev = [
+    "ruff>=0.8",
+    "mypy>=1.13",
+    "pytest>=8",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+
+[tool.pytest.ini_options]
+testpaths = ["app/tests"]
