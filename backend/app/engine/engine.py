@@ -857,7 +857,9 @@ def _enter_day_speech(state: GameState) -> tuple[GameState, list[Event]]:
 
 def _tally_and_continue(state: GameState) -> tuple[GameState, list[Event]]:
     events: list[Event] = []
-    weights = {p.seat: (1.5 if p.is_sheriff else 1.0) for p in living(state)}
+    weights = {
+        p.seat: (state.config.sheriff.vote_weight if p.is_sheriff else 1.0) for p in living(state)
+    }
     exiled, tie = count_votes(state.votes, weights)
     tally = tuple(
         sorted(

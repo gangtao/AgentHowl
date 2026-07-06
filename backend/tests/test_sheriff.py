@@ -46,3 +46,39 @@ def test_sheriff_vote_weight_is_1_5() -> None:
     )
     new, _ = _tally_and_continue(st)
     assert new.day_exiled == 1
+
+
+def test_sheriff_vote_weight_reads_config() -> None:
+    from app.engine.config import Faction, RoleType, SheriffRule
+    from app.engine.engine import _tally_and_continue
+    from app.engine.state import GameState, Player
+
+    roles = [RoleType.WEREWOLF, RoleType.VILLAGER, RoleType.SEER]
+    players = tuple(
+        Player(
+            seat=i,
+            display_name=f"P{i}",
+            role=r,
+            faction=Faction.WOLF if r == RoleType.WEREWOLF else Faction.GOOD,
+            is_sheriff=(i == 0),
+        )
+        for i, r in enumerate(roles)
+    )
+    # vote_weight=2.5：警长(座0)投1 -> 座1 得 2.5；座1、2 投 2 -> 座2 得 2.0；座1 应出局
+    cfg = build_preset("std_9_kill_side").model_copy(
+        update={
+            "num_players": 3,
+            "seed": 1,
+            "sheriff": SheriffRule(vote_weight=2.5),
+        }
+    )
+    st = GameState(
+        game_id="g",
+        config=cfg,
+        phase=Phase.VOTE,
+        round=2,
+        players=players,
+        votes={0: 1, 1: 2, 2: 2},
+    )
+    new, _ = _tally_and_continue(st)
+    assert new.day_exiled == 1  # 若硬编码 1.5，座2(2.0) 会胜、结果不同

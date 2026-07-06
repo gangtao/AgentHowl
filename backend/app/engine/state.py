@@ -81,7 +81,7 @@ class GameState(BaseModel):
     sheriff_candidates: tuple[int, ...] = ()
     sheriff_declared: frozenset[int] = frozenset()
     sheriff_votes: dict[int, int | None] = Field(default_factory=dict)
-    election_stage: str = ""  # ""/"candidacy"/"vote"/"pk"
+    election_stage: str = ""  # ""/"candidacy"/"vote"（PK 阶段由 phase==SHERIFF_PK 区分）
 
 
 def player_at(state: GameState, seat: int) -> Player:
