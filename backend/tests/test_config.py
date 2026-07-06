@@ -131,3 +131,13 @@ def test_gameconfig_is_frozen() -> None:
     config = build_preset("std_9_kill_all")
     with pytest.raises(ValidationError):
         config.num_players = 8  # type: ignore[misc]
+
+
+def test_all_presets_run_to_completion() -> None:
+    from app.cli.bot import run_game
+    from app.engine.phases import Phase
+
+    for name in ALL_PRESETS:
+        cfg = build_preset(name).model_copy(update={"seed": 2024})
+        final, events = run_game(cfg, game_id=f"g_{name}")
+        assert final.phase == Phase.GAME_OVER, f"{name} 未终局"

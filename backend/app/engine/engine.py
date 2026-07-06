@@ -28,6 +28,7 @@ from app.engine.events import (
     GameOverPayload,
     GuardProtectedPayload,
     HunterShotPayload,
+    IdiotRevealedPayload,
     LastWordsPayload,
     NightResolvedPayload,
     PhaseChangedPayload,
@@ -757,6 +758,26 @@ def _tally_and_continue(state: GameState) -> tuple[GameState, list[Event]]:
     events.append(e)
 
     if exiled is not None:
+        exiled_pl = player_at(state, exiled)
+        if exiled_pl.role == RoleType.IDIOT and not exiled_pl.idiot_revealed:
+            # 白痴翻牌：免死一次、失投票权，当天投票作废，直接进入下一夜
+            state, e = _emit(
+                state,
+                EventType.PHASE_CHANGED,
+                PhaseChangedPayload(to=Phase.IDIOT_FLIP),
+                Visibility.PUBLIC,
+            )
+            events.append(e)
+            state, e = _emit(
+                state,
+                EventType.IDIOT_REVEALED,
+                IdiotRevealedPayload(seat=exiled),
+                Visibility.PUBLIC,
+                actor=exiled,
+            )
+            events.append(e)
+            state, ev = _after_day_death(state)
+            return state, [*events, *ev]
         state, e = _emit(
             state, EventType.PHASE_CHANGED, PhaseChangedPayload(to=Phase.EXILE), Visibility.PUBLIC
         )
