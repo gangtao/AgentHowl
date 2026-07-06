@@ -48,6 +48,7 @@ from app.engine.events import (
     RoundStartedPayload,
     SeerCheckedPayload,
     SheriffCandidacyPayload,
+    SheriffDirectionSetPayload,
     SheriffElectedPayload,
     SheriffVoteCastPayload,
     Visibility,
@@ -356,6 +357,14 @@ def _validate_sheriff(state: GameState, a: SheriffAction) -> RejectedReason | No
         if at not in (SheriffActionType.RUN_FOR_SHERIFF, SheriffActionType.WITHDRAW):
             return RejectedReason.WRONG_PHASE
         return None
+    if state.phase == Phase.SHERIFF_ELECTION and state.election_stage == "direction":
+        if at != SheriffActionType.SET_SPEECH_DIRECTION:
+            return RejectedReason.WRONG_PHASE
+        if a.direction is None:
+            return RejectedReason.INVALID_TARGET
+        if a.actor_seat != state.sheriff_seat:
+            return RejectedReason.NOT_YOUR_TURN
+        return None
     if state.phase in (Phase.SHERIFF_ELECTION, Phase.SHERIFF_PK):
         if at != SheriffActionType.VOTE_SHERIFF:
             return RejectedReason.WRONG_PHASE
@@ -495,6 +504,18 @@ def _apply_sheriff(state: GameState, a: SheriffAction) -> tuple[GameState, list[
             Visibility.PUBLIC,
             actor=a.actor_seat,
         )
+        return s, [e]
+    if at == SheriffActionType.SET_SPEECH_DIRECTION:
+        assert a.direction is not None  # 校验已保证
+        s, e = _emit(
+            state,
+            EventType.SHERIFF_DIRECTION_SET,
+            SheriffDirectionSetPayload(direction=a.direction.value),
+            Visibility.PUBLIC,
+            actor=a.actor_seat,
+        )
+        # 方向已定 -> 游标推进到 announce，由 _advance_election 续接死讯公布
+        s = s.model_copy(update={"election_stage": "announce"})
         return s, [e]
     # vote_sheriff
     s, e = _emit(
@@ -888,6 +909,12 @@ def _announce_and_continue_night(
 
 def _advance_election(state: GameState) -> tuple[GameState, list[Event]]:
     events: list[Event] = []
+    if state.election_stage == "direction":
+        # 方向子阶段必有存活警长为行动者；到达此处说明不变量被破坏
+        raise EngineInvariantError("方向决策阶段不应无行动者")
+    if state.election_stage == "announce":
+        state = state.model_copy(update={"election_stage": ""})
+        return _announce_and_continue_night(state, state.night_deaths, events)
     if state.election_stage == "candidacy":
         # 全员声明完毕
         if not state.sheriff_candidates:
@@ -920,6 +947,19 @@ def _finish_election(
         state, EventType.SHERIFF_ELECTED, SheriffElectedPayload(seat=elected), Visibility.PUBLIC
     )
     events.append(e)
+    if elected is not None and state.config.speech_order_rule == SpeechOrderRule.SHERIFF_DECIDES:
+        # 警长先定发言方向，再公布死讯；若当选经 PK 产生（phase 仍为 SHERIFF_PK），
+        # 需先切回 SHERIFF_ELECTION 阶段，方向子阶段的 expected_actors 才能被正确识别
+        if state.phase != Phase.SHERIFF_ELECTION:
+            state, e2 = _emit(
+                state,
+                EventType.PHASE_CHANGED,
+                PhaseChangedPayload(to=Phase.SHERIFF_ELECTION),
+                Visibility.PUBLIC,
+            )
+            events.append(e2)
+        state = state.model_copy(update={"election_stage": "direction"})
+        return state, events
     state = state.model_copy(update={"election_stage": ""})
     # 竞选结束 -> 回到「公布死讯并继续」
     return _announce_and_continue_night(state, state.night_deaths, events)
@@ -985,22 +1025,35 @@ def _speech_order(state: GameState) -> tuple[int, ...]:
         seq = [(start + i) % n for i in range(n)]
         return tuple(s for s in seq if s in alive)
 
-    if rule == SpeechOrderRule.FIXED_CLOCKWISE or rule == SpeechOrderRule.BIDDING:
-        return tuple(alive)  # BIDDING 下顺序仅占位；Speak 会被拒
-    if rule == SpeechOrderRule.DEATH_NEXT:
+    def _counterclockwise_from(start: int) -> tuple[int, ...]:
+        seq = [(start - i) % n for i in range(n)]
+        return tuple(s for s in seq if s in alive)
+
+    def _death_next_order() -> tuple[int, ...]:
         last_death = (
             max(state.night_deaths)
             if state.night_deaths
             else (state.day_exiled if state.day_exiled is not None else -1)
         )
         return _clockwise_from((last_death + 1) % n) if last_death >= 0 else tuple(alive)
+
+    if rule == SpeechOrderRule.FIXED_CLOCKWISE or rule == SpeechOrderRule.BIDDING:
+        return tuple(alive)  # BIDDING 下顺序仅占位；Speak 会被拒
+    if rule == SpeechOrderRule.DEATH_NEXT:
+        return _death_next_order()
     if rule == SpeechOrderRule.ODD_EVEN_CLOCK:
         base = _clockwise_from(alive[0])
         return base if state.round % 2 == 1 else tuple(reversed(base))
-    # SHERIFF_DECIDES：警长存活则从警长下家顺时针；否则退回死者下家/顺时针
-    if state.sheriff_seat is not None:
-        return _clockwise_from((state.sheriff_seat + 1) % n)
-    return tuple(alive)
+    # SHERIFF_DECIDES：警长在场且已定向 -> 按基准方向 + 奇偶换手；否则退回 death-next
+    if state.sheriff_seat is not None and state.sheriff_speech_direction is not None:
+        base_dir = state.sheriff_speech_direction
+        # 竞选在 round 1：奇数天用基准方向，偶数天换手
+        opposite = "LEFT" if base_dir == "RIGHT" else "RIGHT"
+        effective = base_dir if state.round % 2 == 1 else opposite
+        if effective == "RIGHT":
+            return _clockwise_from((state.sheriff_seat + 1) % n)
+        return _counterclockwise_from((state.sheriff_seat - 1) % n)
+    return _death_next_order()
 
 
 def _enter_day_speech(state: GameState) -> tuple[GameState, list[Event]]:

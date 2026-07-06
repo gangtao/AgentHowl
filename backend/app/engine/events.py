@@ -55,6 +55,7 @@ class EventType(StrEnum):
     SHERIFF_WITHDREW = "SHERIFF_WITHDREW"
     SHERIFF_VOTE_CAST = "SHERIFF_VOTE_CAST"
     SHERIFF_ELECTED = "SHERIFF_ELECTED"
+    SHERIFF_DIRECTION_SET = "SHERIFF_DIRECTION_SET"
     SHERIFF_BADGE_LOST = "SHERIFF_BADGE_LOST"
     BADGE_PASSED = "BADGE_PASSED"
     WOLF_SELF_DESTRUCT = "WOLF_SELF_DESTRUCT"
@@ -177,6 +178,10 @@ class SheriffVoteCastPayload(EventPayload):
 
 class SheriffElectedPayload(EventPayload):
     seat: int | None  # None=警徽流失
+
+
+class SheriffDirectionSetPayload(EventPayload):
+    direction: str  # "LEFT" / "RIGHT"
 
 
 class WolfSelfDestructPayload(EventPayload):
@@ -369,6 +374,9 @@ def _reduce_dispatch(state: GameState, event: Event) -> dict[str, object]:
             return {"sheriff_seat": None}
         players = _replace_player(state.players, p.seat, is_sheriff=True)
         return {"sheriff_seat": p.seat, "players": players}
+
+    if t == EventType.SHERIFF_DIRECTION_SET and isinstance(p, SheriffDirectionSetPayload):
+        return {"sheriff_speech_direction": p.direction}
 
     if t == EventType.WOLF_SELF_DESTRUCT and isinstance(p, WolfSelfDestructPayload):
         return {"players": _replace_player(state.players, p.seat, alive=False)}
