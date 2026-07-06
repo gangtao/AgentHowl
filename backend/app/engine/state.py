@@ -75,6 +75,7 @@ class GameState(BaseModel):
     winner: str | None = None
     rng_state: int = 0
     state_version: int = 0
+    resume_token: str | None = None  # 中断（猎人开枪/遗言）处理完后的续接标记
 
 
 def player_at(state: GameState, seat: int) -> Player:

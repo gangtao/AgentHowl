@@ -151,6 +151,20 @@ class WitchPotionConsumedPayload(EventPayload):
     poison: bool = False
 
 
+class LastWordsPayload(EventPayload):
+    seat: int
+    content: str
+
+
+class HunterShotPayload(EventPayload):
+    shooter: int
+    victim: int | None  # None=不开枪
+
+
+class IdiotRevealedPayload(EventPayload):
+    seat: int
+
+
 def _replace_player(
     players: tuple[Player, ...], seat: int, **updates: object
 ) -> tuple[Player, ...]:
@@ -293,6 +307,20 @@ def _reduce_dispatch(state: GameState, event: Event) -> dict[str, object]:
             return {"day_exiled": None}
         players = _replace_player(state.players, p.seat, alive=False)
         return {"players": players, "day_exiled": p.seat}
+
+    if t == EventType.LAST_WORDS and isinstance(p, LastWordsPayload):
+        return {"speech_idx": state.speech_idx + 1}
+
+    if t == EventType.HUNTER_SHOT and isinstance(p, HunterShotPayload):
+        shot_updates: dict[str, object] = {"pending_hunter": None}
+        if p.victim is not None:
+            shot_updates["players"] = _replace_player(state.players, p.victim, alive=False)
+        return shot_updates
+
+    if t == EventType.IDIOT_REVEALED and isinstance(p, IdiotRevealedPayload):
+        # 翻牌免死：不出局、失投票权、标记已翻
+        players = _replace_player(state.players, p.seat, idiot_revealed=True, can_vote=False)
+        return {"players": players}
 
     if t == EventType.ROLE_SKIPPED and isinstance(p, RoleSkippedPayload):
         # 玩家主动 skip（actor 非空）也算「已行动」；系统跳过缺席/死亡角色 actor 为 None
