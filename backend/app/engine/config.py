@@ -213,9 +213,7 @@ def validate_config(config: GameConfig) -> None:
     """校验人数、night_order 角色归属、胜利条件相容性。失败抛 ConfigError。"""
     total = sum(slot.count for slot in config.roles)
     if total != config.num_players:
-        raise ConfigError(
-            f"角色总数 {total} 与 num_players {config.num_players} 不一致"
-        )
+        raise ConfigError(f"角色总数 {total} 与 num_players {config.num_players} 不一致")
     if any(slot.count < 0 for slot in config.roles):
         raise ConfigError("角色 count 不能为负")
 

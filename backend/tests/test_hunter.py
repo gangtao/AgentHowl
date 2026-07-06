@@ -18,7 +18,9 @@ def _hunter_at_shoot(cause_poison: bool) -> GameState:
     ]
     players = tuple(
         Player(
-            seat=i, display_name=f"P{i}", role=r,
+            seat=i,
+            display_name=f"P{i}",
+            role=r,
             faction=Faction.WOLF if r == RoleType.WEREWOLF else Faction.GOOD,
             alive=(i != 0),  # 猎人已死
             hunter_can_shoot=not cause_poison,
@@ -27,8 +29,13 @@ def _hunter_at_shoot(cause_poison: bool) -> GameState:
     )
     cfg = build_preset("std_9_kill_side").model_copy(update={"num_players": 5, "seed": 1})
     return GameState(
-        game_id="g", config=cfg, phase=Phase.HUNTER_SHOOT, round=1,
-        players=players, pending_hunter=0, resume_token="day_after_hunter",
+        game_id="g",
+        config=cfg,
+        phase=Phase.HUNTER_SHOOT,
+        round=1,
+        players=players,
+        pending_hunter=0,
+        resume_token="day_after_hunter",
     )
 
 

@@ -30,9 +30,9 @@ def test_derive_int_rejects_bad_modulo() -> None:
 def test_shuffle_is_permutation_and_pure() -> None:
     items = list(range(12))
     out = shuffle(seed=99, purpose="deal", items=items)
-    assert sorted(out) == items          # 是一个排列
-    assert items == list(range(12))      # 未改入参
-    assert out != items                  # 对该 seed 确实打乱（12! 下几乎必然）
+    assert sorted(out) == items  # 是一个排列
+    assert items == list(range(12))  # 未改入参
+    assert out != items  # 对该 seed 确实打乱（12! 下几乎必然）
 
 
 def test_shuffle_is_deterministic() -> None:

@@ -675,7 +675,9 @@ def _resolve_night_and_continue(state: GameState) -> tuple[GameState, list[Event
             }
         )
         state, e = _emit(
-            state, EventType.PHASE_CHANGED, PhaseChangedPayload(to=Phase.HUNTER_SHOOT),
+            state,
+            EventType.PHASE_CHANGED,
+            PhaseChangedPayload(to=Phase.HUNTER_SHOOT),
             Visibility.PUBLIC,
         )
         return state, [*events, e]
@@ -817,7 +819,9 @@ def _after_exile(state: GameState) -> tuple[GameState, list[Event]]:
                 update={"pending_hunter": exiled, "resume_token": "day_after_hunter"}
             )
             state, e = _emit(
-                state, EventType.PHASE_CHANGED, PhaseChangedPayload(to=Phase.HUNTER_SHOOT),
+                state,
+                EventType.PHASE_CHANGED,
+                PhaseChangedPayload(to=Phase.HUNTER_SHOOT),
                 Visibility.PUBLIC,
             )
             return state, [e]

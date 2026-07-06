@@ -66,9 +66,7 @@ def check_win(state: GameState) -> str | None:
         return None  # 屠城：好人未清光则继续
 
     # 屠边：村民全灭 或 神职全灭 -> 狼胜
-    villagers = sum(
-        1 for p in state.players if p.alive and p.role == RoleType.VILLAGER
-    )
+    villagers = sum(1 for p in state.players if p.alive and p.role == RoleType.VILLAGER)
     gods = sum(
         1
         for p in state.players
@@ -78,9 +76,7 @@ def check_win(state: GameState) -> str | None:
         slot.role == RoleType.VILLAGER and slot.count > 0 for slot in state.config.roles
     )
     has_gods_in_setup = any(
-        slot.role != RoleType.VILLAGER
-        and faction_of(slot.role) == Faction.GOOD
-        and slot.count > 0
+        slot.role != RoleType.VILLAGER and faction_of(slot.role) == Faction.GOOD and slot.count > 0
         for slot in state.config.roles
     )
     if has_villagers_in_setup and villagers == 0:

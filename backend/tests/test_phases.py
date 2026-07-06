@@ -66,9 +66,7 @@ def test_expected_wolves_excludes_already_proposed() -> None:
 def test_expected_witch_needs_potion() -> None:
     # 无药女巫 -> 不再期待其行动
     players = tuple(
-        p.model_copy(update={"witch_antidote": False, "witch_poison": False})
-        if p.seat == 4
-        else p
+        p.model_copy(update={"witch_antidote": False, "witch_poison": False}) if p.seat == 4 else p
         for p in _state(Phase.NIGHT_WITCH).players
     )
     st = _state(Phase.NIGHT_WITCH).model_copy(update={"players": players})

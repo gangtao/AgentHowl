@@ -81,8 +81,13 @@ def test_dead_player_gets_no_private_night_info() -> None:
 
 def _mk_event(vis: Visibility, actor: int | None = None) -> Event:
     return Event(
-        seq=1, game_id="g", ts=1.0, type=EventType.PLAYER_SPOKE,
-        actor_seat=actor, payload=PlayerSpokePayload(content="x"), visibility=vis,
+        seq=1,
+        game_id="g",
+        ts=1.0,
+        type=EventType.PLAYER_SPOKE,
+        actor_seat=actor,
+        payload=PlayerSpokePayload(content="x"),
+        visibility=vis,
     )
 
 
