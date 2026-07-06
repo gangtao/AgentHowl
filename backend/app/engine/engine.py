@@ -17,6 +17,7 @@ from app.engine.actions import (
     RejectedReason,
     SelfDestruct,
     SheriffAction,
+    SheriffActionType,
     Speak,
 )
 from app.engine.config import Faction, GameConfig, RoleType, faction_of, validate_config
@@ -38,6 +39,9 @@ from app.engine.events import (
     RoleSkippedPayload,
     RoundStartedPayload,
     SeerCheckedPayload,
+    SheriffCandidacyPayload,
+    SheriffElectedPayload,
+    SheriffVoteCastPayload,
     Visibility,
     VoteCastPayload,
     VoteResultPayload,
@@ -165,8 +169,10 @@ def _begin_night(state: GameState, first: bool) -> tuple[GameState, list[Event]]
 
 
 def _validate(state: GameState, action: Action) -> RejectedReason | None:
-    if isinstance(action, (SheriffAction, SelfDestruct)):
-        return RejectedReason.WRONG_PHASE  # Stage 3 实现
+    if isinstance(action, SelfDestruct):
+        return RejectedReason.WRONG_PHASE  # Task 15 实现
+    if isinstance(action, SheriffAction):
+        return _validate_sheriff(state, action)
 
     actor = action.actor_seat
     try:
@@ -299,6 +305,29 @@ def _validate_vote(state: GameState, pl: Player, v: DayVote) -> RejectedReason |
     return None
 
 
+def _validate_sheriff(state: GameState, a: SheriffAction) -> RejectedReason | None:
+    try:
+        pl = player_at(state, a.actor_seat)
+    except KeyError:
+        return RejectedReason.INVALID_TARGET
+    if not pl.alive:
+        return RejectedReason.DEAD_ACTOR
+    if a.actor_seat not in expected_actors(state):
+        return RejectedReason.NOT_YOUR_TURN
+    at = a.action_type
+    if state.phase == Phase.SHERIFF_ELECTION and state.election_stage == "candidacy":
+        if at not in (SheriffActionType.RUN_FOR_SHERIFF, SheriffActionType.WITHDRAW):
+            return RejectedReason.WRONG_PHASE
+        return None
+    if state.phase in (Phase.SHERIFF_ELECTION, Phase.SHERIFF_PK):
+        if at != SheriffActionType.VOTE_SHERIFF:
+            return RejectedReason.WRONG_PHASE
+        if a.target_seat not in state.sheriff_candidates:
+            return RejectedReason.NOT_A_CANDIDATE
+        return None
+    return RejectedReason.WRONG_PHASE
+
+
 # ---------- 应用行动 ----------
 
 
@@ -335,7 +364,32 @@ def _apply_action(state: GameState, action: Action) -> tuple[GameState, list[Eve
             actor=action.actor_seat,
         )
         return s, [e]
+    if isinstance(action, SheriffAction):
+        return _apply_sheriff(state, action)
     raise EngineInvariantError(f"不应到达：{type(action)}")
+
+
+def _apply_sheriff(state: GameState, a: SheriffAction) -> tuple[GameState, list[Event]]:
+    at = a.action_type
+    if at in (SheriffActionType.RUN_FOR_SHERIFF, SheriffActionType.WITHDRAW):
+        running = at == SheriffActionType.RUN_FOR_SHERIFF
+        s, e = _emit(
+            state,
+            EventType.SHERIFF_CANDIDACY,
+            SheriffCandidacyPayload(seat=a.actor_seat, running=running),
+            Visibility.PUBLIC,
+            actor=a.actor_seat,
+        )
+        return s, [e]
+    # vote_sheriff
+    s, e = _emit(
+        state,
+        EventType.SHERIFF_VOTE_CAST,
+        SheriffVoteCastPayload(voter=a.actor_seat, target=a.target_seat),
+        Visibility.PUBLIC,
+        actor=a.actor_seat,
+    )
+    return s, [e]
 
 
 def _apply_night(state: GameState, a: NightAction) -> tuple[GameState, list[Event]]:
@@ -554,6 +608,9 @@ def _system_transition(state: GameState) -> tuple[GameState, list[Event]]:
         events.append(e)
         return state, events
 
+    if ph in (Phase.SHERIFF_ELECTION, Phase.SHERIFF_PK):
+        return _advance_election(state)
+
     if ph == Phase.VOTE:
         return _tally_and_continue(state)
 
@@ -658,6 +715,27 @@ def _resolve_night_and_continue(state: GameState) -> tuple[GameState, list[Event
         events.append(e)
         return state, events
 
+    # 首日：公布死讯前竞选
+    if (
+        state.round == 1
+        and state.config.sheriff.enabled
+        and state.config.sheriff.election_before_first_death_announce
+    ):
+        state = state.model_copy(update={"night_deaths": ordered, "election_stage": "candidacy"})
+        state, e = _emit(
+            state,
+            EventType.PHASE_CHANGED,
+            PhaseChangedPayload(to=Phase.SHERIFF_ELECTION),
+            Visibility.PUBLIC,
+        )
+        return state, [*events, e]
+
+    return _announce_and_continue_night(state, ordered, events)
+
+
+def _announce_and_continue_night(
+    state: GameState, ordered: tuple[int, ...], events: list[Event]
+) -> tuple[GameState, list[Event]]:
     state, e = _emit(
         state, EventType.DEATH_ANNOUNCED, DeathAnnouncedPayload(seats=ordered), Visibility.PUBLIC
     )
@@ -671,7 +749,9 @@ def _resolve_night_and_continue(state: GameState) -> tuple[GameState, list[Event
         return state, events
 
     # 夜间猎人开枪（被毒不可）
-    shooter = _dead_hunter_can_shoot(state, deaths, na.witch_poison_target)
+    shooter = _dead_hunter_can_shoot(
+        state, frozenset(ordered), state.pending_night.witch_poison_target
+    )
     if shooter is not None:
         state = state.model_copy(
             update={
@@ -689,6 +769,45 @@ def _resolve_night_and_continue(state: GameState) -> tuple[GameState, list[Event
         return state, [*events, e]
 
     return _finish_night_deaths(state, ordered, events)
+
+
+def _advance_election(state: GameState) -> tuple[GameState, list[Event]]:
+    events: list[Event] = []
+    if state.election_stage == "candidacy":
+        # 全员声明完毕
+        if not state.sheriff_candidates:
+            return _finish_election(state, elected=None, events=events)
+        state = state.model_copy(update={"election_stage": "vote", "sheriff_votes": {}})
+        return state, events  # 进入 vote 阶段，等待警下投票
+    # vote 阶段收尾
+    weights = {s: 1.0 for s in living_seats(state)}
+    elected, tie = count_votes(state.sheriff_votes, weights)
+    if elected is not None:
+        return _finish_election(state, elected=elected, events=events)
+    if tie and state.phase == Phase.SHERIFF_ELECTION:
+        # 进入 PK：候选缩小为平票者
+        state = state.model_copy(update={"sheriff_candidates": tie, "sheriff_votes": {}})
+        state, e = _emit(
+            state,
+            EventType.PHASE_CHANGED,
+            PhaseChangedPayload(to=Phase.SHERIFF_PK),
+            Visibility.PUBLIC,
+        )
+        return state, [e]
+    # PK 再平票 -> 警徽流失
+    return _finish_election(state, elected=None, events=events)
+
+
+def _finish_election(
+    state: GameState, elected: int | None, events: list[Event]
+) -> tuple[GameState, list[Event]]:
+    state, e = _emit(
+        state, EventType.SHERIFF_ELECTED, SheriffElectedPayload(seat=elected), Visibility.PUBLIC
+    )
+    events.append(e)
+    state = state.model_copy(update={"election_stage": ""})
+    # 竞选结束 -> 回到「公布死讯并继续」
+    return _announce_and_continue_night(state, state.night_deaths, events)
 
 
 def _finish_night_deaths(

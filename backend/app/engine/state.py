@@ -77,6 +77,12 @@ class GameState(BaseModel):
     state_version: int = 0
     resume_token: str | None = None  # 中断（猎人开枪/遗言）处理完后的续接标记
 
+    # 警长竞选
+    sheriff_candidates: tuple[int, ...] = ()
+    sheriff_declared: frozenset[int] = frozenset()
+    sheriff_votes: dict[int, int | None] = Field(default_factory=dict)
+    election_stage: str = ""  # ""/"candidacy"/"vote"/"pk"
+
 
 def player_at(state: GameState, seat: int) -> Player:
     for p in state.players:

@@ -114,5 +114,26 @@ def expected_actors(state: GameState) -> set[int]:
             return {state.speech_order[state.speech_idx]}
         return set()
 
-    # Stage 3 会补 SHERIFF_ELECTION / SHERIFF_PK；其余为系统阶段
+    if ph == Phase.SHERIFF_ELECTION:
+        if state.election_stage == "candidacy":
+            return {p.seat for p in living(state) if p.seat not in state.sheriff_declared}
+        if state.election_stage == "vote":
+            return {
+                p.seat
+                for p in living(state)
+                if p.can_vote
+                and p.seat not in state.sheriff_candidates
+                and p.seat not in state.sheriff_votes
+            }
+        return set()
+    if ph == Phase.SHERIFF_PK:
+        return {
+            p.seat
+            for p in living(state)
+            if p.can_vote
+            and p.seat not in state.sheriff_candidates
+            and p.seat not in state.sheriff_votes
+        }
+
+    # 其余为系统阶段
     return set()

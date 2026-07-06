@@ -165,6 +165,20 @@ class IdiotRevealedPayload(EventPayload):
     seat: int
 
 
+class SheriffCandidacyPayload(EventPayload):
+    seat: int
+    running: bool  # True=上警, False=不上警
+
+
+class SheriffVoteCastPayload(EventPayload):
+    voter: int
+    target: int | None
+
+
+class SheriffElectedPayload(EventPayload):
+    seat: int | None  # None=警徽流失
+
+
 def _replace_player(
     players: tuple[Player, ...], seat: int, **updates: object
 ) -> tuple[Player, ...]:
@@ -327,6 +341,24 @@ def _reduce_dispatch(state: GameState, event: Event) -> dict[str, object]:
         if event.actor_seat is not None:
             return {"acted_seats": state.acted_seats | {event.actor_seat}}
         return {}
+
+    if t == EventType.SHERIFF_CANDIDACY and isinstance(p, SheriffCandidacyPayload):
+        declared = state.sheriff_declared | {p.seat}
+        candidates = state.sheriff_candidates
+        if p.running and p.seat not in candidates:
+            candidates = (*candidates, p.seat)
+        return {"sheriff_declared": declared, "sheriff_candidates": candidates}
+
+    if t == EventType.SHERIFF_VOTE_CAST and isinstance(p, SheriffVoteCastPayload):
+        sv = dict(state.sheriff_votes)
+        sv[p.voter] = p.target
+        return {"sheriff_votes": sv}
+
+    if t == EventType.SHERIFF_ELECTED and isinstance(p, SheriffElectedPayload):
+        if p.seat is None:
+            return {"sheriff_seat": None}
+        players = _replace_player(state.players, p.seat, is_sheriff=True)
+        return {"sheriff_seat": p.seat, "players": players}
 
     if t == EventType.GAME_OVER and isinstance(p, GameOverPayload):
         return {"winner": p.winner, "phase": Phase.GAME_OVER}
