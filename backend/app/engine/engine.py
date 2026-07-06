@@ -182,8 +182,13 @@ def _validate(state: GameState, action: Action) -> RejectedReason | None:
     if isinstance(action, NightAction):
         return _validate_night(state, pl, action)
     if isinstance(action, Speak):
-        return None  # 发言内容对引擎不透明
+        # 发言仅在白天发言或遗言阶段合法（内容对引擎不透明）
+        if state.phase not in (Phase.DAY_SPEECH, Phase.LAST_WORDS):
+            return RejectedReason.WRONG_PHASE
+        return None
     if isinstance(action, DayVote):
+        if state.phase not in (Phase.VOTE, Phase.VOTE_PK):
+            return RejectedReason.WRONG_PHASE
         return _validate_vote(state, pl, action)
     return RejectedReason.WRONG_PHASE
 

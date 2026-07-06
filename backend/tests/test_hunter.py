@@ -1,4 +1,4 @@
-from app.engine.actions import NightAction, NightActionType
+from app.engine.actions import DayVote, NightAction, NightActionType, RejectedReason, Speak
 from app.engine.config import RoleType, build_preset
 from app.engine.engine import step
 from app.engine.phases import Phase, expected_actors
@@ -53,3 +53,16 @@ def test_hunter_poisoned_cannot_reach_shoot() -> None:
     # 直接构造到 HUNTER_SHOOT 但 can_shoot=False：开枪应被拒
     res = step(st, NightAction(actor_seat=0, action_type=NightActionType.SHOOT, target_seat=1))
     assert res.rejection is not None
+
+
+def test_dead_actor_cannot_vote_or_wrong_speak_at_interrupt() -> None:
+    st = _hunter_at_shoot(cause_poison=False)  # 猎人已死、pending_hunter=0、phase=HUNTER_SHOOT
+    # 死掉的待开枪猎人不能改投票
+    r1 = step(st, DayVote(actor_seat=0, target_seat=1))
+    assert r1.rejection == RejectedReason.WRONG_PHASE
+    # 也不能在 HUNTER_SHOOT 阶段发普通言论
+    r2 = step(st, Speak(actor_seat=0, content="x"))
+    assert r2.rejection == RejectedReason.WRONG_PHASE
+    # 但合法的开枪仍被接受
+    r3 = step(st, NightAction(actor_seat=0, action_type=NightActionType.SHOOT, target_seat=1))
+    assert r3.rejection is None
