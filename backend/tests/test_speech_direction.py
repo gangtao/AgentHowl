@@ -54,3 +54,59 @@ def test_direction_set_event_reduces_into_state() -> None:
     assert new.sheriff_speech_direction == "LEFT"
     assert st.sheriff_speech_direction is None  # 原状态不变
     assert new.state_version == st.state_version + 1
+
+
+def _day_state(
+    sheriff: int | None,
+    direction: str | None,
+    round_: int,
+    dead: tuple[int, ...] = (),
+    night_deaths: tuple[int, ...] = (),
+) -> GameState:
+    return _state(
+        n=5,
+        phase=Phase.DAY_SPEECH,
+        round=round_,
+        players=_players(5, sheriff=sheriff, dead=dead),
+        sheriff_seat=sheriff,
+        sheriff_speech_direction=direction,
+        night_deaths=night_deaths,
+    )
+
+
+def test_right_is_clockwise_from_sheriff_next() -> None:
+    from app.engine.engine import _speech_order
+
+    # 警长=2，警右：3,4,0,1,2
+    assert _speech_order(_day_state(2, "RIGHT", 1)) == (3, 4, 0, 1, 2)
+
+
+def test_left_is_counterclockwise_from_sheriff_prev() -> None:
+    from app.engine.engine import _speech_order
+
+    # 警长=2，警左：1,0,4,3,2
+    assert _speech_order(_day_state(2, "LEFT", 1)) == (1, 0, 4, 3, 2)
+
+
+def test_alternates_from_day_two() -> None:
+    from app.engine.engine import _speech_order
+
+    # 基准 RIGHT：round 2 换手 -> 实际 LEFT
+    assert _speech_order(_day_state(2, "RIGHT", 2)) == (1, 0, 4, 3, 2)
+    # round 3 换回 RIGHT
+    assert _speech_order(_day_state(2, "RIGHT", 3)) == (3, 4, 0, 1, 2)
+
+
+def test_dead_seats_skipped() -> None:
+    from app.engine.engine import _speech_order
+
+    # 警长=2，警右，座3已死：4,0,1,2
+    assert _speech_order(_day_state(2, "RIGHT", 1, dead=(3,))) == (4, 0, 1, 2)
+
+
+def test_no_sheriff_falls_back_to_death_next() -> None:
+    from app.engine.engine import _speech_order
+
+    # 无警长 + SHERIFF_DECIDES：退回死者下家顺时针（死者=2 -> 3,4,0,1）
+    st = _day_state(None, None, 1, dead=(2,), night_deaths=(2,))
+    assert _speech_order(st) == (3, 4, 0, 1)

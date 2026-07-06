@@ -985,22 +985,35 @@ def _speech_order(state: GameState) -> tuple[int, ...]:
         seq = [(start + i) % n for i in range(n)]
         return tuple(s for s in seq if s in alive)
 
-    if rule == SpeechOrderRule.FIXED_CLOCKWISE or rule == SpeechOrderRule.BIDDING:
-        return tuple(alive)  # BIDDING 下顺序仅占位；Speak 会被拒
-    if rule == SpeechOrderRule.DEATH_NEXT:
+    def _counterclockwise_from(start: int) -> tuple[int, ...]:
+        seq = [(start - i) % n for i in range(n)]
+        return tuple(s for s in seq if s in alive)
+
+    def _death_next_order() -> tuple[int, ...]:
         last_death = (
             max(state.night_deaths)
             if state.night_deaths
             else (state.day_exiled if state.day_exiled is not None else -1)
         )
         return _clockwise_from((last_death + 1) % n) if last_death >= 0 else tuple(alive)
+
+    if rule == SpeechOrderRule.FIXED_CLOCKWISE or rule == SpeechOrderRule.BIDDING:
+        return tuple(alive)  # BIDDING 下顺序仅占位；Speak 会被拒
+    if rule == SpeechOrderRule.DEATH_NEXT:
+        return _death_next_order()
     if rule == SpeechOrderRule.ODD_EVEN_CLOCK:
         base = _clockwise_from(alive[0])
         return base if state.round % 2 == 1 else tuple(reversed(base))
-    # SHERIFF_DECIDES：警长存活则从警长下家顺时针；否则退回死者下家/顺时针
-    if state.sheriff_seat is not None:
-        return _clockwise_from((state.sheriff_seat + 1) % n)
-    return tuple(alive)
+    # SHERIFF_DECIDES：警长在场且已定向 -> 按基准方向 + 奇偶换手；否则退回 death-next
+    if state.sheriff_seat is not None and state.sheriff_speech_direction is not None:
+        base_dir = state.sheriff_speech_direction
+        # 竞选在 round 1：奇数天用基准方向，偶数天换手
+        opposite = "LEFT" if base_dir == "RIGHT" else "RIGHT"
+        effective = base_dir if state.round % 2 == 1 else opposite
+        if effective == "RIGHT":
+            return _clockwise_from((state.sheriff_seat + 1) % n)
+        return _counterclockwise_from((state.sheriff_seat - 1) % n)
+    return _death_next_order()
 
 
 def _enter_day_speech(state: GameState) -> tuple[GameState, list[Event]]:
