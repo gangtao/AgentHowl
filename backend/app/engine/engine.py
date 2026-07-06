@@ -426,7 +426,7 @@ def _apply_self_destruct(state: GameState, action: SelfDestruct) -> tuple[GameSt
         )
         and state.config.sheriff.wolf_selfdestruct_eats_badge
     ):
-        s = s.model_copy(update={"election_stage": "", "sheriff_seat": None})
+        s = s.model_copy(update={"election_stage": ""})
         s, e2 = _emit(
             s, EventType.SHERIFF_ELECTED, SheriffElectedPayload(seat=None), Visibility.PUBLIC
         )
@@ -439,8 +439,13 @@ def _apply_self_destruct(state: GameState, action: SelfDestruct) -> tuple[GameSt
 
 
 def _after_self_destruct(state: GameState) -> tuple[GameState, list[Event]]:
-    """自爆后续接：白天自爆直接判胜/入夜；竞选期自爆先补公布首夜死讯再入夜。"""
-    events: list[Event] = []
+    """自爆后续接：白天自爆直接判胜/入夜；竞选期自爆先补公布首夜死讯再入夜。
+
+    自爆的警长零遗言覆盖，警徽必须在此兜底自动流失（竞选路径下 sheriff_seat 已因吞警徽
+    置空，本调用是幂等 no-op；DAY_SPEECH 路径下正确撕毁自爆者持有的警徽）。
+    """
+    state, badge_ev = _auto_badge_if_orphaned(state, recipients=())
+    events: list[Event] = list(badge_ev)
     if state.phase == Phase.DAY_SPEECH:
         # 白天自爆：当天死讯早已公布，直接判胜/入夜
         winner = check_win(state)
@@ -448,8 +453,9 @@ def _after_self_destruct(state: GameState) -> tuple[GameState, list[Event]]:
             s, e = _emit(
                 state, EventType.GAME_OVER, GameOverPayload(winner=winner), Visibility.PUBLIC
             )
-            return s, [e]
-        return _after_day_death(state)
+            return s, [*events, e]
+        state, ev0 = _after_day_death(state)
+        return state, [*events, *ev0]
     # 竞选期自爆：补公布首夜死讯并继续（含猎人/遗言）
     state = state.model_copy(update={"election_stage": ""})
     state, ev = _announce_and_continue_night(state, state.night_deaths, events)
@@ -480,15 +486,15 @@ def _apply_sheriff(state: GameState, a: SheriffAction) -> tuple[GameState, list[
         return s, [e]
     if at in (SheriffActionType.PASS_BADGE, SheriffActionType.TEAR_BADGE):
         to = a.target_seat if at == SheriffActionType.PASS_BADGE else None
+        # 消耗该发言回合（LAST_WORDS 用 pass_badge/tear_badge 顶替本轮发言）；
+        # 经事件推进 speech_idx。
         s, e = _emit(
             state,
             EventType.BADGE_PASSED,
-            BadgePassedPayload(from_seat=a.actor_seat, to_seat=to),
+            BadgePassedPayload(from_seat=a.actor_seat, to_seat=to, consumed_turn=True),
             Visibility.PUBLIC,
             actor=a.actor_seat,
         )
-        # 消耗该发言回合（LAST_WORDS 用 pass_badge/tear_badge 顶替本轮发言）
-        s = s.model_copy(update={"speech_idx": s.speech_idx + 1})
         return s, [e]
     # vote_sheriff
     s, e = _emit(

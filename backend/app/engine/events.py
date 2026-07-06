@@ -186,6 +186,7 @@ class WolfSelfDestructPayload(EventPayload):
 class BadgePassedPayload(EventPayload):
     from_seat: int
     to_seat: int | None  # None=撕毁/流失
+    consumed_turn: bool = False  # True=玩家在遗言回合主动移交/撕徽，消耗其发言回合
 
 
 def _replace_player(
@@ -376,7 +377,10 @@ def _reduce_dispatch(state: GameState, event: Event) -> dict[str, object]:
         players = _replace_player(state.players, p.from_seat, is_sheriff=False)
         if p.to_seat is not None:
             players = _replace_player(players, p.to_seat, is_sheriff=True)
-        return {"players": players, "sheriff_seat": p.to_seat}
+        badge_upd: dict[str, object] = {"players": players, "sheriff_seat": p.to_seat}
+        if p.consumed_turn:
+            badge_upd["speech_idx"] = state.speech_idx + 1
+        return badge_upd
 
     if t == EventType.GAME_OVER and isinstance(p, GameOverPayload):
         return {"winner": p.winner, "phase": Phase.GAME_OVER}

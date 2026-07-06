@@ -256,3 +256,126 @@ def test_dying_sheriff_can_pass_badge() -> None:
     assert res.rejection is None
     assert res.state.sheriff_seat == 1
     assert player_at(res.state, 1).is_sheriff is True
+
+
+def test_self_destructing_sheriff_loses_badge() -> None:
+    from app.engine.actions import SelfDestruct
+    from app.engine.config import Faction, RoleType
+    from app.engine.state import Player, player_at
+
+    roles = [RoleType.WEREWOLF, RoleType.VILLAGER, RoleType.SEER, RoleType.VILLAGER]
+    players = tuple(
+        Player(
+            seat=i,
+            display_name=f"P{i}",
+            role=r,
+            faction=Faction.WOLF if r == RoleType.WEREWOLF else Faction.GOOD,
+            is_sheriff=(i == 0),
+        )
+        for i, r in enumerate(roles)
+    )
+    cfg = build_preset("std_9_kill_side").model_copy(update={"num_players": 4, "seed": 1})
+    st = GameState(
+        game_id="g",
+        config=cfg,
+        phase=Phase.DAY_SPEECH,
+        round=1,
+        players=players,
+        speech_order=(0, 1, 2, 3),
+        speech_idx=0,
+        sheriff_seat=0,
+    )
+    res = step(st, SelfDestruct(actor_seat=0))
+    assert res.rejection is None
+    # 自爆的警长：警徽应流失，dead 玩家不再持徽
+    assert res.state.sheriff_seat is None
+    assert player_at(res.state, 0).is_sheriff is False
+
+
+def test_badge_pass_reduce_matches_live() -> None:
+    # reduce(events) == live 对于遗言回合主动移交警徽
+    from app.engine.actions import SheriffAction, SheriffActionType
+    from app.engine.config import Faction, RoleType
+    from app.engine.events import reduce
+    from app.engine.state import Player
+
+    roles = [RoleType.VILLAGER, RoleType.SEER, RoleType.WEREWOLF]
+    players = tuple(
+        Player(
+            seat=i,
+            display_name=f"P{i}",
+            role=r,
+            faction=Faction.WOLF if r == RoleType.WEREWOLF else Faction.GOOD,
+            alive=(i != 0),
+            is_sheriff=(i == 0),
+        )
+        for i, r in enumerate(roles)
+    )
+    cfg = build_preset("std_9_kill_side").model_copy(update={"num_players": 3, "seed": 1})
+    st = GameState(
+        game_id="g",
+        config=cfg,
+        phase=Phase.LAST_WORDS,
+        round=1,
+        players=players,
+        speech_order=(0,),
+        speech_idx=0,
+        sheriff_seat=0,
+        resume_token="after_day",
+    )
+    res = step(
+        st, SheriffAction(actor_seat=0, action_type=SheriffActionType.PASS_BADGE, target_seat=1)
+    )
+    assert res.rejection is None
+    # 用引擎产出的事件从 st 重放，speech_idx 等关键字段应与 live 一致
+    replayed = st
+    for ev in res.events:
+        replayed = reduce(replayed, ev)
+    assert replayed.speech_idx == res.state.speech_idx
+    assert replayed.sheriff_seat == res.state.sheriff_seat
+    assert [p.is_sheriff for p in replayed.players] == [p.is_sheriff for p in res.state.players]
+
+
+def test_speech_order_rules_return_living_only() -> None:
+    from app.engine.config import Faction, RoleType, SpeechOrderRule
+    from app.engine.engine import _speech_order
+    from app.engine.state import Player
+
+    roles = [
+        RoleType.WEREWOLF,
+        RoleType.VILLAGER,
+        RoleType.SEER,
+        RoleType.VILLAGER,
+        RoleType.WITCH,
+    ]
+    players = tuple(
+        Player(
+            seat=i,
+            display_name=f"P{i}",
+            role=r,
+            faction=Faction.WOLF if r == RoleType.WEREWOLF else Faction.GOOD,
+            alive=(i != 2),  # 座2 已死
+        )
+        for i, r in enumerate(roles)
+    )
+    rules = (
+        SpeechOrderRule.FIXED_CLOCKWISE,
+        SpeechOrderRule.DEATH_NEXT,
+        SpeechOrderRule.ODD_EVEN_CLOCK,
+        SpeechOrderRule.SHERIFF_DECIDES,
+    )
+    for rule in rules:
+        cfg = build_preset("std_9_kill_side").model_copy(
+            update={"num_players": 5, "seed": 1, "speech_order_rule": rule}
+        )
+        st = GameState(
+            game_id="g",
+            config=cfg,
+            phase=Phase.DAY_SPEECH,
+            round=1,
+            players=players,
+            night_deaths=(2,),
+        )
+        order = _speech_order(st)
+        assert 2 not in order  # 死者不在发言顺序
+        assert set(order) == {0, 1, 3, 4}  # 覆盖所有存活者一次
