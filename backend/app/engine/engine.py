@@ -20,8 +20,16 @@ from app.engine.actions import (
     SheriffActionType,
     Speak,
 )
-from app.engine.config import Faction, GameConfig, RoleType, faction_of, validate_config
+from app.engine.config import (
+    Faction,
+    GameConfig,
+    RoleType,
+    SpeechOrderRule,
+    faction_of,
+    validate_config,
+)
 from app.engine.events import (
+    BadgePassedPayload,
     DeathAnnouncedPayload,
     Event,
     EventPayload,
@@ -50,6 +58,7 @@ from app.engine.events import (
     WitchPotionConsumedPayload,
     WolfKillDecidedPayload,
     WolfKillProposedPayload,
+    WolfSelfDestructPayload,
     reduce,
 )
 from app.engine.phases import (
@@ -170,7 +179,7 @@ def _begin_night(state: GameState, first: bool) -> tuple[GameState, list[Event]]
 
 def _validate(state: GameState, action: Action) -> RejectedReason | None:
     if isinstance(action, SelfDestruct):
-        return RejectedReason.WRONG_PHASE  # Task 15 实现
+        return _validate_self_destruct(state, action)
     if isinstance(action, SheriffAction):
         return _validate_sheriff(state, action)
 
@@ -192,6 +201,11 @@ def _validate(state: GameState, action: Action) -> RejectedReason | None:
         # 发言仅在白天发言或遗言阶段合法（内容对引擎不透明）
         if state.phase not in (Phase.DAY_SPEECH, Phase.LAST_WORDS):
             return RejectedReason.WRONG_PHASE
+        if (
+            state.phase == Phase.DAY_SPEECH
+            and state.config.speech_order_rule == SpeechOrderRule.BIDDING
+        ):
+            return RejectedReason.BIDDING_NOT_IMPLEMENTED
         return None
     if isinstance(action, DayVote):
         if state.phase not in (Phase.VOTE, Phase.VOTE_PK):
@@ -207,6 +221,20 @@ def _alive_target(state: GameState, seat: int | None) -> bool:
         return player_at(state, seat).alive
     except KeyError:
         return False
+
+
+def _validate_self_destruct(state: GameState, a: SelfDestruct) -> RejectedReason | None:
+    try:
+        pl = player_at(state, a.actor_seat)
+    except KeyError:
+        return RejectedReason.INVALID_TARGET
+    if not pl.alive:
+        return RejectedReason.DEAD_ACTOR
+    if pl.faction != Faction.WOLF:
+        return RejectedReason.NOT_SELF_DESTRUCTABLE
+    if state.phase not in (Phase.DAY_SPEECH, Phase.SHERIFF_ELECTION, Phase.SHERIFF_PK):
+        return RejectedReason.NOT_SELF_DESTRUCTABLE
+    return None
 
 
 def _validate_night(state: GameState, pl: Player, a: NightAction) -> RejectedReason | None:
@@ -310,11 +338,20 @@ def _validate_sheriff(state: GameState, a: SheriffAction) -> RejectedReason | No
         pl = player_at(state, a.actor_seat)
     except KeyError:
         return RejectedReason.INVALID_TARGET
-    if not pl.alive:
+    # 将死警长在其 LAST_WORDS 回合可用 pass_badge/tear_badge，此时 actor 已死亡，需豁免。
+    if not pl.alive and state.phase != Phase.LAST_WORDS:
         return RejectedReason.DEAD_ACTOR
     if a.actor_seat not in expected_actors(state):
         return RejectedReason.NOT_YOUR_TURN
     at = a.action_type
+    if state.phase == Phase.LAST_WORDS:
+        if at not in (SheriffActionType.PASS_BADGE, SheriffActionType.TEAR_BADGE):
+            return RejectedReason.WRONG_PHASE
+        if not pl.is_sheriff:
+            return RejectedReason.NOT_A_CANDIDATE
+        if at == SheriffActionType.PASS_BADGE and not _alive_target(state, a.target_seat):
+            return RejectedReason.DEAD_TARGET
+        return None
     if state.phase == Phase.SHERIFF_ELECTION and state.election_stage == "candidacy":
         if at not in (SheriffActionType.RUN_FOR_SHERIFF, SheriffActionType.WITHDRAW):
             return RejectedReason.WRONG_PHASE
@@ -366,7 +403,67 @@ def _apply_action(state: GameState, action: Action) -> tuple[GameState, list[Eve
         return s, [e]
     if isinstance(action, SheriffAction):
         return _apply_sheriff(state, action)
+    if isinstance(action, SelfDestruct):
+        return _apply_self_destruct(state, action)
     raise EngineInvariantError(f"不应到达：{type(action)}")
+
+
+def _apply_self_destruct(state: GameState, action: SelfDestruct) -> tuple[GameState, list[Event]]:
+    s, e = _emit(
+        state,
+        EventType.WOLF_SELF_DESTRUCT,
+        WolfSelfDestructPayload(seat=action.actor_seat),
+        Visibility.PUBLIC,
+        actor=action.actor_seat,
+    )
+    events: list[Event]
+    # 竞选期自爆吞警徽
+    if (
+        state.phase
+        in (
+            Phase.SHERIFF_ELECTION,
+            Phase.SHERIFF_PK,
+        )
+        and state.config.sheriff.wolf_selfdestruct_eats_badge
+    ):
+        s = s.model_copy(update={"election_stage": "", "sheriff_seat": None})
+        s, e2 = _emit(
+            s, EventType.SHERIFF_ELECTED, SheriffElectedPayload(seat=None), Visibility.PUBLIC
+        )
+        events = [e, e2]
+    else:
+        events = [e]
+    # 跳过当天剩余流程，直接入夜
+    s2, more = _after_self_destruct(s)
+    return s2, [*events, *more]
+
+
+def _after_self_destruct(state: GameState) -> tuple[GameState, list[Event]]:
+    """自爆后续接：白天自爆直接判胜/入夜；竞选期自爆先补公布首夜死讯再入夜。"""
+    events: list[Event] = []
+    if state.phase == Phase.DAY_SPEECH:
+        # 白天自爆：当天死讯早已公布，直接判胜/入夜
+        winner = check_win(state)
+        if winner is not None:
+            s, e = _emit(
+                state, EventType.GAME_OVER, GameOverPayload(winner=winner), Visibility.PUBLIC
+            )
+            return s, [e]
+        return _after_day_death(state)
+    # 竞选期自爆：补公布首夜死讯并继续（含猎人/遗言）
+    state = state.model_copy(update={"election_stage": ""})
+    state, ev = _announce_and_continue_night(state, state.night_deaths, events)
+    # _announce_and_continue_night 会进入 DAY_SPEECH；自爆要求跳过白天 -> 强制推进到入夜
+    if state.phase == Phase.DAY_SPEECH:
+        winner = check_win(state)
+        if winner is not None:
+            state, e = _emit(
+                state, EventType.GAME_OVER, GameOverPayload(winner=winner), Visibility.PUBLIC
+            )
+            return state, [*ev, e]
+        state, ev2 = _after_day_death(state)
+        return state, [*ev, *ev2]
+    return state, ev
 
 
 def _apply_sheriff(state: GameState, a: SheriffAction) -> tuple[GameState, list[Event]]:
@@ -380,6 +477,18 @@ def _apply_sheriff(state: GameState, a: SheriffAction) -> tuple[GameState, list[
             Visibility.PUBLIC,
             actor=a.actor_seat,
         )
+        return s, [e]
+    if at in (SheriffActionType.PASS_BADGE, SheriffActionType.TEAR_BADGE):
+        to = a.target_seat if at == SheriffActionType.PASS_BADGE else None
+        s, e = _emit(
+            state,
+            EventType.BADGE_PASSED,
+            BadgePassedPayload(from_seat=a.actor_seat, to_seat=to),
+            Visibility.PUBLIC,
+            actor=a.actor_seat,
+        )
+        # 消耗该发言回合（LAST_WORDS 用 pass_badge/tear_badge 顶替本轮发言）
+        s = s.model_copy(update={"speech_idx": s.speech_idx + 1})
         return s, [e]
     # vote_sheriff
     s, e = _emit(
@@ -810,10 +919,30 @@ def _finish_election(
     return _announce_and_continue_night(state, state.night_deaths, events)
 
 
+def _auto_badge_if_orphaned(
+    state: GameState, recipients: tuple[int, ...]
+) -> tuple[GameState, list[Event]]:
+    """警长死亡但本轮无遗言机会覆盖其发言时，自动撕警徽兜底（防止警徽悬空）。"""
+    if state.sheriff_seat is not None:
+        holder = player_at(state, state.sheriff_seat)
+        if not holder.alive and state.sheriff_seat not in recipients:
+            s, e = _emit(
+                state,
+                EventType.BADGE_PASSED,
+                BadgePassedPayload(from_seat=state.sheriff_seat, to_seat=None),
+                Visibility.PUBLIC,
+                actor=state.sheriff_seat,
+            )
+            return s, [e]
+    return state, []
+
+
 def _finish_night_deaths(
     state: GameState, ordered: tuple[int, ...], events: list[Event]
 ) -> tuple[GameState, list[Event]]:
     recipients = _last_words_recipients(state, ordered, is_night=True)
+    state, badge_ev = _auto_badge_if_orphaned(state, recipients)
+    events = [*events, *badge_ev]
     if recipients:
         state = state.model_copy(update={"resume_token": "day_speech"})
         state, e = _emit(
@@ -840,8 +969,32 @@ def _check_win_with_deaths(state: GameState, deaths: frozenset[int]) -> str | No
 
 
 def _speech_order(state: GameState) -> tuple[int, ...]:
-    # Stage 1：按座号升序的存活玩家。Stage 3 依 speech_order_rule 改写。
-    return tuple(living_seats(state))
+    alive = living_seats(state)
+    if not alive:
+        return ()
+    rule = state.config.speech_order_rule
+    n = state.config.num_players
+
+    def _clockwise_from(start: int) -> tuple[int, ...]:
+        seq = [(start + i) % n for i in range(n)]
+        return tuple(s for s in seq if s in alive)
+
+    if rule == SpeechOrderRule.FIXED_CLOCKWISE or rule == SpeechOrderRule.BIDDING:
+        return tuple(alive)  # BIDDING 下顺序仅占位；Speak 会被拒
+    if rule == SpeechOrderRule.DEATH_NEXT:
+        last_death = (
+            max(state.night_deaths)
+            if state.night_deaths
+            else (state.day_exiled if state.day_exiled is not None else -1)
+        )
+        return _clockwise_from((last_death + 1) % n) if last_death >= 0 else tuple(alive)
+    if rule == SpeechOrderRule.ODD_EVEN_CLOCK:
+        base = _clockwise_from(alive[0])
+        return base if state.round % 2 == 1 else tuple(reversed(base))
+    # SHERIFF_DECIDES：警长存活则从警长下家顺时针；否则退回死者下家/顺时针
+    if state.sheriff_seat is not None:
+        return _clockwise_from((state.sheriff_seat + 1) % n)
+    return tuple(alive)
 
 
 def _enter_day_speech(state: GameState) -> tuple[GameState, list[Event]]:
@@ -982,6 +1135,7 @@ def _enter_day_last_words(
         sorted(set(([state.day_exiled] if state.day_exiled is not None else []) + list(extra)))
     )
     recipients = _last_words_recipients(state, dead_today, is_night=False)
+    state, badge_ev = _auto_badge_if_orphaned(state, recipients)
     if recipients:
         state = state.model_copy(update={"resume_token": "after_day"})
         state, e = _emit(
@@ -990,8 +1144,9 @@ def _enter_day_last_words(
             PhaseChangedPayload(to=Phase.LAST_WORDS, speech_order=recipients),
             Visibility.PUBLIC,
         )
-        return state, [e]
-    return _after_day_death(state)
+        return state, [*badge_ev, e]
+    state, ev = _after_day_death(state)
+    return state, [*badge_ev, *ev]
 
 
 def _after_day_death(state: GameState) -> tuple[GameState, list[Event]]:

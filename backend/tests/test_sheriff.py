@@ -1,6 +1,8 @@
 from app.cli.bot import run_game
 from app.engine.config import build_preset
+from app.engine.engine import step
 from app.engine.phases import Phase
+from app.engine.state import GameState
 
 
 def _preset_with_sheriff(seed: int):
@@ -82,3 +84,175 @@ def test_sheriff_vote_weight_reads_config() -> None:
     )
     new, _ = _tally_and_continue(st)
     assert new.day_exiled == 1  # 若硬编码 1.5，座2(2.0) 会胜、结果不同
+
+
+def test_self_destruct_in_day_skips_to_night() -> None:
+    from app.engine.actions import SelfDestruct
+    from app.engine.config import Faction, RoleType
+    from app.engine.state import Player
+
+    roles = [
+        RoleType.WEREWOLF,
+        RoleType.WEREWOLF,
+        RoleType.VILLAGER,
+        RoleType.SEER,
+        RoleType.VILLAGER,
+    ]
+    players = tuple(
+        Player(
+            seat=i,
+            display_name=f"P{i}",
+            role=r,
+            faction=Faction.WOLF if r == RoleType.WEREWOLF else Faction.GOOD,
+        )
+        for i, r in enumerate(roles)
+    )
+    cfg = build_preset("std_9_kill_side").model_copy(update={"num_players": 5, "seed": 1})
+    st = GameState(
+        game_id="g",
+        config=cfg,
+        phase=Phase.DAY_SPEECH,
+        round=1,
+        players=players,
+        speech_order=(0, 1, 2, 3, 4),
+        speech_idx=0,
+    )
+    res = step(st, SelfDestruct(actor_seat=0))
+    assert res.rejection is None
+    from app.engine.state import player_at
+
+    assert player_at(res.state, 0).alive is False
+    # 跳过当天发言/投票直接入夜（回到夜间阶段或终局）
+    assert res.state.phase in (Phase.NIGHT_GUARD, Phase.NIGHT_WEREWOLF, Phase.GAME_OVER)
+
+
+def test_self_destruct_in_election_eats_badge() -> None:
+    # 覆盖 self-review 要求：竞选期自爆吞警徽
+    # （sheriff_seat 变 None，且显式广播 SHERIFF_ELECTED(None)）
+    from app.engine.actions import SelfDestruct
+    from app.engine.config import Faction, RoleType
+    from app.engine.events import EventType, SheriffElectedPayload
+    from app.engine.state import Player, player_at
+
+    roles = [
+        RoleType.WEREWOLF,
+        RoleType.WEREWOLF,
+        RoleType.VILLAGER,
+        RoleType.VILLAGER,
+        RoleType.SEER,
+    ]
+    players = tuple(
+        Player(
+            seat=i,
+            display_name=f"P{i}",
+            role=r,
+            faction=Faction.WOLF if r == RoleType.WEREWOLF else Faction.GOOD,
+        )
+        for i, r in enumerate(roles)
+    )
+    cfg = build_preset("std_9_kill_side").model_copy(update={"num_players": 5, "seed": 1})
+    st = GameState(
+        game_id="g",
+        config=cfg,
+        phase=Phase.SHERIFF_ELECTION,
+        round=1,
+        players=players,
+        election_stage="vote",
+        sheriff_candidates=(2, 3),
+        sheriff_votes={2: 3},
+    )
+    res = step(st, SelfDestruct(actor_seat=0))
+    assert res.rejection is None
+    assert player_at(res.state, 0).alive is False
+    assert res.state.sheriff_seat is None
+    assert any(
+        e.type == EventType.SHERIFF_ELECTED
+        and isinstance(e.payload, SheriffElectedPayload)
+        and e.payload.seat is None
+        for e in res.events
+    )
+
+
+def test_non_wolf_cannot_self_destruct() -> None:
+    from app.engine.actions import SelfDestruct
+    from app.engine.config import Faction, RoleType
+    from app.engine.state import Player
+
+    players = tuple(
+        Player(seat=i, display_name=f"P{i}", role=RoleType.VILLAGER, faction=Faction.GOOD)
+        for i in range(4)
+    )
+    cfg = build_preset("std_9_kill_side").model_copy(update={"num_players": 4, "seed": 1})
+    st = GameState(
+        game_id="g",
+        config=cfg,
+        phase=Phase.DAY_SPEECH,
+        round=1,
+        players=players,
+        speech_order=(0, 1, 2, 3),
+        speech_idx=0,
+    )
+    res = step(st, SelfDestruct(actor_seat=0))
+    assert res.rejection is not None
+
+
+def test_bidding_speech_is_rejected() -> None:
+    from app.engine.actions import RejectedReason, Speak
+    from app.engine.config import Faction, RoleType, SpeechOrderRule
+    from app.engine.state import Player
+
+    players = tuple(
+        Player(seat=i, display_name=f"P{i}", role=RoleType.VILLAGER, faction=Faction.GOOD)
+        for i in range(4)
+    )
+    cfg = build_preset("std_9_kill_side").model_copy(
+        update={"num_players": 4, "seed": 1, "speech_order_rule": SpeechOrderRule.BIDDING}
+    )
+    st = GameState(
+        game_id="g",
+        config=cfg,
+        phase=Phase.DAY_SPEECH,
+        round=1,
+        players=players,
+        speech_order=(0, 1, 2, 3),
+        speech_idx=0,
+    )
+    res = step(st, Speak(actor_seat=0, content="x"))
+    assert res.rejection == RejectedReason.BIDDING_NOT_IMPLEMENTED
+
+
+def test_dying_sheriff_can_pass_badge() -> None:
+    from app.engine.actions import SheriffAction, SheriffActionType
+    from app.engine.config import Faction, RoleType
+    from app.engine.state import Player, player_at
+
+    roles = [RoleType.VILLAGER, RoleType.SEER, RoleType.WEREWOLF]
+    players = tuple(
+        Player(
+            seat=i,
+            display_name=f"P{i}",
+            role=r,
+            faction=Faction.WOLF if r == RoleType.WEREWOLF else Faction.GOOD,
+            alive=(i != 0),
+            is_sheriff=(i == 0),
+        )
+        for i, r in enumerate(roles)
+    )
+    cfg = build_preset("std_9_kill_side").model_copy(update={"num_players": 3, "seed": 1})
+    st = GameState(
+        game_id="g",
+        config=cfg,
+        phase=Phase.LAST_WORDS,
+        round=1,
+        players=players,
+        speech_order=(0,),
+        speech_idx=0,
+        sheriff_seat=0,
+        resume_token="after_day",
+    )
+    res = step(
+        st, SheriffAction(actor_seat=0, action_type=SheriffActionType.PASS_BADGE, target_seat=1)
+    )
+    assert res.rejection is None
+    assert res.state.sheriff_seat == 1
+    assert player_at(res.state, 1).is_sheriff is True

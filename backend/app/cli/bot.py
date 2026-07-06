@@ -3,8 +3,15 @@
 from __future__ import annotations
 
 from app.engine import rng
-from app.engine.actions import Action, DayVote, NightAction, NightActionType, Speak
-from app.engine.config import GameConfig
+from app.engine.actions import (
+    Action,
+    DayVote,
+    NightAction,
+    NightActionType,
+    SelfDestruct,
+    Speak,
+)
+from app.engine.config import Faction, GameConfig
 from app.engine.engine import create_game, step
 from app.engine.events import Event
 from app.engine.phases import Phase, expected_actors
@@ -49,7 +56,21 @@ class RandomBot:
                 actor_seat=seat, action_type=NightActionType.CHECK, target_seat=pick(targets, "c")
             )
         if ph == Phase.DAY_SPEECH:
+            if pl.alive and pl.faction == Faction.WOLF:
+                # 狼人偶发自爆（低概率），推动 Task 15 自爆分支被真实对局触达
+                roll = rng.derive_int(
+                    seed=seed,
+                    purpose=f"bot:{seat}:selfdestruct",
+                    seq=state.state_version,
+                    modulo=20,
+                )
+                if roll == 0:
+                    return SelfDestruct(actor_seat=seat)
             return Speak(actor_seat=seat, content="(bot)")
+        if ph == Phase.LAST_WORDS and pl.is_sheriff:
+            from app.engine.actions import SheriffAction, SheriffActionType
+
+            return SheriffAction(actor_seat=seat, action_type=SheriffActionType.TEAR_BADGE)
         if ph in (Phase.VOTE, Phase.VOTE_PK):
             cands = list(state.vote_candidates) or [s for s in living_seats(state) if s != seat]
             cands = cands or living_seats(state)

@@ -179,6 +179,15 @@ class SheriffElectedPayload(EventPayload):
     seat: int | None  # None=警徽流失
 
 
+class WolfSelfDestructPayload(EventPayload):
+    seat: int
+
+
+class BadgePassedPayload(EventPayload):
+    from_seat: int
+    to_seat: int | None  # None=撕毁/流失
+
+
 def _replace_player(
     players: tuple[Player, ...], seat: int, **updates: object
 ) -> tuple[Player, ...]:
@@ -359,6 +368,15 @@ def _reduce_dispatch(state: GameState, event: Event) -> dict[str, object]:
             return {"sheriff_seat": None}
         players = _replace_player(state.players, p.seat, is_sheriff=True)
         return {"sheriff_seat": p.seat, "players": players}
+
+    if t == EventType.WOLF_SELF_DESTRUCT and isinstance(p, WolfSelfDestructPayload):
+        return {"players": _replace_player(state.players, p.seat, alive=False)}
+
+    if t == EventType.BADGE_PASSED and isinstance(p, BadgePassedPayload):
+        players = _replace_player(state.players, p.from_seat, is_sheriff=False)
+        if p.to_seat is not None:
+            players = _replace_player(players, p.to_seat, is_sheriff=True)
+        return {"players": players, "sheriff_seat": p.to_seat}
 
     if t == EventType.GAME_OVER and isinstance(p, GameOverPayload):
         return {"winner": p.winner, "phase": Phase.GAME_OVER}
