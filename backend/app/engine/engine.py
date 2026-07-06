@@ -27,6 +27,8 @@ from app.engine.events import (
     EventType,
     GameOverPayload,
     GuardProtectedPayload,
+    HunterShotPayload,
+    LastWordsPayload,
     NightResolvedPayload,
     PhaseChangedPayload,
     PlayerExiledPayload,
@@ -170,7 +172,9 @@ def _validate(state: GameState, action: Action) -> RejectedReason | None:
         pl = player_at(state, actor)
     except KeyError:
         return RejectedReason.INVALID_TARGET
-    if not pl.alive:
+    # HUNTER_SHOOT/LAST_WORDS 的行动者本就是「刚出局」的死者，需放行；
+    # 其余阶段仍要求 actor 存活。
+    if not pl.alive and state.phase not in (Phase.HUNTER_SHOOT, Phase.LAST_WORDS):
         return RejectedReason.DEAD_ACTOR
     if actor not in expected_actors(state):
         return RejectedReason.NOT_YOUR_TURN
@@ -262,6 +266,18 @@ def _validate_night(state: GameState, pl: Player, a: NightAction) -> RejectedRea
             return RejectedReason.DEAD_TARGET
         return None
 
+    if ph == Phase.HUNTER_SHOOT:
+        pl2 = player_at(state, a.actor_seat)
+        if not pl2.hunter_can_shoot:
+            return RejectedReason.HUNTER_CANNOT_SHOOT
+        if at == NightActionType.SKIP:
+            return None
+        if at != NightActionType.SHOOT:
+            return RejectedReason.WRONG_PHASE
+        if not _alive_target(state, a.target_seat):
+            return RejectedReason.DEAD_TARGET
+        return None
+
     return RejectedReason.WRONG_PHASE
 
 
@@ -284,6 +300,15 @@ def _apply_action(state: GameState, action: Action) -> tuple[GameState, list[Eve
     if isinstance(action, NightAction):
         return _apply_night(state, action)
     if isinstance(action, Speak):
+        if state.phase == Phase.LAST_WORDS:
+            s, e = _emit(
+                state,
+                EventType.LAST_WORDS,
+                LastWordsPayload(seat=action.actor_seat, content=action.content),
+                Visibility.PUBLIC,
+                actor=action.actor_seat,
+            )
+            return s, [e]
         s, e = _emit(
             state,
             EventType.PLAYER_SPOKE,
@@ -381,6 +406,17 @@ def _apply_night(state: GameState, a: NightAction) -> tuple[GameState, list[Even
             EventType.SEER_CHECKED,
             SeerCheckedPayload(target=a.target_seat, result=result),
             Visibility.ROLE_SELF,
+            actor=actor,
+        )
+        return s, [e]
+
+    if ph == Phase.HUNTER_SHOOT:
+        victim = None if at == NightActionType.SKIP else a.target_seat
+        s, e = _emit(
+            state,
+            EventType.HUNTER_SHOT,
+            HunterShotPayload(shooter=actor, victim=victim),
+            Visibility.PUBLIC,
             actor=actor,
         )
         return s, [e]
@@ -521,17 +557,74 @@ def _system_transition(state: GameState) -> tuple[GameState, list[Event]]:
     if ph == Phase.EXILE:
         return _after_exile(state)
 
+    if ph == Phase.HUNTER_SHOOT:
+        # 猎人已开枪（HUNTER_SHOT 事件已应用），按 resume_token 续接
+        token = state.resume_token
+        victim_dead = state.night_deaths  # 夜间语境
+        if token == "night_after_hunter":
+            state = state.model_copy(update={"resume_token": None})
+            winner = check_win(state)
+            if winner is not None:
+                s, e = _emit(
+                    state, EventType.GAME_OVER, GameOverPayload(winner=winner), Visibility.PUBLIC
+                )
+                return s, [e]
+            return _finish_night_deaths(state, victim_dead, [])
+        # day_after_hunter
+        state = state.model_copy(update={"resume_token": None})
+        winner = check_win(state)
+        if winner is not None:
+            s, e = _emit(
+                state, EventType.GAME_OVER, GameOverPayload(winner=winner), Visibility.PUBLIC
+            )
+            return s, [e]
+        return _enter_day_last_words(state, extra=())
+
+    if ph == Phase.LAST_WORDS:
+        token = state.resume_token
+        state = state.model_copy(update={"resume_token": None})
+        if token == "day_speech":
+            return _enter_day_speech(state)
+        return _after_day_death(state)
+
     return state, events
 
 
 # ---------- 夜晚结算与白天收尾 ----------
 
 
+def _last_words_recipients(
+    state: GameState, deaths: tuple[int, ...], is_night: bool
+) -> tuple[int, ...]:
+    rule = state.config.last_words
+    if not is_night:
+        return deaths  # 白天出局者始终有遗言
+    from app.engine.config import LastWordsRule
+
+    if rule == LastWordsRule.ALWAYS_NIGHT:
+        return deaths
+    if rule == LastWordsRule.FIRST_NIGHT_ONLY:
+        return deaths if state.round == 1 else ()
+    # N_EQUALS_WOLVES：前 (狼数) 个夜晚的死者有遗言（M1 采用「round <= 初始狼数」口径）
+    initial_wolves = sum(
+        slot.count for slot in state.config.roles if slot.role == RoleType.WEREWOLF
+    )
+    return deaths if state.round <= initial_wolves else ()
+
+
+def _dead_hunter_can_shoot(
+    state: GameState, deaths: frozenset[int], poisoned: int | None
+) -> int | None:
+    for seat in sorted(deaths):
+        pl = player_at(state, seat)
+        if pl.role == RoleType.HUNTER and pl.hunter_can_shoot and seat != poisoned:
+            return seat
+    return None
+
+
 def _resolve_night_and_continue(state: GameState) -> tuple[GameState, list[Event]]:
     events: list[Event] = []
     na = state.pending_night
-
-    # 解药救人：扣女巫解药（若本夜确实救了刀口）
     if na.witch_save and na.wolf_target is not None:
         witches = living_of_role(state, RoleType.WITCH)
         if witches:
@@ -544,7 +637,6 @@ def _resolve_night_and_continue(state: GameState) -> tuple[GameState, list[Event
     )
     events.append(e)
 
-    # 狼刀在先：以「死者已出局」的假想态判胜
     winner = _check_win_with_deaths(state, deaths)
     if winner is not None and state.config.wolf_first_kill_priority:
         state, e = _emit(
@@ -560,12 +652,10 @@ def _resolve_night_and_continue(state: GameState) -> tuple[GameState, list[Event
         events.append(e)
         return state, events
 
-    # 公布死讯（应用出局）。Stage 2 在此后插入遗言；Stage 3 首日在此前插入警长竞选。
     state, e = _emit(
         state, EventType.DEATH_ANNOUNCED, DeathAnnouncedPayload(seats=ordered), Visibility.PUBLIC
     )
     events.append(e)
-
     winner2 = check_win(state)
     if winner2 is not None:
         state, e = _emit(
@@ -574,6 +664,38 @@ def _resolve_night_and_continue(state: GameState) -> tuple[GameState, list[Event
         events.append(e)
         return state, events
 
+    # 夜间猎人开枪（被毒不可）
+    shooter = _dead_hunter_can_shoot(state, deaths, na.witch_poison_target)
+    if shooter is not None:
+        state = state.model_copy(
+            update={
+                "pending_hunter": shooter,
+                "resume_token": "night_after_hunter",
+                "night_deaths": ordered,
+            }
+        )
+        state, e = _emit(
+            state, EventType.PHASE_CHANGED, PhaseChangedPayload(to=Phase.HUNTER_SHOOT),
+            Visibility.PUBLIC,
+        )
+        return state, [*events, e]
+
+    return _finish_night_deaths(state, ordered, events)
+
+
+def _finish_night_deaths(
+    state: GameState, ordered: tuple[int, ...], events: list[Event]
+) -> tuple[GameState, list[Event]]:
+    recipients = _last_words_recipients(state, ordered, is_night=True)
+    if recipients:
+        state = state.model_copy(update={"resume_token": "day_speech"})
+        state, e = _emit(
+            state,
+            EventType.PHASE_CHANGED,
+            PhaseChangedPayload(to=Phase.LAST_WORDS, speech_order=recipients),
+            Visibility.PUBLIC,
+        )
+        return state, [*events, e]
     state, ev = _enter_day_speech(state)
     return state, [*events, *ev]
 
@@ -687,7 +809,37 @@ def weights_sum(votes: dict[int, int | None], weights: dict[int, float], target:
 
 
 def _after_exile(state: GameState) -> tuple[GameState, list[Event]]:
-    # Stage 1：出局即结束当天（无猎人/白痴/遗言）。Stage 2/3 在此插入分支。
+    exiled = state.day_exiled
+    if exiled is not None:
+        pl = player_at(state, exiled)
+        if pl.role == RoleType.HUNTER and pl.hunter_can_shoot:
+            state = state.model_copy(
+                update={"pending_hunter": exiled, "resume_token": "day_after_hunter"}
+            )
+            state, e = _emit(
+                state, EventType.PHASE_CHANGED, PhaseChangedPayload(to=Phase.HUNTER_SHOOT),
+                Visibility.PUBLIC,
+            )
+            return state, [e]
+    return _enter_day_last_words(state, extra=())
+
+
+def _enter_day_last_words(
+    state: GameState, extra: tuple[int, ...]
+) -> tuple[GameState, list[Event]]:
+    dead_today = tuple(
+        sorted(set(([state.day_exiled] if state.day_exiled is not None else []) + list(extra)))
+    )
+    recipients = _last_words_recipients(state, dead_today, is_night=False)
+    if recipients:
+        state = state.model_copy(update={"resume_token": "after_day"})
+        state, e = _emit(
+            state,
+            EventType.PHASE_CHANGED,
+            PhaseChangedPayload(to=Phase.LAST_WORDS, speech_order=recipients),
+            Visibility.PUBLIC,
+        )
+        return state, [e]
     return _after_day_death(state)
 
 

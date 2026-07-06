@@ -1,3 +1,4 @@
+from app.cli.bot import run_game
 from app.engine.config import Faction, RoleType, build_preset
 from app.engine.events import (
     Event,
@@ -9,6 +10,7 @@ from app.engine.events import (
 )
 from app.engine.phases import Phase
 from app.engine.state import GameState, Player, player_at
+from tests.factories import stage1_config
 
 
 def _state() -> GameState:
@@ -58,3 +60,11 @@ def test_idiot_revealed_survives_loses_vote() -> None:
     assert p.alive is True
     assert p.idiot_revealed is True
     assert p.can_vote is False
+
+
+def test_first_night_death_has_night_last_words() -> None:
+    # stage1 板默认 FIRST_NIGHT_ONLY：首夜若有死者，事件流应含 LAST_WORDS
+    _, events = run_game(stage1_config(seed=13), game_id="g")
+    types = [e.type for e in events]
+    # 至少存在一次 LAST_WORDS（首夜死者或白天出局者）
+    assert EventType.LAST_WORDS in types

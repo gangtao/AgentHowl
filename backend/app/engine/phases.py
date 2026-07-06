@@ -74,9 +74,7 @@ def expected_actors(state: GameState) -> set[int]:
 
     if ph == Phase.NIGHT_GUARD:
         return {
-            p.seat
-            for p in living_of_role(state, RoleType.GUARD)
-            if p.seat not in state.acted_seats
+            p.seat for p in living_of_role(state, RoleType.GUARD) if p.seat not in state.acted_seats
         }
     if ph == Phase.NIGHT_WEREWOLF:
         return {w.seat for w in living_wolves(state) if w.seat not in state.wolf_proposals}
@@ -88,18 +86,11 @@ def expected_actors(state: GameState) -> set[int]:
         }
     if ph == Phase.NIGHT_SEER:
         return {
-            p.seat
-            for p in living_of_role(state, RoleType.SEER)
-            if p.seat not in state.acted_seats
+            p.seat for p in living_of_role(state, RoleType.SEER) if p.seat not in state.acted_seats
         }
     if ph == Phase.NIGHT_HUNTER_CONFIRM:
-        if state.round != 1:
-            return set()
-        return {
-            p.seat
-            for p in living_of_role(state, RoleType.HUNTER)
-            if p.seat not in state.acted_seats
-        }
+        # M1：猎人首夜确认无决策，作为系统直通阶段（can_shoot 在死亡时判定）
+        return set()
 
     if ph == Phase.DAY_SPEECH:
         if state.speech_idx < len(state.speech_order):
@@ -117,6 +108,11 @@ def expected_actors(state: GameState) -> set[int]:
 
     if ph == Phase.HUNTER_SHOOT:
         return {state.pending_hunter} if state.pending_hunter is not None else set()
+
+    if ph == Phase.LAST_WORDS:
+        if state.speech_idx < len(state.speech_order):
+            return {state.speech_order[state.speech_idx]}
+        return set()
 
     # Stage 3 会补 SHERIFF_ELECTION / SHERIFF_PK；其余为系统阶段
     return set()

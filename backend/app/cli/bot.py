@@ -54,7 +54,16 @@ class RandomBot:
             cands = list(state.vote_candidates) or [s for s in living_seats(state) if s != seat]
             cands = cands or living_seats(state)
             return DayVote(actor_seat=seat, target_seat=pick(cands, "v"))
-        # 其它阶段（猎人/警长，Stage 2/3）默认 skip 发言
+        if ph == Phase.HUNTER_SHOOT:
+            targets = [s for s in living_seats(state) if s != seat]
+            if not targets:
+                return NightAction(actor_seat=seat, action_type=NightActionType.SKIP)
+            return NightAction(
+                actor_seat=seat,
+                action_type=NightActionType.SHOOT,
+                target_seat=pick(targets, "shoot"),
+            )
+        # 其它阶段（警长，Stage 3；LAST_WORDS 走下方遗言发言）默认 skip 发言
         return Speak(actor_seat=seat, content="(bot-skip)")
 
 

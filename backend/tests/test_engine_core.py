@@ -1,4 +1,4 @@
-from app.engine.actions import NightAction, NightActionType
+from app.engine.actions import NightAction, NightActionType, Speak
 from app.engine.config import RoleType
 from app.engine.engine import create_game, step
 from app.engine.events import reduce_all
@@ -58,9 +58,13 @@ def test_full_night_resolves_and_enters_day() -> None:
         state,
         NightAction(actor_seat=seer, action_type=NightActionType.CHECK, target_seat=wolves[0]),
     )
-    # 夜晚结算 -> 公布死讯 -> 进入白天发言
-    assert state.phase == Phase.DAY_SPEECH
+    # 夜晚结算 -> 公布死讯 -> 首夜死者遗言（FIRST_NIGHT_ONLY）
+    assert state.phase == Phase.LAST_WORDS
     assert player_at(state, villager).alive is False
+    assert state.speech_order == (villager,)
+    state = _submit(state, Speak(actor_seat=villager, content="遗言"))
+    # 遗言说完 -> 进入白天发言
+    assert state.phase == Phase.DAY_SPEECH
     # 发言顺序为存活玩家（含被投前）
     assert villager not in state.speech_order
 
