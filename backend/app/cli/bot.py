@@ -86,6 +86,20 @@ class RandomBot:
             )
         from app.engine.actions import SheriffAction, SheriffActionType
 
+        if ph == Phase.SHERIFF_ELECTION and state.election_stage == "direction":
+            from app.engine.actions import Direction, SheriffAction, SheriffActionType
+
+            left = (
+                rng.derive_int(
+                    seed=seed, purpose=f"bot:{seat}:dir", seq=state.state_version, modulo=2
+                )
+                == 0
+            )
+            return SheriffAction(
+                actor_seat=seat,
+                action_type=SheriffActionType.SET_SPEECH_DIRECTION,
+                direction=Direction.LEFT if left else Direction.RIGHT,
+            )
         if ph == Phase.SHERIFF_ELECTION and state.election_stage == "candidacy":
             running = (
                 rng.derive_int(

@@ -125,6 +125,8 @@ def expected_actors(state: GameState) -> set[int]:
                 and p.seat not in state.sheriff_candidates
                 and p.seat not in state.sheriff_votes
             }
+        if state.election_stage == "direction":
+            return {state.sheriff_seat} if state.sheriff_seat is not None else set()
         return set()
     if ph == Phase.SHERIFF_PK:
         return {
