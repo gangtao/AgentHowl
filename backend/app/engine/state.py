@@ -82,6 +82,7 @@ class GameState(BaseModel):
     sheriff_declared: frozenset[int] = frozenset()
     sheriff_votes: dict[int, int | None] = Field(default_factory=dict)
     election_stage: str = ""  # ""/"candidacy"/"vote"（PK 阶段由 phase==SHERIFF_PK 区分）
+    sheriff_speech_direction: str | None = None  # 警长方向 "LEFT"/"RIGHT"（事实，经事件写入）
 
 
 def player_at(state: GameState, seat: int) -> Player:
