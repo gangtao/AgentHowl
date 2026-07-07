@@ -48,6 +48,12 @@ class TieRule(StrEnum):
     NO_EXILE = "NO_EXILE"
 
 
+class WolfKillRule(StrEnum):
+    UNANIMOUS_OR_NO_KILL = "UNANIMOUS_OR_NO_KILL"  # 全员一致才刀，否则空刀（默认）
+    MAJORITY = "MAJORITY"  # 相对多数；并列（含与空刀票并列）→ 空刀
+    RANDOM_PROPOSAL = "RANDOM_PROPOSAL"  # 非空提案多重集中加权随机
+
+
 class LastWordsRule(StrEnum):
     FIRST_NIGHT_ONLY = "FIRST_NIGHT_ONLY"
     ALWAYS_NIGHT = "ALWAYS_NIGHT"
@@ -122,6 +128,7 @@ class GameConfig(BaseModel):
     last_words: LastWordsRule = LastWordsRule.FIRST_NIGHT_ONLY
     allow_wolf_self_knife: bool = True
     allow_wolf_empty_knife: bool = True
+    wolf_kill_rule: WolfKillRule = WolfKillRule.UNANIMOUS_OR_NO_KILL
     wolf_first_kill_priority: bool = True
     speech_timeout_sec: int = 90
     action_timeout_sec: int = 45
