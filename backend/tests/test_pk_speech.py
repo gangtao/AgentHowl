@@ -107,12 +107,12 @@ def test_sheriff_pk_full_flow() -> None:
     from app.engine.actions import SheriffAction, SheriffActionType
     from app.engine.config import SpeechOrderRule
 
-    # 4 人竞选：候选 (0,1)，投票人 {2,3}；2投1、3投0 -> 1-1 平票入 PK
+    # 6 人竞选：候选 (1,2)，警下 {0,3,4,5}；0投1、3投2、4投2，5号最后投1 -> 2-2平票入PK
     cfg = build_preset("std_9_kill_side").model_copy(
         update={
-            "num_players": 4,
+            "num_players": 6,
             "seed": 1,
-            "speech_order_rule": SpeechOrderRule.FIXED_CLOCKWISE,
+            "speech_order_rule": SpeechOrderRule.FIXED_CLOCKWISE,  # 绕开当选后的方向决策子阶段
         }
     )
     st = GameState(
@@ -120,51 +120,41 @@ def test_sheriff_pk_full_flow() -> None:
         config=cfg,
         phase=Phase.SHERIFF_ELECTION,
         round=1,
-        players=_players(4, wolves=(0, 1)),  # 2 狼 2 民
+        players=_players(6, wolves=(1,)),  # 1 狼 5 民，避免结算即终局
         election_stage="vote",
-        sheriff_candidates=(0, 1),
-        sheriff_votes={2: 1, 3: 0},  # 1-1 tie
+        sheriff_candidates=(1, 2),
+        sheriff_votes={0: 1, 3: 2, 4: 2},  # 1票vs2票，5号最后一票决平手
         night_deaths=(),
         resolved_first_night=True,
     )
-    # Verify we have the tie
-    stp = st
-    assert stp.phase == Phase.SHERIFF_ELECTION
-    assert stp.speech_order == ()  # No speech_order yet until we enter PK
-
-    # Now manually transition to SHERIFF_PK by forcing _advance_election
-    # Create a scenario where calling step will advance to PK
-    # Actually, the votes are already complete, so advance should be automatic
-    # But step() is called by the client with an action. Since no one has new actions,
-    # we need to manually create the post-tie state
-
-    # Alternative: manually create the SHERIFF_PK state
-    stp = st.model_copy(
-        update={
-            "phase": Phase.SHERIFF_PK,
-            "speech_order": (0, 1),  # Tied candidates in order
-            "speech_idx": 0,
-            "sheriff_candidates": (0, 1),
-            "sheriff_votes": {},
-        }
-    )
-    assert stp.phase == Phase.SHERIFF_PK
-    assert stp.speech_order == (0, 1)
-    assert expected_actors(stp) == {0}
-
-    stp = step(stp, Speak(actor_seat=0, content="pk")).state
-    stp = step(stp, Speak(actor_seat=1, content="pk")).state
-    # 警下重投（候选人不投）
-    assert expected_actors(stp) == {2, 3}
-    stp = step(
-        stp,
-        SheriffAction(actor_seat=2, action_type=SheriffActionType.VOTE_SHERIFF, target_seat=0),
-    ).state
     res = step(
-        stp, SheriffAction(actor_seat=3, action_type=SheriffActionType.VOTE_SHERIFF, target_seat=0)
+        st, SheriffAction(actor_seat=5, action_type=SheriffActionType.VOTE_SHERIFF, target_seat=1)
     )
     assert res.rejection is None
-    assert res.state.sheriff_seat == 0
+    stp = res.state
+    # 经 _advance_election 进入 SHERIFF_PK，且入口携带发言队列
+    assert stp.phase == Phase.SHERIFF_PK
+    assert stp.speech_order == (1, 2)
+    assert expected_actors(stp) == {1}
+
+    stp = step(stp, Speak(actor_seat=1, content="pk")).state
+    stp = step(stp, Speak(actor_seat=2, content="pk")).state
+    # 警下重投（候选人不投）
+    assert expected_actors(stp) == {0, 3, 4, 5}
+    stp = step(
+        stp, SheriffAction(actor_seat=0, action_type=SheriffActionType.VOTE_SHERIFF, target_seat=1)
+    ).state
+    stp = step(
+        stp, SheriffAction(actor_seat=3, action_type=SheriffActionType.VOTE_SHERIFF, target_seat=1)
+    ).state
+    stp = step(
+        stp, SheriffAction(actor_seat=4, action_type=SheriffActionType.VOTE_SHERIFF, target_seat=1)
+    ).state
+    res = step(
+        stp, SheriffAction(actor_seat=5, action_type=SheriffActionType.VOTE_SHERIFF, target_seat=1)
+    )
+    assert res.rejection is None
+    assert res.state.sheriff_seat == 1
 
 
 def test_full_games_with_pk_still_terminate() -> None:
