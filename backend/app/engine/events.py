@@ -16,6 +16,10 @@ from app.engine.phases import Phase
 from app.engine.state import GameState, NightActions, Player
 
 
+class EngineInvariantError(RuntimeError):
+    """引擎进入了不可能状态；绝不静默继续。"""
+
+
 class Visibility(StrEnum):
     PUBLIC = "PUBLIC"
     WOLVES = "WOLVES"
@@ -194,6 +198,40 @@ class BadgePassedPayload(EventPayload):
     consumed_turn: bool = False  # True=玩家在遗言回合主动移交/撕徽，消耗其发言回合
 
 
+# EventType -> payload 类。预留类型（GAME_CREATED/GAME_STARTED/SHERIFF_WITHDREW/
+# SHERIFF_BADGE_LOST）有意缺席：未映射 = 未实现，被 reduce 到即抛错（fail-loud）。
+EVENT_PAYLOAD_TYPES: dict[EventType, type[EventPayload]] = {
+    EventType.ROLES_ASSIGNED: RolesAssignedPayload,
+    EventType.ROUND_STARTED: RoundStartedPayload,
+    EventType.PHASE_CHANGED: PhaseChangedPayload,
+    EventType.VOTE_STARTED: VoteStartedPayload,
+    EventType.GUARD_PROTECTED: GuardProtectedPayload,
+    EventType.WOLF_KILL_PROPOSED: WolfKillProposedPayload,
+    EventType.WOLF_KILL_DECIDED: WolfKillDecidedPayload,
+    EventType.WITCH_SAVED: WitchActedPayload,
+    EventType.WITCH_POISONED: WitchActedPayload,
+    EventType.WITCH_POTION_CONSUMED: WitchPotionConsumedPayload,
+    EventType.SEER_CHECKED: SeerCheckedPayload,
+    EventType.NIGHT_RESOLVED: NightResolvedPayload,
+    EventType.DEATH_ANNOUNCED: DeathAnnouncedPayload,
+    EventType.PLAYER_SPOKE: PlayerSpokePayload,
+    EventType.VOTE_CAST: VoteCastPayload,
+    EventType.VOTE_RESULT: VoteResultPayload,
+    EventType.PLAYER_EXILED: PlayerExiledPayload,
+    EventType.ROLE_SKIPPED: RoleSkippedPayload,
+    EventType.GAME_OVER: GameOverPayload,
+    EventType.LAST_WORDS: LastWordsPayload,
+    EventType.HUNTER_SHOT: HunterShotPayload,
+    EventType.IDIOT_REVEALED: IdiotRevealedPayload,
+    EventType.SHERIFF_CANDIDACY: SheriffCandidacyPayload,
+    EventType.SHERIFF_VOTE_CAST: SheriffVoteCastPayload,
+    EventType.SHERIFF_ELECTED: SheriffElectedPayload,
+    EventType.SHERIFF_DIRECTION_SET: SheriffDirectionSetPayload,
+    EventType.WOLF_SELF_DESTRUCT: WolfSelfDestructPayload,
+    EventType.BADGE_PASSED: BadgePassedPayload,
+}
+
+
 def _replace_player(
     players: tuple[Player, ...], seat: int, **updates: object
 ) -> tuple[Player, ...]:
@@ -221,12 +259,21 @@ def _actor(event: Event) -> int:
 
 def reduce(state: GameState, event: Event) -> GameState:
     """把单个事件应用到状态，返回新状态。唯一写路径。"""
+    expected = EVENT_PAYLOAD_TYPES.get(event.type)
+    if expected is None:
+        raise EngineInvariantError(f"未实现的事件类型：{event.type}")
+    if not isinstance(event.payload, expected):
+        raise EngineInvariantError(
+            f"事件 {event.type} 的 payload 类型不匹配："
+            f"期望 {expected.__name__}，实得 {type(event.payload).__name__}"
+        )
     updates = _reduce_dispatch(state, event)
     updates["state_version"] = state.state_version + 1
     return state.model_copy(update=updates)
 
 
 def _reduce_dispatch(state: GameState, event: Event) -> dict[str, object]:
+    # 各分支的 isinstance 与 reduce() 前置校验重复，保留仅为 mypy 类型收窄。
     p = event.payload
     t = event.type
 
@@ -401,7 +448,8 @@ def _reduce_dispatch(state: GameState, event: Event) -> dict[str, object]:
             updates["witch_poison"] = False
         return {"players": _replace_player(state.players, p.seat, **updates)}
 
-    # GAME_CREATED / GAME_STARTED 仅审计
+    # 前置校验保证 event.type 已映射且 payload 类型正确；至此必已命中上方某分支。
+    # 此兜底仅为类型完备性保留（不可达）。
     return {}
 
 
