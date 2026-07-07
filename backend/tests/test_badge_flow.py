@@ -103,3 +103,30 @@ def test_empty_claim_unchanged() -> None:
     res = step(st, Speak(actor_seat=1, content="普通发言"))
     assert res.rejection is None
     assert res.state.badge_flow_claims == {}
+
+
+def test_claims_exposed_publicly_in_observation() -> None:
+    from app.engine.observation import build_observation
+
+    st = _pk_state(badge_flow_claims={1: (3, 4)})
+    # 所有视角（含普通村民）都能看到公开声明
+    obs = build_observation(st, 5)
+    assert obs.badge_flow_claims == {1: (3, 4)}
+
+
+def test_full_games_with_claims_terminate() -> None:
+    from app.cli.bot import run_game
+    from app.engine.events import EventType
+
+    saw_claim = False
+    for seed in range(12):
+        cfg = build_preset("std_12_yn_hunter_guard").model_copy(update={"seed": seed})
+        final, events = run_game(cfg, game_id=f"bf{seed}")
+        assert final.phase == Phase.GAME_OVER
+        if any(
+            e.type == EventType.PLAYER_SPOKE and getattr(e.payload, "badge_flow", ())
+            for e in events
+        ):
+            saw_claim = True
+    # 12 个 seed 中至少一次真实报出警徽流（SHERIFF_PK 发生且 1/4 概率命中）
+    assert saw_claim
