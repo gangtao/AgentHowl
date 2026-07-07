@@ -89,6 +89,9 @@ class GameState(BaseModel):
     sheriff_confirmed: frozenset[int] = frozenset()  # withdraw 子阶段确认进度（游标）
     sheriff_speech_direction: str | None = None  # 警长方向 "LEFT"/"RIGHT"（事实，经事件写入）
 
+    badge_flow_claims: dict[int, tuple[int, ...]] = Field(default_factory=dict)
+    # speaker -> 最新警徽流声明（事实；结构已校验，真实性不校验）
+
 
 def player_at(state: GameState, seat: int) -> Player:
     for p in state.players:

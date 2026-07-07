@@ -39,8 +39,32 @@ class RandomBot:
         pl = player_at(state, seat)
 
         if ph in (Phase.VOTE_PK, Phase.SHERIFF_PK) and state.speech_idx < len(state.speech_order):
-            # PK 发言期：轮到的平票者发言
-            return Speak(actor_seat=seat, content="(bot-pk)")
+            # PK 发言期：轮到的平票者发言；警上 PK 以 1/4 概率附带合法警徽流声明
+            bf: tuple[int, ...] = ()
+            if (
+                ph == Phase.SHERIFF_PK
+                and rng.derive_int(
+                    seed=seed, purpose=f"bot:{seat}:bf", seq=state.state_version, modulo=4
+                )
+                == 0
+            ):
+                targets = [s for s in living_seats(state) if s != seat]
+                if targets:
+                    n_claim = 1 + rng.derive_int(
+                        seed=seed, purpose=f"bot:{seat}:bfn", seq=state.state_version, modulo=2
+                    )
+                    picks: list[int] = []
+                    for k in range(min(n_claim, len(targets))):
+                        idx = rng.derive_int(
+                            seed=seed,
+                            purpose=f"bot:{seat}:bf{k}",
+                            seq=state.state_version,
+                            modulo=len(targets),
+                        )
+                        if targets[idx] not in picks:
+                            picks.append(targets[idx])
+                    bf = tuple(picks)
+            return Speak(actor_seat=seat, content="(bot-pk)", badge_flow=bf)
 
         if ph == Phase.NIGHT_GUARD:
             targets = [s for s in living_seats(state) if s != pl.last_guard_target]

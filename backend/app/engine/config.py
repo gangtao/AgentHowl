@@ -81,6 +81,7 @@ class SheriffRule(BaseModel):
     vote_weight: float = 1.5
     election_before_first_death_announce: bool = True
     badge_flow_enabled: bool = True
+    badge_flow_max_length: int = 2  # 警徽流最多声明几夜（「一般留两夜」为约定，可配置）
     wolf_selfdestruct_eats_badge: bool = True
 
 

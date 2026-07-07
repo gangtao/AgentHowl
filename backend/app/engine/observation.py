@@ -27,6 +27,7 @@ class PlayerObservation(BaseModel):
     round: int
     seats: list[dict[str, Any]]
     sheriff_seat: int | None
+    badge_flow_claims: dict[int, tuple[int, ...]]  # 公开的警徽流声明（speaker -> 座位序列）
     private: dict[str, Any]
     available_actions: list[int]  # M1：当前是否轮到本人（空=否）；M2 换成工具名
 
@@ -81,6 +82,7 @@ def build_observation(state: GameState, seat: int) -> PlayerObservation:
         round=state.round,
         seats=_public_seats(state),
         sheriff_seat=state.sheriff_seat,
+        badge_flow_claims=dict(state.badge_flow_claims),
         private=private,
         available_actions=[seat] if seat in expected_actors(state) else [],
     )
