@@ -666,7 +666,9 @@ def _wolf_consensus(state: GameState) -> int | None:
     rule = state.config.wolf_kill_rule
 
     if rule == WolfKillRule.MAJORITY:
-        # 相对多数；空刀票(None)同票计数；任何并列（含与空刀票并列）-> 空刀
+        # 相对多数；空刀票(None)同票计数；任何并列（含与空刀票并列）-> 空刀。
+        # 注意：即使 allow_wolf_empty_knife=False（提案层已禁 skip），平票仍决策为
+        # None —— 与规格「意见不统一视为空刀」同性质，属预期行为。
         counts: dict[int | None, int] = {}
         for t in proposals.values():
             counts[t] = counts.get(t, 0) + 1
