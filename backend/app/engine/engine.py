@@ -208,6 +208,17 @@ def _validate(state: GameState, action: Action) -> RejectedReason | None:
             state.phase == Phase.DAY_SPEECH or pk_speaking
         ) and state.config.speech_order_rule == SpeechOrderRule.BIDDING:
             return RejectedReason.BIDDING_NOT_IMPLEMENTED
+        if action.badge_flow:
+            # 警徽流：仅 SHERIFF_PK 发言回合接受；只验结构，不验真实性/角色（悍跳合法）
+            sr = state.config.sheriff
+            if (
+                not (state.phase == Phase.SHERIFF_PK and pk_speaking)
+                or not sr.badge_flow_enabled
+                or len(action.badge_flow) > sr.badge_flow_max_length
+                or len(set(action.badge_flow)) != len(action.badge_flow)
+                or not all(_alive_target(state, s) for s in action.badge_flow)
+            ):
+                return RejectedReason.BADGE_FLOW_INVALID
         return None
     if isinstance(action, DayVote):
         if state.phase not in (Phase.VOTE, Phase.VOTE_PK):

@@ -373,7 +373,12 @@ def _reduce_dispatch(state: GameState, event: Event) -> dict[str, object]:
         return {"players": players}
 
     if t == EventType.PLAYER_SPOKE and isinstance(p, PlayerSpokePayload):
-        return {"speech_idx": state.speech_idx + 1}
+        spoke_upd: dict[str, object] = {"speech_idx": state.speech_idx + 1}
+        if p.badge_flow:
+            claims = dict(state.badge_flow_claims)
+            claims[_actor(event)] = p.badge_flow
+            spoke_upd["badge_flow_claims"] = claims
+        return spoke_upd
 
     if t == EventType.VOTE_CAST and isinstance(p, VoteCastPayload):
         votes = dict(state.votes)
