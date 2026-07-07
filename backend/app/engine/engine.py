@@ -963,7 +963,7 @@ def _advance_election(state: GameState) -> tuple[GameState, list[Event]]:
         state, e = _emit(
             state,
             EventType.PHASE_CHANGED,
-            PhaseChangedPayload(to=Phase.SHERIFF_PK),
+            PhaseChangedPayload(to=Phase.SHERIFF_PK, speech_order=tie),
             Visibility.PUBLIC,
         )
         return state, [e]
@@ -1155,9 +1155,12 @@ def _tally_and_continue(state: GameState) -> tuple[GameState, list[Event]]:
 
     # 平票
     if tie and state.tie_round == 0 and state.config.tie_rule.name.startswith("PK"):
-        # 进入 PK：平票者发言 + 其余人重投（Stage 1 简化为直接重投，PK 发言在 Stage 3 补）
+        # 进入 PK：平票者先发言（issue #5），耗尽后未平票者重投
         state, e = _emit(
-            state, EventType.PHASE_CHANGED, PhaseChangedPayload(to=Phase.VOTE_PK), Visibility.PUBLIC
+            state,
+            EventType.PHASE_CHANGED,
+            PhaseChangedPayload(to=Phase.VOTE_PK, speech_order=tie),
+            Visibility.PUBLIC,
         )
         events.append(e)
         state, e = _emit(
