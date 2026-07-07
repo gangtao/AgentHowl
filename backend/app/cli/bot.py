@@ -104,6 +104,21 @@ class RandomBot:
                 action_type=SheriffActionType.SET_SPEECH_DIRECTION,
                 direction=Direction.LEFT if left else Direction.RIGHT,
             )
+        if ph == Phase.SHERIFF_ELECTION and state.election_stage == "withdraw":
+            from app.engine.actions import SheriffAction, SheriffActionType
+
+            quit_race = (
+                rng.derive_int(
+                    seed=seed, purpose=f"bot:{seat}:withdraw", seq=state.state_version, modulo=8
+                )
+                == 0
+            )
+            return SheriffAction(
+                actor_seat=seat,
+                action_type=(
+                    SheriffActionType.WITHDRAW if quit_race else SheriffActionType.RUN_FOR_SHERIFF
+                ),
+            )
         if ph == Phase.SHERIFF_ELECTION and state.election_stage == "candidacy":
             running = (
                 rng.derive_int(

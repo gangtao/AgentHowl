@@ -184,6 +184,10 @@ class SheriffElectedPayload(EventPayload):
     seat: int | None  # None=警徽流失
 
 
+class SheriffWithdrewPayload(EventPayload):
+    seat: int
+
+
 class SheriffDirectionSetPayload(EventPayload):
     direction: str  # "LEFT" / "RIGHT"
 
@@ -198,8 +202,8 @@ class BadgePassedPayload(EventPayload):
     consumed_turn: bool = False  # True=玩家在遗言回合主动移交/撕徽，消耗其发言回合
 
 
-# EventType -> payload 类。预留类型（GAME_CREATED/GAME_STARTED/SHERIFF_WITHDREW/
-# SHERIFF_BADGE_LOST）有意缺席：未映射 = 未实现，被 reduce 到即抛错（fail-loud）。
+# EventType -> payload 类。预留类型（GAME_CREATED/GAME_STARTED/SHERIFF_BADGE_LOST）有意缺席：
+# 未映射 = 未实现，被 reduce 到即抛错（fail-loud）。
 EVENT_PAYLOAD_TYPES: dict[EventType, type[EventPayload]] = {
     EventType.ROLES_ASSIGNED: RolesAssignedPayload,
     EventType.ROUND_STARTED: RoundStartedPayload,
@@ -224,6 +228,7 @@ EVENT_PAYLOAD_TYPES: dict[EventType, type[EventPayload]] = {
     EventType.HUNTER_SHOT: HunterShotPayload,
     EventType.IDIOT_REVEALED: IdiotRevealedPayload,
     EventType.SHERIFF_CANDIDACY: SheriffCandidacyPayload,
+    EventType.SHERIFF_WITHDREW: SheriffWithdrewPayload,
     EventType.SHERIFF_VOTE_CAST: SheriffVoteCastPayload,
     EventType.SHERIFF_ELECTED: SheriffElectedPayload,
     EventType.SHERIFF_DIRECTION_SET: SheriffDirectionSetPayload,
@@ -410,6 +415,13 @@ def _reduce_dispatch(state: GameState, event: Event) -> dict[str, object]:
         if p.running and p.seat not in candidates:
             candidates = (*candidates, p.seat)
         return {"sheriff_declared": declared, "sheriff_candidates": candidates}
+
+    if t == EventType.SHERIFF_WITHDREW and isinstance(p, SheriffWithdrewPayload):
+        candidates = tuple(s for s in state.sheriff_candidates if s != p.seat)
+        return {
+            "sheriff_candidates": candidates,
+            "sheriff_withdrawn": state.sheriff_withdrawn | {p.seat},
+        }
 
     if t == EventType.SHERIFF_VOTE_CAST and isinstance(p, SheriffVoteCastPayload):
         sv = dict(state.sheriff_votes)

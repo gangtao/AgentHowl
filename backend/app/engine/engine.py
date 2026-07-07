@@ -53,6 +53,7 @@ from app.engine.events import (
     SheriffDirectionSetPayload,
     SheriffElectedPayload,
     SheriffVoteCastPayload,
+    SheriffWithdrewPayload,
     Visibility,
     VoteCastPayload,
     VoteResultPayload,
@@ -342,6 +343,11 @@ def _validate_sheriff(state: GameState, a: SheriffAction) -> RejectedReason | No
     # 将死警长在其 LAST_WORDS 回合可用 pass_badge/tear_badge，此时 actor 已死亡，需豁免。
     if not pl.alive and state.phase != Phase.LAST_WORDS:
         return RejectedReason.DEAD_ACTOR
+    # 提前检查退水者投票拒绝，比 NOT_YOUR_TURN 优先级高
+    if state.phase in (Phase.SHERIFF_ELECTION, Phase.SHERIFF_PK):
+        at = a.action_type
+        if at == SheriffActionType.VOTE_SHERIFF and a.actor_seat in state.sheriff_withdrawn:
+            return RejectedReason.CANNOT_VOTE
     if a.actor_seat not in expected_actors(state):
         return RejectedReason.NOT_YOUR_TURN
     at = a.action_type
@@ -356,6 +362,12 @@ def _validate_sheriff(state: GameState, a: SheriffAction) -> RejectedReason | No
     if state.phase == Phase.SHERIFF_ELECTION and state.election_stage == "candidacy":
         if at not in (SheriffActionType.RUN_FOR_SHERIFF, SheriffActionType.WITHDRAW):
             return RejectedReason.WRONG_PHASE
+        return None
+    if state.phase == Phase.SHERIFF_ELECTION and state.election_stage == "withdraw":
+        if at not in (SheriffActionType.RUN_FOR_SHERIFF, SheriffActionType.WITHDRAW):
+            return RejectedReason.WRONG_PHASE
+        if a.actor_seat not in state.sheriff_candidates:
+            return RejectedReason.NOT_A_CANDIDATE
         return None
     if state.phase == Phase.SHERIFF_ELECTION and state.election_stage == "direction":
         if at != SheriffActionType.SET_SPEECH_DIRECTION:
@@ -484,6 +496,26 @@ def _after_self_destruct(state: GameState) -> tuple[GameState, list[Event]]:
 def _apply_sheriff(state: GameState, a: SheriffAction) -> tuple[GameState, list[Event]]:
     at = a.action_type
     if at in (SheriffActionType.RUN_FOR_SHERIFF, SheriffActionType.WITHDRAW):
+        if state.election_stage == "withdraw":
+            # 退水确认子阶段：WITHDRAW=退水（事件写事实），RUN=坚持竞选（公开再确认）
+            if at == SheriffActionType.WITHDRAW:
+                s, e = _emit(
+                    state,
+                    EventType.SHERIFF_WITHDREW,
+                    SheriffWithdrewPayload(seat=a.actor_seat),
+                    Visibility.PUBLIC,
+                    actor=a.actor_seat,
+                )
+            else:
+                s, e = _emit(
+                    state,
+                    EventType.SHERIFF_CANDIDACY,
+                    SheriffCandidacyPayload(seat=a.actor_seat, running=True),
+                    Visibility.PUBLIC,
+                    actor=a.actor_seat,
+                )
+            s = s.model_copy(update={"sheriff_confirmed": s.sheriff_confirmed | {a.actor_seat}})
+            return s, [e]
         running = at == SheriffActionType.RUN_FOR_SHERIFF
         s, e = _emit(
             state,
@@ -950,8 +982,17 @@ def _advance_election(state: GameState) -> tuple[GameState, list[Event]]:
         # 全员声明完毕
         if not state.sheriff_candidates:
             return _finish_election(state, elected=None, events=events)
+        # 进入退水确认子阶段
+        state = state.model_copy(
+            update={"election_stage": "withdraw", "sheriff_confirmed": frozenset()}
+        )
+        return state, events
+    if state.election_stage == "withdraw":
+        # 全员确认完毕：全退水 -> 警徽流失；否则进入警下投票
+        if not state.sheriff_candidates:
+            return _finish_election(state, elected=None, events=events)
         state = state.model_copy(update={"election_stage": "vote", "sheriff_votes": {}})
-        return state, events  # 进入 vote 阶段，等待警下投票
+        return state, events
     # vote 阶段收尾
     weights = {s: 1.0 for s in living_seats(state)}
     elected, tie = count_votes(state.sheriff_votes, weights)

@@ -120,6 +120,9 @@ def expected_actors(state: GameState) -> set[int]:
     if ph == Phase.SHERIFF_ELECTION:
         if state.election_stage == "candidacy":
             return {p.seat for p in living(state) if p.seat not in state.sheriff_declared}
+        if state.election_stage == "withdraw":
+            # 退水确认：尚未表态的候选人
+            return {s for s in state.sheriff_candidates if s not in state.sheriff_confirmed}
         if state.election_stage == "vote":
             return {
                 p.seat
@@ -127,6 +130,7 @@ def expected_actors(state: GameState) -> set[int]:
                 if p.can_vote
                 and p.seat not in state.sheriff_candidates
                 and p.seat not in state.sheriff_votes
+                and p.seat not in state.sheriff_withdrawn
             }
         if state.election_stage == "direction":
             return {state.sheriff_seat} if state.sheriff_seat is not None else set()
@@ -141,6 +145,7 @@ def expected_actors(state: GameState) -> set[int]:
             if p.can_vote
             and p.seat not in state.sheriff_candidates
             and p.seat not in state.sheriff_votes
+            and p.seat not in state.sheriff_withdrawn
         }
 
     # 其余为系统阶段
