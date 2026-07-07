@@ -32,6 +32,7 @@ from app.engine.config import (
 from app.engine.events import (
     BadgePassedPayload,
     DeathAnnouncedPayload,
+    EngineInvariantError,
     Event,
     EventPayload,
     EventType,
@@ -80,10 +81,6 @@ from app.engine.state import (
 )
 
 _MAX_SYSTEM_STEPS = 10_000
-
-
-class EngineInvariantError(RuntimeError):
-    """引擎进入了不可能状态；绝不静默继续。"""
 
 
 class StepResult(BaseModel):
