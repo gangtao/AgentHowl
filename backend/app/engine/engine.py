@@ -515,7 +515,9 @@ def _apply_sheriff(state: GameState, a: SheriffAction) -> tuple[GameState, list[
         # 方向已定 -> 游标推进到 announce，由 _advance_election 续接死讯公布
         s = s.model_copy(update={"election_stage": "announce"})
         return s, [e]
-    # vote_sheriff
+    if at != SheriffActionType.VOTE_SHERIFF:
+        # 校验层应已拦截；此守卫防止未来枚举增长时静默误分类为投票
+        raise EngineInvariantError(f"未处理的警长行动类型：{at}")
     s, e = _emit(
         state,
         EventType.SHERIFF_VOTE_CAST,

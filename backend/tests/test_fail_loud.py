@@ -79,3 +79,23 @@ def test_exception_reexported_from_engine() -> None:
     from app.engine.engine import EngineInvariantError as FromEngine
 
     assert FromEngine is EngineInvariantError
+
+
+def test_apply_sheriff_vote_positive_path() -> None:
+    # 正例：VOTE_SHERIFF 落入兜底并正常发射 SHERIFF_VOTE_CAST
+    from app.engine.actions import SheriffAction, SheriffActionType
+    from app.engine.engine import _apply_sheriff
+
+    st = _state().model_copy(
+        update={
+            "phase": Phase.SHERIFF_ELECTION,
+            "election_stage": "vote",
+            "sheriff_candidates": (1,),
+        }
+    )
+    new, events = _apply_sheriff(
+        st,
+        SheriffAction(actor_seat=2, action_type=SheriffActionType.VOTE_SHERIFF, target_seat=1),
+    )
+    assert [e.type for e in events] == [EventType.SHERIFF_VOTE_CAST]
+    assert new.sheriff_votes == {2: 1}
