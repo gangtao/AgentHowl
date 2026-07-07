@@ -25,6 +25,7 @@ from app.engine.config import (
     GameConfig,
     RoleType,
     SpeechOrderRule,
+    WolfKillRule,
     faction_of,
     validate_config,
 )
@@ -660,7 +661,34 @@ def advance(state: GameState) -> tuple[GameState, list[Event]]:
 
 
 def _wolf_consensus(state: GameState) -> int | None:
-    vals = set(state.wolf_proposals.values())
+    """按 config.wolf_kill_rule 从狼队提案决定刀口（None=空刀）。"""
+    proposals = state.wolf_proposals
+    rule = state.config.wolf_kill_rule
+
+    if rule == WolfKillRule.MAJORITY:
+        # 相对多数；空刀票(None)同票计数；任何并列（含与空刀票并列）-> 空刀
+        counts: dict[int | None, int] = {}
+        for t in proposals.values():
+            counts[t] = counts.get(t, 0) + 1
+        if not counts:
+            return None
+        top = max(counts.values())
+        leaders = [t for t in counts if counts[t] == top]
+        if len(leaders) == 1 and leaders[0] is not None:
+            return leaders[0]
+        return None
+
+    if rule == WolfKillRule.RANDOM_PROPOSAL:
+        # 非 None 提案多重集（同目标多票权重更高），排序后确定性抽取
+        pool = sorted(t for t in proposals.values() if t is not None)
+        if not pool:
+            return None
+        seed = state.config.seed if state.config.seed is not None else 0
+        idx = rng.derive_int(seed=seed, purpose="wolf_kill", seq=state.rng_state, modulo=len(pool))
+        return pool[idx]
+
+    # UNANIMOUS_OR_NO_KILL（默认）：全员一致且非 None 才刀
+    vals = set(proposals.values())
     if len(vals) == 1 and None not in vals:
         return next(iter(vals))
     return None
