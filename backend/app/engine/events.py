@@ -273,6 +273,7 @@ def reduce(state: GameState, event: Event) -> GameState:
 
 
 def _reduce_dispatch(state: GameState, event: Event) -> dict[str, object]:
+    # 各分支的 isinstance 与 reduce() 前置校验重复，保留仅为 mypy 类型收窄。
     p = event.payload
     t = event.type
 
