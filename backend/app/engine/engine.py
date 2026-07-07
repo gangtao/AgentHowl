@@ -197,13 +197,15 @@ def _validate(state: GameState, action: Action) -> RejectedReason | None:
     if isinstance(action, NightAction):
         return _validate_night(state, pl, action)
     if isinstance(action, Speak):
-        # 发言仅在白天发言或遗言阶段合法（内容对引擎不透明）
-        if state.phase not in (Phase.DAY_SPEECH, Phase.LAST_WORDS):
+        # 发言合法阶段：白天发言、遗言，以及 PK 发言期（队列未耗尽）
+        pk_speaking = state.phase in (Phase.VOTE_PK, Phase.SHERIFF_PK) and (
+            state.speech_idx < len(state.speech_order)
+        )
+        if state.phase not in (Phase.DAY_SPEECH, Phase.LAST_WORDS) and not pk_speaking:
             return RejectedReason.WRONG_PHASE
         if (
-            state.phase == Phase.DAY_SPEECH
-            and state.config.speech_order_rule == SpeechOrderRule.BIDDING
-        ):
+            state.phase == Phase.DAY_SPEECH or pk_speaking
+        ) and state.config.speech_order_rule == SpeechOrderRule.BIDDING:
             return RejectedReason.BIDDING_NOT_IMPLEMENTED
         return None
     if isinstance(action, DayVote):

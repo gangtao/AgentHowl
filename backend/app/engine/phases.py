@@ -100,6 +100,9 @@ def expected_actors(state: GameState) -> set[int]:
     if ph == Phase.VOTE:
         return {p.seat for p in living(state) if p.can_vote and p.seat not in state.votes}
     if ph == Phase.VOTE_PK:
+        # PK 发言先行：平票者按队列依次发言，耗尽后才轮到未平票投票人
+        if state.speech_idx < len(state.speech_order):
+            return {state.speech_order[state.speech_idx]}
         return {
             p.seat
             for p in living(state)
@@ -129,6 +132,9 @@ def expected_actors(state: GameState) -> set[int]:
             return {state.sheriff_seat} if state.sheriff_seat is not None else set()
         return set()
     if ph == Phase.SHERIFF_PK:
+        # PK 发言先行（同 VOTE_PK）
+        if state.speech_idx < len(state.speech_order):
+            return {state.speech_order[state.speech_idx]}
         return {
             p.seat
             for p in living(state)
