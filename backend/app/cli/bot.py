@@ -38,6 +38,10 @@ class RandomBot:
         ph = state.phase
         pl = player_at(state, seat)
 
+        if ph in (Phase.VOTE_PK, Phase.SHERIFF_PK) and state.speech_idx < len(state.speech_order):
+            # PK 发言期：轮到的平票者发言
+            return Speak(actor_seat=seat, content="(bot-pk)")
+
         if ph == Phase.NIGHT_GUARD:
             targets = [s for s in living_seats(state) if s != pl.last_guard_target]
             return NightAction(
