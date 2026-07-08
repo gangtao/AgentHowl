@@ -488,19 +488,10 @@ def _after_self_destruct(state: GameState) -> tuple[GameState, list[Event]]:
             return s, [*events, e]
         state, ev0 = _after_day_death(state)
         return state, [*events, *ev0]
-    # 竞选期自爆：补公布首夜死讯并继续（含猎人/遗言）
-    state = state.model_copy(update={"election_stage": ""})
+    # 竞选期自爆：补公布首夜死讯并继续（含猎人/遗言绕行）；skip_day 游标保证
+    # 无论同步还是绕行续接，最终都在 _enter_day_speech 漏斗处跳过当天直接入夜。
+    state = state.model_copy(update={"election_stage": "", "skip_day": True})
     state, ev = _announce_and_continue_night(state, state.night_deaths, events)
-    # _announce_and_continue_night 会进入 DAY_SPEECH；自爆要求跳过白天 -> 强制推进到入夜
-    if state.phase == Phase.DAY_SPEECH:
-        winner = check_win(state)
-        if winner is not None:
-            state, e = _emit(
-                state, EventType.GAME_OVER, GameOverPayload(winner=winner), Visibility.PUBLIC
-            )
-            return state, [*ev, e]
-        state, ev2 = _after_day_death(state)
-        return state, [*ev, *ev2]
     return state, ev
 
 
@@ -1140,6 +1131,10 @@ def _speech_order(state: GameState) -> tuple[int, ...]:
 
 
 def _enter_day_speech(state: GameState) -> tuple[GameState, list[Event]]:
+    if state.skip_day:
+        # 竞选期自爆的「立即天黑」：跳过当天发言/投票（胜负判定与入夜由 _after_day_death 处理）
+        state = state.model_copy(update={"skip_day": False})
+        return _after_day_death(state)
     order = _speech_order(state)
     s, e = _emit(
         state,
