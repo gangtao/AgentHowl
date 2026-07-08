@@ -50,3 +50,4 @@ def test_reduce_events_equals_live_state(preset: str, seed: int) -> None:
     assert [p.alive for p in replayed.players] == [p.alive for p in final.players]
     assert [p.role for p in replayed.players] == [p.role for p in final.players]
     assert replayed.sheriff_seat == final.sheriff_seat
+    assert replayed.election_stage == final.election_stage
