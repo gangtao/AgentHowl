@@ -1,7 +1,7 @@
 """确定性随机派生。
 
 引擎不持有随机对象；每次抽取都是 (seed, purpose, seq) 的纯函数（哈希派生）。
-GameState.rng_state 只是一个递增计数器（seq 的来源），因此重放天然复现。
+引擎抽取以 GameState.state_version 为 seq（每事件 +1，事件推导），因此重放天然复现。
 """
 
 from __future__ import annotations

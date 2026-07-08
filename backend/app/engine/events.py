@@ -1,7 +1,7 @@
 """事件溯源：类型化 payload、Event、reduce。
 
 reduce 是唯一写路径。state = reduce_all(initial, events)。
-每个事件应用后 state_version += 1，rng_state 由使用随机的事件在 payload 里带出新值。
+每个事件应用后 state_version += 1（引擎随机抽取以它为 seq）。
 """
 
 from __future__ import annotations
@@ -72,7 +72,6 @@ class EventPayload(BaseModel):
 class RolesAssignedPayload(EventPayload):
     # 座位->角色（GM_ONLY）；用 list[tuple] 以便确定性序列化
     assignments: tuple[tuple[int, RoleType], ...]
-    new_rng_state: int
 
 
 class RoundStartedPayload(EventPayload):
@@ -306,7 +305,7 @@ def _reduce_dispatch(state: GameState, event: Event) -> dict[str, object]:
             )
             for pl in state.players
         )
-        return {"players": players, "rng_state": p.new_rng_state}
+        return {"players": players}
 
     if t == EventType.ROUND_STARTED and isinstance(p, RoundStartedPayload):
         # 新的一夜：清空夜晚收集与投票暂存

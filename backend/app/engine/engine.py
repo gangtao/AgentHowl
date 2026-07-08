@@ -146,7 +146,7 @@ def create_game(config: GameConfig, game_id: str) -> StepResult:
     state, e = _emit(
         state,
         EventType.ROLES_ASSIGNED,
-        RolesAssignedPayload(assignments=assignments, new_rng_state=state.rng_state + 1),
+        RolesAssignedPayload(assignments=assignments),
         Visibility.GM_ONLY,
     )
     events.append(e)
@@ -726,7 +726,9 @@ def _wolf_consensus(state: GameState) -> int | None:
         if not pool:
             return None
         seed = state.config.seed if state.config.seed is not None else 0
-        idx = rng.derive_int(seed=seed, purpose="wolf_kill", seq=state.rng_state, modulo=len(pool))
+        idx = rng.derive_int(
+            seed=seed, purpose="wolf_kill", seq=state.state_version, modulo=len(pool)
+        )
         return pool[idx]
 
     # UNANIMOUS_OR_NO_KILL（默认）：全员一致且非 None 才刀
@@ -1249,7 +1251,7 @@ def _tally_and_continue(state: GameState) -> tuple[GameState, list[Event]]:
     # 再平票或 NO_EXILE：无人出局
     if state.config.tie_rule.name == "PK_THEN_RANDOM" and tie:
         seed = state.config.seed if state.config.seed is not None else 0
-        idx = rng.derive_int(seed=seed, purpose="tie", seq=state.rng_state, modulo=len(tie))
+        idx = rng.derive_int(seed=seed, purpose="tie", seq=state.state_version, modulo=len(tie))
         chosen = sorted(tie)[idx]
         state, e = _emit(
             state, EventType.PHASE_CHANGED, PhaseChangedPayload(to=Phase.EXILE), Visibility.PUBLIC

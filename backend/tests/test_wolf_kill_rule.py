@@ -78,7 +78,7 @@ def test_random_proposal_weighted_and_deterministic() -> None:
     st = _wolf_state({0: 4, 1: 4, 2: 7}, rule, seed=42)
     # 池 = sorted([4, 4, 7])；与实现同公式独立计算期望值，钉死派生契约
     pool = [4, 4, 7]
-    idx = rng.derive_int(seed=42, purpose="wolf_kill", seq=st.rng_state, modulo=3)
+    idx = rng.derive_int(seed=42, purpose="wolf_kill", seq=st.state_version, modulo=3)
     assert _wolf_consensus(st) == pool[idx]
     # 同 seed 可复现
     assert _wolf_consensus(st) == _wolf_consensus(st)
