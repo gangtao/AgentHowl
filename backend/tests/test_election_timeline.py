@@ -177,3 +177,28 @@ def test_badge_lost_closes_stage_marker() -> None:
     p = events[i + 1].payload
     assert isinstance(p, ElectionStageChangedPayload)
     assert p.stage == ElectionStage.NONE
+
+
+def test_pk_election_timeline_covered() -> None:
+    from app.cli.bot import run_game
+    from app.engine.events import PhaseChangedPayload
+
+    # 终审 Minor 加固：新时间线网格未必命中 SHERIFF_PK——确定性搜索一个进入
+    # 警长 PK 的对局，钉死 PK 路径同样满足时间线语法（PK 不发专属标记，stage 保持 vote）
+    for preset in PRESETS:
+        for seed in range(1, 80):
+            cfg = build_preset(preset).model_copy(update={"seed": seed})
+            _, events = run_game(cfg, "g")
+            entered_pk = any(
+                e.type == EventType.PHASE_CHANGED
+                and isinstance(e.payload, PhaseChangedPayload)
+                and e.payload.to == Phase.SHERIFF_PK
+                for e in events
+            )
+            if entered_pk:
+                seq = _stage_sequence(events)
+                assert seq[0] == "candidacy" and seq[-1] == ""
+                for a, b in zip(seq, seq[1:], strict=False):
+                    assert b in _VALID_NEXT[a], f"{preset}/{seed}: {a}→{b} 非法（seq={seq}）"
+                return
+    raise AssertionError("搜索网格内无 SHERIFF_PK 对局；扩大 seed 范围")
