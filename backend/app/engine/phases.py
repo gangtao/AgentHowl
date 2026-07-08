@@ -27,6 +27,17 @@ class Phase(StrEnum):
     GAME_OVER = "GAME_OVER"
 
 
+class ElectionStage(StrEnum):
+    """警长竞选子阶段（issue #17：经 ELECTION_STAGE_CHANGED 事件写入 state.election_stage）。"""
+
+    NONE = ""  # 竞选机器未启动/已结束（显式收尾标记）
+    CANDIDACY = "candidacy"
+    WITHDRAW = "withdraw"
+    VOTE = "vote"
+    DIRECTION = "direction"
+    ANNOUNCE = "announce"
+
+
 from app.engine.config import GameConfig, RoleType  # noqa: E402
 from app.engine.state import (  # noqa: E402
     GameState,
