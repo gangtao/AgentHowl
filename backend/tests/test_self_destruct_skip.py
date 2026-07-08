@@ -124,3 +124,39 @@ def test_day_selfdestruct_unchanged_and_flag_untouched() -> None:
     assert res.rejection is None
     assert res.state.round == 3
     assert res.state.skip_day is False
+
+
+def test_direction_stage_ignores_stale_speech_order() -> None:
+    # issue #15 锁定：方向决策子阶段不消费残留发言队列
+    st = _election_state(
+        election_stage="direction",
+        sheriff_seat=2,
+        speech_order=(1, 2),
+        speech_idx=0,
+    )
+    assert expected_actors(st) == {2}
+
+
+def test_full_games_bot_election_selfdestruct_occurs() -> None:
+    from app.cli.bot import run_game
+
+    saw_election_sd = False
+    for seed in range(30):
+        cfg = build_preset("std_12_yn_hunter_guard").model_copy(update={"seed": seed})
+        final, events = run_game(cfg, game_id=f"sd{seed}")
+        assert final.phase == Phase.GAME_OVER
+        # 自爆事件出现且其时点在首个 DAY_SPEECH 之前 => 竞选期自爆被真实触达
+        first_day = next(
+            (
+                e.seq
+                for e in events
+                if e.type == EventType.PHASE_CHANGED
+                and isinstance(e.payload, PhaseChangedPayload)
+                and e.payload.to == Phase.DAY_SPEECH
+            ),
+            None,
+        )
+        for e in events:
+            if e.type == EventType.WOLF_SELF_DESTRUCT and (first_day is None or e.seq < first_day):
+                saw_election_sd = True
+    assert saw_election_sd

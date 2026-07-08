@@ -38,6 +38,18 @@ class RandomBot:
         ph = state.phase
         pl = player_at(state, seat)
 
+        if (
+            ph in (Phase.SHERIFF_ELECTION, Phase.SHERIFF_PK)
+            and pl.alive
+            and pl.faction == Faction.WOLF
+            and rng.derive_int(
+                seed=seed, purpose=f"bot:{seat}:sd_elec", seq=state.state_version, modulo=24
+            )
+            == 0
+        ):
+            # 竞选/警上 PK 阶段偶发自爆（issue #15 覆盖；issue #8 的 skip_day 路径被扫描真实触达）
+            return SelfDestruct(actor_seat=seat)
+
         if ph in (Phase.VOTE_PK, Phase.SHERIFF_PK) and state.speech_idx < len(state.speech_order):
             # PK 发言期：轮到的平票者发言；警上 PK 以 1/4 概率附带合法警徽流声明
             bf: tuple[int, ...] = ()
