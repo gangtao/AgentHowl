@@ -184,6 +184,18 @@ class SheriffElectedPayload(EventPayload):
     seat: int | None  # None=警徽流失
 
 
+class BadgeLostReason(StrEnum):
+    NO_CANDIDATES = "NO_CANDIDATES"  # 无人上警
+    ALL_WITHDREW = "ALL_WITHDREW"  # 候选人全员退水
+    NO_VOTERS = "NO_VOTERS"  # 全员上警，无警下投票人（issue #9 裁决）
+    TIE_AGAIN = "TIE_AGAIN"  # PK 再平票
+    SELF_DESTRUCT = "SELF_DESTRUCT"  # 竞选期狼人自爆吞警徽
+
+
+class SheriffBadgeLostPayload(EventPayload):
+    reason: str  # BadgeLostReason 的 .value
+
+
 class SheriffWithdrewPayload(EventPayload):
     seat: int
 
@@ -202,7 +214,7 @@ class BadgePassedPayload(EventPayload):
     consumed_turn: bool = False  # True=玩家在遗言回合主动移交/撕徽，消耗其发言回合
 
 
-# EventType -> payload 类。预留类型（GAME_CREATED/GAME_STARTED/SHERIFF_BADGE_LOST）有意缺席：
+# EventType -> payload 类。预留类型（GAME_CREATED/GAME_STARTED）有意缺席：
 # 未映射 = 未实现，被 reduce 到即抛错（fail-loud）。
 EVENT_PAYLOAD_TYPES: dict[EventType, type[EventPayload]] = {
     EventType.ROLES_ASSIGNED: RolesAssignedPayload,
@@ -231,6 +243,7 @@ EVENT_PAYLOAD_TYPES: dict[EventType, type[EventPayload]] = {
     EventType.SHERIFF_WITHDREW: SheriffWithdrewPayload,
     EventType.SHERIFF_VOTE_CAST: SheriffVoteCastPayload,
     EventType.SHERIFF_ELECTED: SheriffElectedPayload,
+    EventType.SHERIFF_BADGE_LOST: SheriffBadgeLostPayload,
     EventType.SHERIFF_DIRECTION_SET: SheriffDirectionSetPayload,
     EventType.WOLF_SELF_DESTRUCT: WolfSelfDestructPayload,
     EventType.BADGE_PASSED: BadgePassedPayload,
@@ -442,6 +455,13 @@ def _reduce_dispatch(state: GameState, event: Event) -> dict[str, object]:
         if p.seat is not None:
             players = _replace_player(players, p.seat, is_sheriff=True)
         return {"sheriff_seat": p.seat, "players": players}
+
+    if t == EventType.SHERIFF_BADGE_LOST and isinstance(p, SheriffBadgeLostPayload):
+        # 警徽流失：剥离在任者（若有）并置空（issue #19 全化语义）
+        players = state.players
+        if state.sheriff_seat is not None:
+            players = _replace_player(players, state.sheriff_seat, is_sheriff=False)
+        return {"sheriff_seat": None, "players": players}
 
     if t == EventType.SHERIFF_DIRECTION_SET and isinstance(p, SheriffDirectionSetPayload):
         return {"sheriff_speech_direction": p.direction}
