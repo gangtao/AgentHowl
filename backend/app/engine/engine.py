@@ -33,6 +33,7 @@ from app.engine.events import (
     BadgeLostReason,
     BadgePassedPayload,
     DeathAnnouncedPayload,
+    ElectionStageChangedPayload,
     EngineInvariantError,
     Event,
     EventPayload,
@@ -68,6 +69,7 @@ from app.engine.events import (
     reduce,
 )
 from app.engine.phases import (
+    ElectionStage,
     Phase,
     expected_actors,
     next_night_phase,
@@ -460,7 +462,6 @@ def _apply_self_destruct(state: GameState, action: SelfDestruct) -> tuple[GameSt
         )
         and state.config.sheriff.wolf_selfdestruct_eats_badge
     ):
-        s = s.model_copy(update={"election_stage": ""})
         s, e2 = _emit(
             s,
             EventType.SHERIFF_BADGE_LOST,
@@ -495,7 +496,14 @@ def _after_self_destruct(state: GameState) -> tuple[GameState, list[Event]]:
         return state, [*events, *ev0]
     # 竞选期自爆：补公布首夜死讯并继续（含猎人/遗言绕行）；skip_day 游标保证
     # 无论同步还是绕行续接，最终都在 _enter_day_speech 漏斗处跳过当天直接入夜。
-    state = state.model_copy(update={"election_stage": "", "skip_day": True})
+    state, e = _emit(
+        state,
+        EventType.ELECTION_STAGE_CHANGED,
+        ElectionStageChangedPayload(stage=ElectionStage.NONE),
+        Visibility.PUBLIC,
+    )
+    events.append(e)
+    state = state.model_copy(update={"skip_day": True})
     state, ev = _announce_and_continue_night(state, state.night_deaths, events)
     return state, ev
 
@@ -553,9 +561,14 @@ def _apply_sheriff(state: GameState, a: SheriffAction) -> tuple[GameState, list[
             Visibility.PUBLIC,
             actor=a.actor_seat,
         )
-        # 方向已定 -> 游标推进到 announce，由 _advance_election 续接死讯公布
-        s = s.model_copy(update={"election_stage": "announce"})
-        return s, [e]
+        # 方向已定 -> 子阶段推进到 announce（经事件），由 _advance_election 续接死讯公布
+        s, e2 = _emit(
+            s,
+            EventType.ELECTION_STAGE_CHANGED,
+            ElectionStageChangedPayload(stage=ElectionStage.ANNOUNCE),
+            Visibility.PUBLIC,
+        )
+        return s, [e, e2]
     if at != SheriffActionType.VOTE_SHERIFF:
         # 校验层应已拦截；此守卫防止未来枚举增长时静默误分类为投票
         raise EngineInvariantError(f"未处理的警长行动类型：{at}")
@@ -929,14 +942,20 @@ def _resolve_night_and_continue(state: GameState) -> tuple[GameState, list[Event
         and state.config.sheriff.enabled
         and state.config.sheriff.election_before_first_death_announce
     ):
-        state = state.model_copy(update={"night_deaths": ordered, "election_stage": "candidacy"})
+        state = state.model_copy(update={"night_deaths": ordered})
         state, e = _emit(
             state,
             EventType.PHASE_CHANGED,
             PhaseChangedPayload(to=Phase.SHERIFF_ELECTION),
             Visibility.PUBLIC,
         )
-        return state, [*events, e]
+        state, e2 = _emit(
+            state,
+            EventType.ELECTION_STAGE_CHANGED,
+            ElectionStageChangedPayload(stage=ElectionStage.CANDIDACY),
+            Visibility.PUBLIC,
+        )
+        return state, [*events, e, e2]
 
     return _announce_and_continue_night(state, ordered, events)
 
@@ -985,16 +1004,27 @@ def _advance_election(state: GameState) -> tuple[GameState, list[Event]]:
         # 方向子阶段必有存活警长为行动者；到达此处说明不变量被破坏
         raise EngineInvariantError("方向决策阶段不应无行动者")
     if state.election_stage == "announce":
-        state = state.model_copy(update={"election_stage": ""})
+        state, e = _emit(
+            state,
+            EventType.ELECTION_STAGE_CHANGED,
+            ElectionStageChangedPayload(stage=ElectionStage.NONE),
+            Visibility.PUBLIC,
+        )
+        events.append(e)
         return _announce_and_continue_night(state, state.night_deaths, events)
     if state.election_stage == "candidacy":
         # 全员声明完毕
         if not state.sheriff_candidates:
             return _lose_badge(state, BadgeLostReason.NO_CANDIDATES, events)
-        # 进入退水确认子阶段
-        state = state.model_copy(
-            update={"election_stage": "withdraw", "sheriff_confirmed": frozenset()}
+        # 进入退水确认子阶段（confirmed 是游标，保持 model_copy）
+        state, e = _emit(
+            state,
+            EventType.ELECTION_STAGE_CHANGED,
+            ElectionStageChangedPayload(stage=ElectionStage.WITHDRAW),
+            Visibility.PUBLIC,
         )
+        events.append(e)
+        state = state.model_copy(update={"sheriff_confirmed": frozenset()})
         return state, events
     if state.election_stage == "withdraw":
         if not state.sheriff_candidates:
@@ -1009,7 +1039,14 @@ def _advance_election(state: GameState) -> tuple[GameState, list[Event]]:
         if not voters:
             # 全员上警：无警下投票人 -> 警徽流失，不进入空投票阶段（issue #9 裁决）
             return _lose_badge(state, BadgeLostReason.NO_VOTERS, events)
-        state = state.model_copy(update={"election_stage": "vote", "sheriff_votes": {}})
+        state, e = _emit(
+            state,
+            EventType.ELECTION_STAGE_CHANGED,
+            ElectionStageChangedPayload(stage=ElectionStage.VOTE),
+            Visibility.PUBLIC,
+        )
+        events.append(e)
+        state = state.model_copy(update={"sheriff_votes": {}})
         return state, events
     # vote 阶段收尾
     weights = {s: 1.0 for s in living_seats(state)}
@@ -1041,7 +1078,13 @@ def _lose_badge(
         Visibility.PUBLIC,
     )
     events.append(e)
-    state = state.model_copy(update={"election_stage": ""})
+    state, e2 = _emit(
+        state,
+        EventType.ELECTION_STAGE_CHANGED,
+        ElectionStageChangedPayload(stage=ElectionStage.NONE),
+        Visibility.PUBLIC,
+    )
+    events.append(e2)
     return _announce_and_continue_night(state, state.night_deaths, events)
 
 
@@ -1062,9 +1105,21 @@ def _finish_election(
                 Visibility.PUBLIC,
             )
             events.append(e2)
-        state = state.model_copy(update={"election_stage": "direction"})
+        state, e3 = _emit(
+            state,
+            EventType.ELECTION_STAGE_CHANGED,
+            ElectionStageChangedPayload(stage=ElectionStage.DIRECTION),
+            Visibility.PUBLIC,
+        )
+        events.append(e3)
         return state, events
-    state = state.model_copy(update={"election_stage": ""})
+    state, e3 = _emit(
+        state,
+        EventType.ELECTION_STAGE_CHANGED,
+        ElectionStageChangedPayload(stage=ElectionStage.NONE),
+        Visibility.PUBLIC,
+    )
+    events.append(e3)
     return _announce_and_continue_night(state, state.night_deaths, events)
 
 

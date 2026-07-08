@@ -82,8 +82,8 @@ class GameState(BaseModel):
     sheriff_declared: frozenset[int] = frozenset()
     sheriff_votes: dict[int, int | None] = Field(default_factory=dict)
     election_stage: str = (
-        ""  # ""/"candidacy"/"withdraw"/"vote"/"direction"/"announce"
-        # （PK 由 phase==SHERIFF_PK 区分）
+        ""  # 事实：经 ELECTION_STAGE_CHANGED 事件写入（issue #17）；
+        # 值域见 phases.ElectionStage（PK 由 phase==SHERIFF_PK 区分）
     )
     sheriff_withdrawn: frozenset[int] = frozenset()  # 退水者（事实：整场竞选失去投票权）
     sheriff_confirmed: frozenset[int] = frozenset()  # withdraw 子阶段确认进度（游标）

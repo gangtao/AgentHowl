@@ -12,7 +12,7 @@ from enum import StrEnum
 from pydantic import BaseModel, ConfigDict
 
 from app.engine.config import Faction, RoleType, faction_of
-from app.engine.phases import Phase
+from app.engine.phases import ElectionStage, Phase
 from app.engine.state import GameState, NightActions, Player
 
 
@@ -61,6 +61,7 @@ class EventType(StrEnum):
     SHERIFF_ELECTED = "SHERIFF_ELECTED"
     SHERIFF_DIRECTION_SET = "SHERIFF_DIRECTION_SET"
     SHERIFF_BADGE_LOST = "SHERIFF_BADGE_LOST"
+    ELECTION_STAGE_CHANGED = "ELECTION_STAGE_CHANGED"
     BADGE_PASSED = "BADGE_PASSED"
     WOLF_SELF_DESTRUCT = "WOLF_SELF_DESTRUCT"
 
@@ -195,6 +196,10 @@ class SheriffBadgeLostPayload(EventPayload):
     reason: str  # BadgeLostReason 的 .value
 
 
+class ElectionStageChangedPayload(EventPayload):
+    stage: ElectionStage  # 子阶段标记；reduce 据此写 election_stage（issue #17）
+
+
 class SheriffWithdrewPayload(EventPayload):
     seat: int
 
@@ -244,6 +249,7 @@ EVENT_PAYLOAD_TYPES: dict[EventType, type[EventPayload]] = {
     EventType.SHERIFF_ELECTED: SheriffElectedPayload,
     EventType.SHERIFF_BADGE_LOST: SheriffBadgeLostPayload,
     EventType.SHERIFF_DIRECTION_SET: SheriffDirectionSetPayload,
+    EventType.ELECTION_STAGE_CHANGED: ElectionStageChangedPayload,
     EventType.WOLF_SELF_DESTRUCT: WolfSelfDestructPayload,
     EventType.BADGE_PASSED: BadgePassedPayload,
 }
@@ -462,6 +468,9 @@ def _reduce_dispatch(state: GameState, event: Event) -> dict[str, object]:
 
     if t == EventType.SHERIFF_DIRECTION_SET and isinstance(p, SheriffDirectionSetPayload):
         return {"sheriff_speech_direction": p.direction}
+
+    if t == EventType.ELECTION_STAGE_CHANGED and isinstance(p, ElectionStageChangedPayload):
+        return {"election_stage": p.stage.value}
 
     if t == EventType.WOLF_SELF_DESTRUCT and isinstance(p, WolfSelfDestructPayload):
         return {"players": _replace_player(state.players, p.seat, alive=False)}
