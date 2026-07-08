@@ -160,3 +160,59 @@ def test_full_games_bot_election_selfdestruct_occurs() -> None:
             if e.type == EventType.WOLF_SELF_DESTRUCT and (first_day is None or e.seq < first_day):
                 saw_election_sd = True
     assert saw_election_sd
+
+
+def test_sheriff_wolf_direction_stage_selfdestruct_strips_badge() -> None:
+    # issue #19 端到端复现：方向阶段的狼警长自爆吞警徽后，死者不得残留 is_sheriff
+    st = _election_state(election_stage="direction", sheriff_seat=0)
+    players = tuple(
+        p.model_copy(update={"is_sheriff": True}) if p.seat == 0 else p for p in st.players
+    )
+    st = st.model_copy(update={"players": players})
+
+    res = step(st, SelfDestruct(actor_seat=0))
+    assert res.rejection is None
+    final = res.state
+    assert final.sheriff_seat is None
+    # 修复前失败点：死者 seat 0 的 is_sheriff 残留为 True
+    assert not any((not p.alive) and p.is_sheriff for p in final.players)
+
+
+def test_sheriff_elected_none_strips_incumbent_reduce_unit() -> None:
+    from app.engine.events import Event, EventType, SheriffElectedPayload, Visibility, reduce
+
+    st = _election_state(sheriff_seat=2)
+    players = tuple(
+        p.model_copy(update={"is_sheriff": True}) if p.seat == 2 else p for p in st.players
+    )
+    st = st.model_copy(update={"players": players})
+    ev = Event(
+        seq=1,
+        game_id="g",
+        ts=1.0,
+        type=EventType.SHERIFF_ELECTED,
+        actor_seat=None,
+        payload=SheriffElectedPayload(seat=None),
+        visibility=Visibility.PUBLIC,
+    )
+    new = reduce(st, ev)
+    assert new.sheriff_seat is None
+    assert not any(p.is_sheriff for p in new.players)
+
+
+def test_sheriff_elected_normal_grant_regression() -> None:
+    from app.engine.events import Event, EventType, SheriffElectedPayload, Visibility, reduce
+
+    st = _election_state()  # 无在任者
+    ev = Event(
+        seq=1,
+        game_id="g",
+        ts=1.0,
+        type=EventType.SHERIFF_ELECTED,
+        actor_seat=None,
+        payload=SheriffElectedPayload(seat=3),
+        visibility=Visibility.PUBLIC,
+    )
+    new = reduce(st, ev)
+    assert new.sheriff_seat == 3
+    assert [p.seat for p in new.players if p.is_sheriff] == [3]
