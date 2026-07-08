@@ -447,6 +447,7 @@ def _reduce_dispatch(state: GameState, event: Event) -> dict[str, object]:
         return {"sheriff_votes": sv}
 
     if t == EventType.SHERIFF_ELECTED and isinstance(p, SheriffElectedPayload):
+        # 先剥离在任者（当选时通常无在任者，保留为 issue #19 全化不变量防御）再授予
         players = state.players
         if state.sheriff_seat is not None:
             players = _replace_player(players, state.sheriff_seat, is_sheriff=False)
