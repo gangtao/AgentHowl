@@ -73,7 +73,6 @@ class GameState(BaseModel):
     day_exiled: int | None = None
 
     winner: str | None = None
-    rng_state: int = 0
     state_version: int = 0
     resume_token: str | None = None  # 中断（猎人开枪/遗言）处理完后的续接标记
     skip_day: bool = False  # 竞选期自爆置位：死讯（含枪/遗言绕行）处理完后跳过当天直接入夜（游标）

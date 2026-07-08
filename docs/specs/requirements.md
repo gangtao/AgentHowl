@@ -755,8 +755,7 @@ class GameState(BaseModel):
     votes: dict[int, Optional[int]] = {}  # voter_seat -> target(None=弃票)
     pending_hunter_shoot: Optional[int] = None
     winner: Optional[str] = None
-    state_version: int = 0
-    rng_state: int = 0                    # seeded RNG 状态
+    state_version: int = 0                # 每事件 +1；引擎随机抽取以它为 seq
 ```
 
 ---
