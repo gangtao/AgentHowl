@@ -434,9 +434,13 @@ def _reduce_dispatch(state: GameState, event: Event) -> dict[str, object]:
         return {"sheriff_votes": sv}
 
     if t == EventType.SHERIFF_ELECTED and isinstance(p, SheriffElectedPayload):
-        if p.seat is None:
-            return {"sheriff_seat": None}
-        players = _replace_player(state.players, p.seat, is_sheriff=True)
+        # 全化：先剥离在任者（吞警徽等带在任者路径），再授予新任者——
+        # 保证 sheriff_seat 与 is_sheriff 不经此事件分叉（issue #19）。
+        players = state.players
+        if state.sheriff_seat is not None:
+            players = _replace_player(players, state.sheriff_seat, is_sheriff=False)
+        if p.seat is not None:
+            players = _replace_player(players, p.seat, is_sheriff=True)
         return {"sheriff_seat": p.seat, "players": players}
 
     if t == EventType.SHERIFF_DIRECTION_SET and isinstance(p, SheriffDirectionSetPayload):
