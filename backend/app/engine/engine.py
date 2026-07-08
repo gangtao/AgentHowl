@@ -30,6 +30,7 @@ from app.engine.config import (
     validate_config,
 )
 from app.engine.events import (
+    BadgeLostReason,
     BadgePassedPayload,
     DeathAnnouncedPayload,
     EngineInvariantError,
@@ -49,6 +50,7 @@ from app.engine.events import (
     RoleSkippedPayload,
     RoundStartedPayload,
     SeerCheckedPayload,
+    SheriffBadgeLostPayload,
     SheriffCandidacyPayload,
     SheriffDirectionSetPayload,
     SheriffElectedPayload,
@@ -460,7 +462,10 @@ def _apply_self_destruct(state: GameState, action: SelfDestruct) -> tuple[GameSt
     ):
         s = s.model_copy(update={"election_stage": ""})
         s, e2 = _emit(
-            s, EventType.SHERIFF_ELECTED, SheriffElectedPayload(seat=None), Visibility.PUBLIC
+            s,
+            EventType.SHERIFF_BADGE_LOST,
+            SheriffBadgeLostPayload(reason=BadgeLostReason.SELF_DESTRUCT.value),
+            Visibility.PUBLIC,
         )
         events = [e, e2]
     else:
@@ -983,23 +988,32 @@ def _advance_election(state: GameState) -> tuple[GameState, list[Event]]:
     if state.election_stage == "candidacy":
         # 全员声明完毕
         if not state.sheriff_candidates:
-            return _finish_election(state, elected=None, events=events)
+            return _lose_badge(state, BadgeLostReason.NO_CANDIDATES, events)
         # 进入退水确认子阶段
         state = state.model_copy(
             update={"election_stage": "withdraw", "sheriff_confirmed": frozenset()}
         )
         return state, events
     if state.election_stage == "withdraw":
-        # 全员确认完毕：全退水 -> 警徽流失；否则进入警下投票
         if not state.sheriff_candidates:
-            return _finish_election(state, elected=None, events=events)
+            return _lose_badge(state, BadgeLostReason.ALL_WITHDREW, events)
+        voters = {
+            p.seat
+            for p in living(state)
+            if p.can_vote
+            and p.seat not in state.sheriff_candidates
+            and p.seat not in state.sheriff_withdrawn
+        }
+        if not voters:
+            # 全员上警：无警下投票人 -> 警徽流失，不进入空投票阶段（issue #9 裁决）
+            return _lose_badge(state, BadgeLostReason.NO_VOTERS, events)
         state = state.model_copy(update={"election_stage": "vote", "sheriff_votes": {}})
         return state, events
     # vote 阶段收尾
     weights = {s: 1.0 for s in living_seats(state)}
     elected, tie = count_votes(state.sheriff_votes, weights)
     if elected is not None:
-        return _finish_election(state, elected=elected, events=events)
+        return _finish_election(state, elected, events)
     if tie and state.phase == Phase.SHERIFF_ELECTION:
         # 进入 PK：候选缩小为平票者
         state = state.model_copy(update={"sheriff_candidates": tie, "sheriff_votes": {}})
@@ -1011,19 +1025,33 @@ def _advance_election(state: GameState) -> tuple[GameState, list[Event]]:
         )
         return state, [e]
     # PK 再平票 -> 警徽流失
-    return _finish_election(state, elected=None, events=events)
+    return _lose_badge(state, BadgeLostReason.TIE_AGAIN, events)
+
+
+def _lose_badge(
+    state: GameState, reason: BadgeLostReason, events: list[Event]
+) -> tuple[GameState, list[Event]]:
+    """警徽流失：发 SHERIFF_BADGE_LOST(reason) 并续接「公布死讯并继续」。"""
+    state, e = _emit(
+        state,
+        EventType.SHERIFF_BADGE_LOST,
+        SheriffBadgeLostPayload(reason=reason.value),
+        Visibility.PUBLIC,
+    )
+    events.append(e)
+    state = state.model_copy(update={"election_stage": ""})
+    return _announce_and_continue_night(state, state.night_deaths, events)
 
 
 def _finish_election(
-    state: GameState, elected: int | None, events: list[Event]
+    state: GameState, elected: int, events: list[Event]
 ) -> tuple[GameState, list[Event]]:
     state, e = _emit(
         state, EventType.SHERIFF_ELECTED, SheriffElectedPayload(seat=elected), Visibility.PUBLIC
     )
     events.append(e)
-    if elected is not None and state.config.speech_order_rule == SpeechOrderRule.SHERIFF_DECIDES:
-        # 警长先定发言方向，再公布死讯；若当选经 PK 产生（phase 仍为 SHERIFF_PK），
-        # 需先切回 SHERIFF_ELECTION 阶段，方向子阶段的 expected_actors 才能被正确识别
+    if state.config.speech_order_rule == SpeechOrderRule.SHERIFF_DECIDES:
+        # 警长先定发言方向，再公布死讯；PK 当选时相位先切回 SHERIFF_ELECTION
         if state.phase != Phase.SHERIFF_ELECTION:
             state, e2 = _emit(
                 state,
@@ -1035,7 +1063,6 @@ def _finish_election(
         state = state.model_copy(update={"election_stage": "direction"})
         return state, events
     state = state.model_copy(update={"election_stage": ""})
-    # 竞选结束 -> 回到「公布死讯并继续」
     return _announce_and_continue_night(state, state.night_deaths, events)
 
 

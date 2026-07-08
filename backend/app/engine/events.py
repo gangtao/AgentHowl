@@ -181,7 +181,7 @@ class SheriffVoteCastPayload(EventPayload):
 
 
 class SheriffElectedPayload(EventPayload):
-    seat: int | None  # None=警徽流失
+    seat: int  # 恒为真实当选座位；流失走 SHERIFF_BADGE_LOST
 
 
 class BadgeLostReason(StrEnum):
@@ -447,13 +447,10 @@ def _reduce_dispatch(state: GameState, event: Event) -> dict[str, object]:
         return {"sheriff_votes": sv}
 
     if t == EventType.SHERIFF_ELECTED and isinstance(p, SheriffElectedPayload):
-        # 全化：先剥离在任者（吞警徽等带在任者路径），再授予新任者——
-        # 保证 sheriff_seat 与 is_sheriff 不经此事件分叉（issue #19）。
         players = state.players
         if state.sheriff_seat is not None:
             players = _replace_player(players, state.sheriff_seat, is_sheriff=False)
-        if p.seat is not None:
-            players = _replace_player(players, p.seat, is_sheriff=True)
+        players = _replace_player(players, p.seat, is_sheriff=True)
         return {"sheriff_seat": p.seat, "players": players}
 
     if t == EventType.SHERIFF_BADGE_LOST and isinstance(p, SheriffBadgeLostPayload):
