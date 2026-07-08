@@ -169,8 +169,6 @@ def test_full_game_with_direction_still_terminates() -> None:
         final, events = run_game(cfg, game_id=f"d{seed}")
         assert final.phase == Phase.GAME_OVER
         # 若有警长当选，必有方向事件
-        elected = [
-            e for e in events if e.type == EventType.SHERIFF_ELECTED and e.payload.seat is not None
-        ]  # type: ignore[attr-defined]
+        elected = [e for e in events if e.type == EventType.SHERIFF_ELECTED]
         if elected:
             assert any(e.type == EventType.SHERIFF_DIRECTION_SET for e in events)

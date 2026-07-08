@@ -12,10 +12,10 @@ def _preset_with_sheriff(seed: int):
 def test_full_game_with_sheriff_terminates() -> None:
     final, events = run_game(_preset_with_sheriff(2024), game_id="g")
     assert final.phase == Phase.GAME_OVER
-    # 竞选发生过：存在 SHERIFF_ELECTED 事件（当选或流失）
+    # 竞选发生过：存在 SHERIFF_ELECTED 或 SHERIFF_BADGE_LOST 事件（当选或流失，竞选必有其一）
     from app.engine.events import EventType
 
-    assert any(e.type == EventType.SHERIFF_ELECTED for e in events)
+    assert any(e.type in (EventType.SHERIFF_ELECTED, EventType.SHERIFF_BADGE_LOST) for e in events)
 
 
 def test_sheriff_vote_weight_is_1_5() -> None:
@@ -128,10 +128,10 @@ def test_self_destruct_in_day_skips_to_night() -> None:
 
 def test_self_destruct_in_election_eats_badge() -> None:
     # 覆盖 self-review 要求：竞选期自爆吞警徽
-    # （sheriff_seat 变 None，且显式广播 SHERIFF_ELECTED(None)）
+    # （sheriff_seat 变 None，且显式广播 SHERIFF_BADGE_LOST(SELF_DESTRUCT)）
     from app.engine.actions import SelfDestruct
     from app.engine.config import Faction, RoleType
-    from app.engine.events import EventType, SheriffElectedPayload
+    from app.engine.events import EventType, SheriffBadgeLostPayload
     from app.engine.state import Player, player_at
 
     roles = [
@@ -166,9 +166,9 @@ def test_self_destruct_in_election_eats_badge() -> None:
     assert player_at(res.state, 0).alive is False
     assert res.state.sheriff_seat is None
     assert any(
-        e.type == EventType.SHERIFF_ELECTED
-        and isinstance(e.payload, SheriffElectedPayload)
-        and e.payload.seat is None
+        e.type == EventType.SHERIFF_BADGE_LOST
+        and isinstance(e.payload, SheriffBadgeLostPayload)
+        and e.payload.reason == "SELF_DESTRUCT"
         for e in res.events
     )
 

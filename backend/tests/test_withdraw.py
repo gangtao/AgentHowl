@@ -99,8 +99,8 @@ def test_all_withdraw_badge_lost() -> None:
     res = step(st, SheriffAction(actor_seat=2, action_type=SheriffActionType.WITHDRAW))
     assert res.rejection is None
     # 全员退水 -> 警徽流失并续接（离开竞选阶段）
-    elected = [e for e in res.events if e.type == EventType.SHERIFF_ELECTED]
-    assert len(elected) == 1 and elected[0].payload.seat is None  # type: ignore[attr-defined]
+    lost = [e for e in res.events if e.type == EventType.SHERIFF_BADGE_LOST]
+    assert len(lost) == 1 and lost[0].payload.reason == "ALL_WITHDREW"  # type: ignore[attr-defined]
     assert res.state.sheriff_seat is None
 
 

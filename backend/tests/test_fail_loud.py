@@ -61,7 +61,6 @@ def test_mapping_covers_exactly_implemented_types() -> None:
     reserved = {
         EventType.GAME_CREATED,
         EventType.GAME_STARTED,
-        EventType.SHERIFF_BADGE_LOST,
     }
     # 枚举新增成员时此断言强制作者决策：入映射（实现）或入 reserved（预留）
     assert set(EVENT_PAYLOAD_TYPES) == set(EventType) - reserved

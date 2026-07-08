@@ -178,28 +178,6 @@ def test_sheriff_wolf_direction_stage_selfdestruct_strips_badge() -> None:
     assert not any((not p.alive) and p.is_sheriff for p in final.players)
 
 
-def test_sheriff_elected_none_strips_incumbent_reduce_unit() -> None:
-    from app.engine.events import Event, EventType, SheriffElectedPayload, Visibility, reduce
-
-    st = _election_state(sheriff_seat=2)
-    players = tuple(
-        p.model_copy(update={"is_sheriff": True}) if p.seat == 2 else p for p in st.players
-    )
-    st = st.model_copy(update={"players": players})
-    ev = Event(
-        seq=1,
-        game_id="g",
-        ts=1.0,
-        type=EventType.SHERIFF_ELECTED,
-        actor_seat=None,
-        payload=SheriffElectedPayload(seat=None),
-        visibility=Visibility.PUBLIC,
-    )
-    new = reduce(st, ev)
-    assert new.sheriff_seat is None
-    assert not any(p.is_sheriff for p in new.players)
-
-
 def test_sheriff_elected_normal_grant_regression() -> None:
     from app.engine.events import Event, EventType, SheriffElectedPayload, Visibility, reduce
 
