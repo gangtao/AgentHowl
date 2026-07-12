@@ -258,9 +258,11 @@ class JsonFileEventStore:
         return meta, events
 
     def _read_records(self, path: Path) -> list[dict[str, object]]:
-        """逐行解析信封。Task 4 在此加入残尾修复；当前坏行一律 fail-loud。"""
+        """逐行解析信封。唯一豁免：未换行的残尾字节（崩溃中断的 append）
+        视为未完成写入，忽略并当场截断（开箱修复）；其余缺陷一律 fail-loud。"""
         records: list[dict[str, object]] = []
         raw = path.read_bytes()
+        good_len = 0
         for i, line in enumerate(raw.split(b"\n")[:-1]):
             try:
                 rec = json.loads(line)
@@ -269,6 +271,8 @@ class JsonFileEventStore:
             if not isinstance(rec, dict):
                 raise StoreCorruptionError(f"{path.name}:{i}：记录不是 JSON 对象")
             records.append(rec)
-        if raw and not raw.endswith(b"\n"):
-            raise StoreCorruptionError(f"{path.name}：文件未以换行结尾")
+            good_len += len(line) + 1
+        if good_len < len(raw):
+            with path.open("rb+") as f:
+                f.truncate(good_len)
         return records

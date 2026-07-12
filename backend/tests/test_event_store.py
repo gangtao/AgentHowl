@@ -1,5 +1,6 @@
 """EventStore 测试：编解码、契约（双实现参数化）、文件专项。issue #28。"""
 
+import json
 from pathlib import Path
 
 import pytest
@@ -18,6 +19,7 @@ from app.store.event_store import (
     JsonFileEventStore,
     SeatName,
     SeqConflictError,
+    StoreCorruptionError,
     StoreError,
     event_from_json,
     event_to_json,
@@ -183,3 +185,63 @@ class TestJsonFile:
         s1.create_game(meta)
         s2 = JsonFileEventStore(tmp_path / "d")
         assert s2.list_games() == ["g1"]
+
+    def _populated_dir(self, tmp_path: Path) -> tuple[Path, GameMeta, list[Event]]:
+        meta, _, events = _run_fixture_game()
+        s = JsonFileEventStore(tmp_path / "d")
+        s.create_game(meta)
+        for ev in events[:10]:
+            s.append("g1", ev)
+        return tmp_path / "d" / "g1.jsonl", meta, events
+
+    def test_torn_tail_repaired(self, tmp_path: Path) -> None:
+        """残尾行（崩溃中断的 append）开箱截断，装载与续写正常。"""
+        path, _, events = self._populated_dir(tmp_path)
+        with path.open("ab") as f:
+            f.write(b'{"kind": "event", "da')  # 无换行的半行
+
+        s = JsonFileEventStore(path.parent)
+        assert s.load_events("g1") == events[:10]
+        s.append("g1", events[10])  # 修复后可继续追加
+        assert not path.read_bytes().rstrip(b"\n").endswith(b'"da')
+        # 再次冷装载验证文件已物理修复
+        assert JsonFileEventStore(path.parent).load_events("g1") == events[:11]
+
+    def test_middle_bad_line_fails_loud(self, tmp_path: Path) -> None:
+        path, _, _ = self._populated_dir(tmp_path)
+        lines = path.read_bytes().split(b"\n")
+        lines[3] = b"@@garbage@@"
+        path.write_bytes(b"\n".join(lines))
+        with pytest.raises(StoreCorruptionError):
+            JsonFileEventStore(path.parent).load_events("g1")
+
+    def test_terminated_bad_tail_fails_loud(self, tmp_path: Path) -> None:
+        """以换行结尾的坏行不是残尾，是真损坏。"""
+        path, _, _ = self._populated_dir(tmp_path)
+        with path.open("ab") as f:
+            f.write(b"@@garbage@@\n")
+        with pytest.raises(StoreCorruptionError):
+            JsonFileEventStore(path.parent).load_events("g1")
+
+    def test_duplicate_meta_fails_loud(self, tmp_path: Path) -> None:
+        path, meta, _ = self._populated_dir(tmp_path)
+        with path.open("a", encoding="utf-8") as f:
+            f.write(json.dumps({"kind": "meta", "data": meta.model_dump(mode="json")}) + "\n")
+        with pytest.raises(StoreCorruptionError):
+            JsonFileEventStore(path.parent).load_events("g1")
+
+    def test_seq_hole_in_file_fails_loud(self, tmp_path: Path) -> None:
+        path, _, _ = self._populated_dir(tmp_path)
+        lines = path.read_bytes().split(b"\n")
+        del lines[3]  # 抠掉一条中间事件 → seq 洞
+        path.write_bytes(b"\n".join(lines))
+        with pytest.raises(StoreCorruptionError):
+            JsonFileEventStore(path.parent).load_events("g1")
+
+    def test_meta_not_first_fails_loud(self, tmp_path: Path) -> None:
+        path, _, _ = self._populated_dir(tmp_path)
+        lines = path.read_bytes().split(b"\n")
+        lines[0], lines[1] = lines[1], lines[0]
+        path.write_bytes(b"\n".join(lines))
+        with pytest.raises(StoreCorruptionError):
+            JsonFileEventStore(path.parent).load_events("g1")
