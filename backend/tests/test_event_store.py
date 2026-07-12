@@ -8,12 +8,18 @@ from app.engine.events import Event, reduce_all
 from app.engine.phases import Phase
 from app.engine.state import GameState
 from app.store.event_store import (
+    EventStore,
+    GameExistsError,
     GameMeta,
+    GameNotFoundError,
+    InMemoryEventStore,
     SeatName,
+    SeqConflictError,
     StoreError,
     event_from_json,
     event_to_json,
     initial_state,
+    load_state,
 )
 
 
@@ -76,3 +82,77 @@ class TestInitialState:
         )
         with pytest.raises(StoreError):
             initial_state(holed)
+
+
+@pytest.fixture(params=["memory"])
+def store(request: pytest.FixtureRequest) -> EventStore:
+    """契约测试跑在所有实现上；Task 3 追加 "jsonl" 参数。"""
+    assert request.param == "memory"
+    return InMemoryEventStore()
+
+
+class TestContract:
+    def test_roundtrip_and_load_state(self, store: EventStore) -> None:
+        meta, final, events = _run_fixture_game()
+        store.create_game(meta)
+        for ev in events:
+            store.append("g1", ev)
+        assert store.load_meta("g1") == meta
+        assert store.load_events("g1") == events
+        _assert_replay_matches(load_state(store, "g1"), final)
+
+    def test_from_seq_inclusive(self, store: EventStore) -> None:
+        meta, _, events = _run_fixture_game()
+        store.create_game(meta)
+        for ev in events:
+            store.append("g1", ev)
+        assert store.load_events("g1", from_seq=5) == [e for e in events if e.seq >= 5]
+        assert store.load_events("g1", from_seq=events[-1].seq + 1) == []
+
+    def test_seq_duplicate_rejected(self, store: EventStore) -> None:
+        meta, _, events = _run_fixture_game()
+        store.create_game(meta)
+        store.append("g1", events[0])
+        with pytest.raises(SeqConflictError):
+            store.append("g1", events[0])
+
+    def test_seq_gap_rejected(self, store: EventStore) -> None:
+        meta, _, events = _run_fixture_game()
+        store.create_game(meta)
+        with pytest.raises(SeqConflictError):
+            store.append("g1", events[1])  # 首事件必须 seq=1
+
+    def test_cross_game_id_rejected(self, store: EventStore) -> None:
+        meta, _, events = _run_fixture_game()
+        store.create_game(meta)
+        alien = events[0].model_copy(update={"game_id": "other"})
+        with pytest.raises(StoreError):
+            store.append("g1", alien)
+
+    def test_unknown_game_fails(self, store: EventStore) -> None:
+        _, _, events = _run_fixture_game()
+        with pytest.raises(GameNotFoundError):
+            store.load_meta("nope")
+        with pytest.raises(GameNotFoundError):
+            store.load_events("nope")
+        with pytest.raises(GameNotFoundError):
+            store.append("nope", events[0])
+
+    def test_duplicate_create_rejected(self, store: EventStore) -> None:
+        meta, _, _ = _run_fixture_game()
+        store.create_game(meta)
+        with pytest.raises(GameExistsError):
+            store.create_game(meta)
+
+    def test_bad_game_id_rejected(self, store: EventStore) -> None:
+        meta, _, _ = _run_fixture_game()
+        for bad in ("", "a/b", "..", "a b", "中"):
+            evil = GameMeta(game_id=bad, config=meta.config, roster=meta.roster)
+            with pytest.raises(StoreError):
+                store.create_game(evil)
+
+    def test_list_games_sorted(self, store: EventStore) -> None:
+        meta, _, _ = _run_fixture_game()
+        for gid in ("g2", "g1"):
+            store.create_game(GameMeta(game_id=gid, config=meta.config, roster=meta.roster))
+        assert store.list_games() == ["g1", "g2"]

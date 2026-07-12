@@ -7,10 +7,13 @@
 
 from __future__ import annotations
 
+import re
+from typing import Protocol
+
 from pydantic import BaseModel, ConfigDict, ValidationError
 
 from app.engine.config import Faction, GameConfig, RoleType
-from app.engine.events import EVENT_PAYLOAD_TYPES, Event, EventType
+from app.engine.events import EVENT_PAYLOAD_TYPES, Event, EventType, reduce_all
 from app.engine.phases import Phase
 from app.engine.state import GameState, Player
 
@@ -96,3 +99,75 @@ def initial_state(meta: GameMeta) -> GameState:
         round=0,
         players=players,
     )
+
+
+_GAME_ID_RE = re.compile(r"^[A-Za-z0-9_-]+$")
+
+
+def _check_game_id(game_id: str) -> None:
+    """game_id 触盘前校验（路径穿越防护）；两个实现共用同一口径。"""
+    if not _GAME_ID_RE.fullmatch(game_id):
+        raise StoreError(f"非法 game_id：{game_id!r}（仅允许 [A-Za-z0-9_-]+）")
+
+
+def _check_append(game_id: str, last_seq: int, event: Event) -> None:
+    """append 前置不变量：game_id 归属 + seq 稠密（首事件 seq=1）。"""
+    if event.game_id != game_id:
+        raise StoreError(f"事件 game_id 不匹配：期望 {game_id}，实得 {event.game_id}")
+    if event.seq != last_seq + 1:
+        raise SeqConflictError(
+            f"seq 不连续：期望 {last_seq + 1}，实得 {event.seq}（game_id={game_id}）"
+        )
+
+
+class EventStore(Protocol):
+    """事件持久化契约。实现：InMemoryEventStore / JsonFileEventStore。"""
+
+    def create_game(self, meta: GameMeta) -> None: ...
+
+    def append(self, game_id: str, event: Event) -> None: ...
+
+    def load_meta(self, game_id: str) -> GameMeta: ...
+
+    def load_events(self, game_id: str, from_seq: int = 0) -> list[Event]: ...
+
+    def list_games(self) -> list[str]: ...
+
+
+class InMemoryEventStore:
+    """内存实现：测试与单进程 MVP 用。"""
+
+    def __init__(self) -> None:
+        self._games: dict[str, tuple[GameMeta, list[Event]]] = {}
+
+    def create_game(self, meta: GameMeta) -> None:
+        _check_game_id(meta.game_id)
+        if meta.game_id in self._games:
+            raise GameExistsError(f"对局已存在：{meta.game_id}")
+        self._games[meta.game_id] = (meta, [])
+
+    def append(self, game_id: str, event: Event) -> None:
+        _, events = self._get(game_id)
+        last_seq = events[-1].seq if events else 0
+        _check_append(game_id, last_seq, event)
+        events.append(event)
+
+    def load_meta(self, game_id: str) -> GameMeta:
+        return self._get(game_id)[0]
+
+    def load_events(self, game_id: str, from_seq: int = 0) -> list[Event]:
+        return [e for e in self._get(game_id)[1] if e.seq >= from_seq]
+
+    def list_games(self) -> list[str]:
+        return sorted(self._games)
+
+    def _get(self, game_id: str) -> tuple[GameMeta, list[Event]]:
+        try:
+            return self._games[game_id]
+        except KeyError:
+            raise GameNotFoundError(f"对局不存在：{game_id}") from None
+
+
+def load_state(store: EventStore, game_id: str) -> GameState:
+    """装载 = reduce(load_events)：从头记录 + 事件流重建当前状态。"""
+    return reduce_all(initial_state(store.load_meta(game_id)), store.load_events(game_id))
