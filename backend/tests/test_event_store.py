@@ -1,5 +1,7 @@
 """EventStore 测试：编解码、契约（双实现参数化）、文件专项。issue #28。"""
 
+from pathlib import Path
+
 import pytest
 
 from app.cli.bot import run_game
@@ -13,6 +15,7 @@ from app.store.event_store import (
     GameMeta,
     GameNotFoundError,
     InMemoryEventStore,
+    JsonFileEventStore,
     SeatName,
     SeqConflictError,
     StoreError,
@@ -84,11 +87,12 @@ class TestInitialState:
             initial_state(holed)
 
 
-@pytest.fixture(params=["memory"])
-def store(request: pytest.FixtureRequest) -> EventStore:
-    """契约测试跑在所有实现上；Task 3 追加 "jsonl" 参数。"""
-    assert request.param == "memory"
-    return InMemoryEventStore()
+@pytest.fixture(params=["memory", "jsonl"])
+def store(request: pytest.FixtureRequest, tmp_path: Path) -> EventStore:
+    """契约测试跑在所有实现上。"""
+    if request.param == "memory":
+        return InMemoryEventStore()
+    return JsonFileEventStore(tmp_path / "data")
 
 
 class TestContract:
@@ -156,3 +160,26 @@ class TestContract:
         for gid in ("g2", "g1"):
             store.create_game(GameMeta(game_id=gid, config=meta.config, roster=meta.roster))
         assert store.list_games() == ["g1", "g2"]
+
+
+class TestJsonFile:
+    def test_restart_reloads(self, tmp_path: Path) -> None:
+        """同一 data_dir 新建实例（模拟进程重启）后装载与续写均正常。"""
+        meta, final, events = _run_fixture_game()
+        s1 = JsonFileEventStore(tmp_path / "d")
+        s1.create_game(meta)
+        for ev in events[:-1]:
+            s1.append("g1", ev)
+
+        s2 = JsonFileEventStore(tmp_path / "d")
+        assert s2.load_meta("g1") == meta
+        assert s2.load_events("g1") == events[:-1]
+        s2.append("g1", events[-1])  # seq 续接
+        _assert_replay_matches(load_state(s2, "g1"), final)
+
+    def test_list_games_from_disk(self, tmp_path: Path) -> None:
+        meta, _, _ = _run_fixture_game()
+        s1 = JsonFileEventStore(tmp_path / "d")
+        s1.create_game(meta)
+        s2 = JsonFileEventStore(tmp_path / "d")
+        assert s2.list_games() == ["g1"]
