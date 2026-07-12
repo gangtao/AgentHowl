@@ -273,6 +273,9 @@ class JsonFileEventStore:
             records.append(rec)
             good_len += len(line) + 1
         if good_len < len(raw):
-            with path.open("rb+") as f:
-                f.truncate(good_len)
+            try:
+                with path.open("rb+") as f:
+                    f.truncate(good_len)
+            except OSError as exc:
+                raise StoreError(f"{path.name}：残尾修复失败（无法写入）：{exc}") from exc
         return records

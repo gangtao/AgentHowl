@@ -245,3 +245,18 @@ class TestJsonFile:
         path.write_bytes(b"\n".join(lines))
         with pytest.raises(StoreCorruptionError):
             JsonFileEventStore(path.parent).load_events("g1")
+
+    def test_torn_tail_repair_unwritable_raises_store_error(self, tmp_path: Path) -> None:
+        """残尾修复遇只读文件时应归一为 StoreError，不泄露 PermissionError。"""
+        path, _, events = self._populated_dir(tmp_path)
+        # 追加残尾（未换行）
+        with path.open("ab") as f:
+            f.write(b'{"kind": "event", "da')
+        # 制造只读文件
+        path.chmod(0o444)
+        try:
+            with pytest.raises(StoreError):
+                JsonFileEventStore(path.parent).load_events("g1")
+        finally:
+            # 还原权限以便 tmp cleanup
+            path.chmod(0o644)
