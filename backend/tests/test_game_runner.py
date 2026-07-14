@@ -1,11 +1,14 @@
 """GameRunner 集成：12 bot 全自动经 runner + store 跑完整局（issue #29）。"""
 
+import asyncio
 from pathlib import Path
 
 import pytest
 
+from app.engine.actions import Action, Speak
 from app.engine.config import build_preset
 from app.engine.events import EventType
+from app.engine.observation import PlayerObservation
 from app.engine.phases import Phase
 from app.runtime.connection import ConnectionManager
 from app.runtime.game_runner import GameLobby, GameRunner, LobbyError, RunnerTimeouts
@@ -34,6 +37,63 @@ def _make_runner(store: EventStore, seed: int = 42, preset: str = "std_12_yn_hun
     for seat in range(cfg.num_players):
         ports[seat] = BotPlayerPort(state_provider=lambda: runner.state)
     return runner
+
+
+class HangingPort:
+    """永不返回的端口：模拟断线/挂起玩家。"""
+
+    async def act(self, observation: PlayerObservation, deadline_ts: float) -> Action:
+        await asyncio.Event().wait()
+        raise AssertionError("unreachable")
+
+
+class AlwaysInvalidPort:
+    """永远提交非法 intent（夜里发言必 WRONG_PHASE；白天发言合法，故包一层计数狼刀自己）。"""
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def act(self, observation: PlayerObservation, deadline_ts: float) -> Action:
+        self.calls += 1
+        # 对任意阶段都非法：actor 座位冒用他人（NOT_YOUR_TURN）
+        other = (observation.my_seat + 1) % 9
+        return Speak(actor_seat=other, content="(evil)")
+
+
+class RetryOncePort:
+    """每个窗口先交一次非法 intent，被拒后交出合法 bot 行动：验证重试成功路径。"""
+
+    def __init__(self, inner: PlayerPort) -> None:
+        self._inner = inner
+        self.calls = 0
+
+    async def act(self, observation: PlayerObservation, deadline_ts: float) -> Action:
+        self.calls += 1
+        if self.calls % 2 == 1:
+            other = (observation.my_seat + 1) % 9
+            return Speak(actor_seat=other, content="(oops)")
+        return await self._inner.act(observation, deadline_ts)
+
+
+def _make_special_runner(
+    store: EventStore, seed: int, timeouts: RunnerTimeouts
+) -> tuple[GameRunner, dict[int, PlayerPort]]:
+    """9 人局，全 bot；调用方把 seat 0 换成特殊端口后 run。"""
+    cfg = build_preset("std_9_kill_side").model_copy(update={"seed": seed})
+    lobby = GameLobby(cfg, game_id="g1")
+    lobby.fill_with_bots()
+    ports: dict[int, PlayerPort] = {}
+    runner = GameRunner(
+        store=store,
+        config=cfg,
+        game_id="g1",
+        roster=lobby.roster(),
+        ports=ports,
+        timeouts=timeouts,
+    )
+    for seat in range(cfg.num_players):
+        ports[seat] = BotPlayerPort(state_provider=lambda: runner.state)
+    return runner, ports
 
 
 class TestLobby:
@@ -111,3 +171,46 @@ def test_runner_timeouts_from_config() -> None:
     t = RunnerTimeouts.from_config(cfg)
     assert t.speech_sec == float(cfg.speech_timeout_sec)
     assert t.action_sec == float(cfg.action_timeout_sec)
+
+
+class TestTimeoutAndRetry:
+    async def test_hanging_port_replaced_by_default(self) -> None:
+        store = InMemoryEventStore()
+        runner, ports = _make_special_runner(
+            store, seed=42, timeouts=RunnerTimeouts(speech_sec=0.02, action_sec=0.02)
+        )
+        ports[0] = HangingPort()
+        final = await runner.run()
+        assert final.phase == Phase.GAME_OVER
+        events = store.load_events("g1")
+        timed_out = [e for e in events if e.meta.get("timeout") == "true"]
+        assert timed_out, "挂起座位必须留下超时代打事件"
+        replayed = load_state(store, "g1")
+        assert replayed.winner == final.winner
+
+    async def test_rejections_exhausted_falls_to_default(self) -> None:
+        store = InMemoryEventStore()
+        runner, ports = _make_special_runner(
+            store, seed=42, timeouts=RunnerTimeouts(speech_sec=0.5, action_sec=0.5)
+        )
+        evil = AlwaysInvalidPort()
+        ports[0] = evil
+        final = await runner.run()
+        assert final.phase == Phase.GAME_OVER
+        assert evil.calls >= 3  # 至少被重试到上限一次
+        events = store.load_events("g1")
+        assert any(e.meta.get("timeout") == "true" for e in events)
+
+    async def test_retry_then_valid_needs_no_default(self) -> None:
+        store = InMemoryEventStore()
+        runner, ports = _make_special_runner(
+            store, seed=42, timeouts=RunnerTimeouts(speech_sec=5.0, action_sec=5.0)
+        )
+        retry = RetryOncePort(BotPlayerPort(state_provider=lambda: runner.state))
+        ports[0] = retry
+        final = await runner.run()
+        assert final.phase == Phase.GAME_OVER
+        assert retry.calls >= 2  # 至少发生过一次「拒绝 → 重试成功」
+        events = store.load_events("g1")
+        # 重试全部成功：全局不应出现任何超时代打事件（其余座位是即时 bot）
+        assert not any(e.meta.get("timeout") == "true" for e in events)

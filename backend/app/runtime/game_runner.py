@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import time
 from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
@@ -19,8 +20,11 @@ from app.engine.observation import build_observation
 from app.engine.phases import Phase, expected_actors
 from app.engine.state import GameState
 from app.runtime.connection import ConnectionManager
+from app.runtime.defaults import default_action
 from app.runtime.player_port import PlayerPort
 from app.store.event_store import EventStore, GameMeta, SeatName
+
+MAX_REJECTIONS = 3  # 截止前允许的非法 intent 次数，超过即落默认行动
 
 
 class LobbyError(RuntimeError):
@@ -152,12 +156,36 @@ class GameRunner:
     async def _drive_seat(self, seat: int) -> None:
         obs = build_observation(self.state, seat)
         deadline_ts = time.time() + self._window_timeout()
-        action = await self._ports[seat].act(obs, deadline_ts)
-        res = step(self.state, action)
+        rejections = 0
+        while True:
+            remaining = deadline_ts - time.time()
+            if remaining <= 0 or rejections >= MAX_REJECTIONS:
+                await self._apply_default(seat)
+                return
+            try:
+                action = await asyncio.wait_for(
+                    self._ports[seat].act(obs, deadline_ts), timeout=remaining
+                )
+            except TimeoutError:
+                await self._apply_default(seat)
+                return
+            except Exception:
+                # 端口实现抛错（Agent 崩溃等）：对局不陪葬，落默认行动
+                await self._apply_default(seat)
+                return
+            res = step(self.state, action)
+            if res.rejection is None:
+                self._state = res.state
+                await self._commit(res.events)
+                return
+            rejections += 1  # 非法 intent：截止前重试（M2.3 真人重试路径）
+
+    async def _apply_default(self, seat: int) -> None:
+        res = step(self.state, default_action(self.state, seat))
         if res.rejection is not None:
-            raise RuntimeError(f"行动被拒：{res.rejection} @ {self.state.phase}")
+            raise RuntimeError(f"默认行动被拒（不变量破坏）：{res.rejection} @ {self.state.phase}")
         self._state = res.state
-        await self._commit(res.events)
+        await self._commit(res.events, timed_out=True)
 
     async def _commit(self, events: list[Event], timed_out: bool = False) -> None:
         """meta 充实 → 落库 → 广播，同序。runtime 对事件的唯一合法改写点。"""
