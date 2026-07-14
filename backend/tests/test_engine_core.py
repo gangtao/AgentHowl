@@ -1,7 +1,9 @@
+import pytest
+
 from app.engine.actions import NightAction, NightActionType, Speak
-from app.engine.config import RoleType
+from app.engine.config import RoleType, build_preset
 from app.engine.engine import create_game, step
-from app.engine.events import reduce_all
+from app.engine.events import EventType, Visibility, reduce_all
 from app.engine.phases import Phase, expected_actors
 from app.engine.state import GameState, living_of_role, living_wolves, player_at
 from tests.factories import stage1_config
@@ -140,3 +142,35 @@ def test_all_abstain_vote_no_exile_no_pk() -> None:
     assert new.phase != Phase.VOTE_PK
     assert any(e.type == EventType.PLAYER_EXILED for e in events)
     assert new.day_exiled is None
+
+
+def test_create_game_emits_lifecycle_head() -> None:
+    cfg = build_preset("std_9_kill_side").model_copy(update={"seed": 7})
+    res = create_game(cfg, game_id="g")
+    head = [e.type for e in res.events[:3]]
+    assert head == [EventType.GAME_CREATED, EventType.GAME_STARTED, EventType.ROLES_ASSIGNED]
+    assert [e.seq for e in res.events[:3]] == [1, 2, 3]
+    assert res.events[0].visibility == Visibility.PUBLIC
+    assert res.events[1].visibility == Visibility.PUBLIC
+
+
+def test_create_game_applies_roster() -> None:
+    from app.engine.engine import RosterEntry
+
+    cfg = build_preset("std_9_kill_side").model_copy(update={"seed": 7})
+    roster = tuple(
+        RosterEntry(display_name=f"玩家{i}", player_type="HUMAN" if i == 0 else "AGENT")
+        for i in range(cfg.num_players)
+    )
+    res = create_game(cfg, game_id="g", roster=roster)
+    assert res.state.players[0].display_name == "玩家0"
+    assert res.state.players[0].player_type == "HUMAN"
+    assert res.state.players[3].player_type == "AGENT"
+
+
+def test_create_game_roster_length_mismatch_rejected() -> None:
+    from app.engine.engine import RosterEntry
+
+    cfg = build_preset("std_9_kill_side").model_copy(update={"seed": 7})
+    with pytest.raises(ValueError):
+        create_game(cfg, game_id="g", roster=(RosterEntry(display_name="独苗"),))
