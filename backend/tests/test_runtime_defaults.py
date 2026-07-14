@@ -91,6 +91,13 @@ def _sweep(preset: str, seed: int, **cfg_override: object) -> set[Phase]:
                 assert isinstance(d, SheriffAction)
                 assert d.action_type == SheriffActionType.SET_SPEECH_DIRECTION
                 assert d.direction == Direction.LEFT
+            if (
+                state.phase == Phase.SHERIFF_ELECTION
+                and state.election_stage == ElectionStage.WITHDRAW
+            ):
+                # 退水确认窗口默认留任
+                assert isinstance(d, SheriffAction)
+                assert d.action_type == SheriffActionType.RUN_FOR_SHERIFF
             if state.phase == Phase.SHERIFF_ELECTION and state.election_stage == ElectionStage.VOTE:
                 assert isinstance(d, SheriffAction)
                 assert d.action_type == SheriffActionType.VOTE_SHERIFF
@@ -106,6 +113,12 @@ def _sweep(preset: str, seed: int, **cfg_override: object) -> set[Phase]:
                 # 非发言窗口的普通 PK 投票
                 assert isinstance(d, DayVote)
                 assert d.abstain
+            if (
+                state.phase == Phase.VOTE_PK or state.phase == Phase.SHERIFF_PK
+            ) and state.speech_idx < len(state.speech_order):
+                # PK 发言期默认空发言，不得落投票分支
+                assert isinstance(d, Speak)
+                assert d.content == TIMEOUT_SPEECH
             # 推进沿用 bot（保持既有对局形态的覆盖广度）
             res = step(state, RandomBot.choose_action(state, seat))
             assert res.rejection is None
