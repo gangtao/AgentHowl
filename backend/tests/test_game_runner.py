@@ -134,7 +134,7 @@ class TestRunnerIntegration:
         final = await runner.run()
         assert final.phase == Phase.GAME_OVER
         events = store.load_events("g1")
-        # 生命周期头 + 落库回放一致
+        # 生命周期头 + 落库回放终局口径一致（winner/alive；游标字段不保证，见 engine 游标注释）
         assert [e.type for e in events[:2]] == [EventType.GAME_CREATED, EventType.GAME_STARTED]
         replayed = load_state(store, "g1")
         assert replayed.winner == final.winner
@@ -214,3 +214,12 @@ class TestTimeoutAndRetry:
         events = store.load_events("g1")
         # 重试全部成功：全局不应出现任何超时代打事件（其余座位是即时 bot）
         assert not any(e.meta.get("timeout") == "true" for e in events)
+
+    async def test_missing_port_raises_RuntimeError(self) -> None:
+        store = InMemoryEventStore()
+        runner, ports = _make_special_runner(
+            store, seed=42, timeouts=RunnerTimeouts(speech_sec=0.5, action_sec=0.5)
+        )
+        del ports[0]
+        with pytest.raises(RuntimeError, match="未接入"):
+            await runner.run()

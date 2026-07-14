@@ -1,4 +1,4 @@
-"""引擎 fail-loud（issue #4）：畸形事件与预留事件在 reduce 处抛错。"""
+"""引擎 fail-loud（issue #4）：畸形事件在 reduce 处抛错；预留集合已随 issue #29 清空。"""
 
 import pytest
 

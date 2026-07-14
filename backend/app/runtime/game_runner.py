@@ -154,6 +154,8 @@ class GameRunner:
         return self._timeouts.action_sec
 
     async def _drive_seat(self, seat: int) -> None:
+        if seat not in self._ports:
+            raise RuntimeError(f"座位 {seat} 未接入 PlayerPort（wiring 缺失，拒绝静默代打）")
         obs = build_observation(self.state, seat)
         deadline_ts = time.time() + self._window_timeout()
         rejections = 0
