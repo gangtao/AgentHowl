@@ -1,5 +1,6 @@
 """WS 端点：观战流隔离、真人经 WS 对局、重连补发（issue #30）。"""
 
+import asyncio
 import time
 from collections.abc import Iterator
 from typing import Any
@@ -11,6 +12,7 @@ from starlette.websockets import WebSocketDisconnect
 from app.cli.bot import RandomBot
 from app.main import create_app
 from app.runtime.game_runner import RunnerTimeouts
+from app.runtime.player_port import HumanPlayerPort, TurnPrompt
 from app.store.event_store import InMemoryEventStore
 from tests.test_api_play import _auth, _start_ai_game, _to_tool_call
 
@@ -89,3 +91,103 @@ def test_reconnect_backfills_from_seq(client: TestClient) -> None:
             if frame["type"] == "game_event":
                 got.append(frame["event"])
     assert [e["seq"] for e in got] == [e["seq"] for e in rest_events]
+
+
+def test_reconnect_to_running_game_loses_no_events(client: TestClient) -> None:
+    """复现 issue #30 复审 Critical #1：补发与订阅之间若有窗口，运行中对局会丢事件。
+
+    对局刚 start 就立即连接（不等待终局），backfill 读历史与 runner 持续
+    commit 事件的时间窗口完全重叠——旧实现"先补发后订阅"会在此窗口丢帧。
+
+    start 请求返回后让出极短时间片（毫秒级 sleep，TestClient 的后台事件循环
+    在独立线程持续推进，故此间 runner 已产出若干事件但对局仍在运行）——
+    经验证：此时序在旧实现上 6/6 复现丢帧，对局在连接时刻仍未终局。
+    """
+    gid, created = _start_ai_game(client, seed=21)
+    spec = created["spectator_token"]
+    time.sleep(0.002)
+    handle = client.app.state.games.get(gid)  # type: ignore[attr-defined]
+    assert not handle.task.done()  # 确认连接时对局仍在运行（复现场景的前提）
+    got: list[dict[str, Any]] = []
+    with client.websocket_connect(f"/api/v1/ws?token={spec}&from_seq=0") as ws:
+        while True:
+            frame = ws.receive_json()
+            if frame["type"] == "game_event":
+                got.append(frame["event"])
+            if frame["type"] == "game_over":
+                break
+    rest_events = client.get(f"/api/v1/games/{gid}/events?from_seq=0", headers=_auth(spec)).json()
+    got_seqs = [e["seq"] for e in got]
+    assert got_seqs == [e["seq"] for e in rest_events]  # 完整、无洞、无重复
+
+
+def test_backfilled_phase_change_round_is_historical(client: TestClient) -> None:
+    """复现 issue #30 复审 Critical #2：补发的 phase_change 帧不得携带终局 round。"""
+    gid, created = _start_ai_game(client, seed=7)
+    spec = created["spectator_token"]
+    handle = client.app.state.games.get(gid)  # type: ignore[attr-defined]
+    deadline = time.time() + 30
+    while not handle.task.done() and time.time() < deadline:
+        time.sleep(0.05)
+    rounds: list[int] = []
+    with client.websocket_connect(f"/api/v1/ws?token={spec}&from_seq=0") as ws:
+        while True:
+            frame = ws.receive_json()
+            if frame["type"] == "phase_change":
+                rounds.append(frame["round"])
+            if frame["type"] == "game_over":
+                break
+    assert rounds == sorted(rounds)  # 非递减
+    assert min(rounds) == 1  # 旧实现恒为终局 round（>1 局时必失败）
+
+
+def test_host_token_ws_rejected(client: TestClient) -> None:
+    """HOST 无读流权限，与 REST require_kind 同口径（issue #30 复审 Important #2）。"""
+    created = client.post(
+        "/api/v1/games",
+        json={"config_override": {"seed": 1}, "allow_spectators": False},
+    ).json()
+    gid = created["game_id"]
+    r = client.post(f"/api/v1/games/{gid}/start", json={}, headers=_auth(created["host_token"]))
+    assert r.status_code == 200
+    with (
+        pytest.raises(WebSocketDisconnect),
+        client.websocket_connect(f"/api/v1/ws?token={created['host_token']}") as ws,
+    ):
+        ws.receive_json()
+
+
+async def test_second_connection_keeps_your_turn_channel() -> None:
+    """detach_sender 仅当前持有者可解除：旧连接不得摘除新连接的推送通道
+    （issue #30 复审 Important #1）。"""
+    port = HumanPlayerPort()
+    seen_a: list[TurnPrompt] = []
+    seen_b: list[TurnPrompt] = []
+
+    async def a(p: TurnPrompt) -> None:
+        seen_a.append(p)
+
+    async def b(p: TurnPrompt) -> None:
+        seen_b.append(p)
+
+    port.attach_sender(a)
+    port.attach_sender(b)  # 模拟第二条连接（重连）接管推送
+    port.detach_sender(a)  # 旧连接（第一条）清理时解除自己持有的 sender
+    assert port._sender is b  # b 未被误摘除
+
+    from app.cli.bot import RandomBot
+    from app.engine.config import build_preset
+    from app.engine.engine import create_game
+    from app.engine.observation import build_observation
+    from app.engine.phases import expected_actors
+
+    cfg = build_preset("std_9_kill_side").model_copy(update={"seed": 42})
+    state = create_game(cfg, game_id="g").state
+    seat = sorted(expected_actors(state))[0]
+    obs = build_observation(state, seat)
+    task = asyncio.ensure_future(port.act(obs, deadline_ts=time.time() + 30))
+    prompt = await port.wait_armed(1.0)
+    assert prompt is not None
+    assert seen_b and not seen_a  # 推送经由存活的 b，而非已摘除的 a
+    port.submit(RandomBot.choose_action(state, seat))
+    await task

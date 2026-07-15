@@ -90,8 +90,10 @@ class HumanPlayerPort:
     def attach_sender(self, sender: Callable[[TurnPrompt], Awaitable[None]]) -> None:
         self._sender = sender
 
-    def detach_sender(self) -> None:
-        self._sender = None
+    def detach_sender(self, sender: Callable[[TurnPrompt], Awaitable[None]]) -> None:
+        """仅当前持有者可解除，防旧连接摘除新连接的推送通道。"""
+        if self._sender is sender:
+            self._sender = None
 
     async def act(self, observation: PlayerObservation, deadline_ts: float) -> Action:
         self._prompt = TurnPrompt(observation=observation, deadline_ts=deadline_ts)
