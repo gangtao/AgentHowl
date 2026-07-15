@@ -7,7 +7,7 @@ from pathlib import Path
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
-from app.api import rest
+from app.api import rest, ws
 from app.api.deps import TokenRegistry
 from app.runtime.game_runner import LobbyError, RunnerTimeouts
 from app.runtime.player_port import NotYourTurnError
@@ -28,6 +28,7 @@ def create_app(
     )
     app.state.tokens = TokenRegistry()
     app.include_router(rest.router, prefix="/api/v1")
+    app.include_router(ws.router, prefix="/api/v1")
 
     def _handler(status: int):  # type: ignore[no-untyped-def]
         async def h(request: Request, exc: Exception) -> JSONResponse:
