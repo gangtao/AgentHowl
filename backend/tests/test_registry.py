@@ -74,6 +74,10 @@ async def test_join_gets_human_port_and_start_guards() -> None:
     final = await handle.task
     for d in drivers:
         d.cancel()
+    results = await asyncio.gather(*drivers, return_exceptions=True)
+    for r in results:
+        # 正常退出(None)或被取消是预期；驱动协程内的断言失败必须让测试失败
+        assert r is None or isinstance(r, asyncio.CancelledError), r
     assert final.phase == Phase.GAME_OVER
 
 
@@ -102,6 +106,10 @@ async def test_num_ai_players_validated_at_start() -> None:
     await handle.task
     for d in drivers:
         d.cancel()
+    results = await asyncio.gather(*drivers, return_exceptions=True)
+    for r in results:
+        # 正常退出(None)或被取消是预期；驱动协程内的断言失败必须让测试失败
+        assert r is None or isinstance(r, asyncio.CancelledError), r
 
 
 def test_get_unknown_game_raises_lookup() -> None:

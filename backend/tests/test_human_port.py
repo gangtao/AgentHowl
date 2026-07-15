@@ -103,11 +103,14 @@ async def test_full_game_with_human_seat_via_port() -> None:
     human = HumanPlayerPort()
     ports[0] = human
 
+    prompt_count = [0]
+
     async def drive_human() -> None:
         while True:
             prompt = await human.wait_armed(5.0)
             if prompt is None:
                 return  # 终局后不再开窗
+            prompt_count[0] += 1
             action = RandomBot.choose_action(runner.state, 0)
             outcome = await human.submit_and_wait(action, timeout=5.0)
             assert outcome.ok, outcome.rejected_reason
@@ -115,6 +118,12 @@ async def test_full_game_with_human_seat_via_port() -> None:
     driver = asyncio.ensure_future(drive_human())
     final = await runner.run()
     driver.cancel()
+    results = await asyncio.gather(driver, return_exceptions=True)
+    for r in results:
+        # 正常退出(None)或被取消是预期；驱动协程内的断言失败必须让测试失败
+        assert r is None or isinstance(r, asyncio.CancelledError), r
     assert final.phase == Phase.GAME_OVER
     # 全程零超时代打：真人每窗都及时提交
     assert not any(e.meta.get("timeout") == "true" for e in store.load_events("g1"))
+    # 真人座位至少被提示过一次
+    assert prompt_count[0] > 0
