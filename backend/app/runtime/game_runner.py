@@ -21,7 +21,7 @@ from app.engine.phases import Phase, expected_actors
 from app.engine.state import GameState
 from app.runtime.connection import ConnectionManager
 from app.runtime.defaults import default_action
-from app.runtime.player_port import PlayerPort
+from app.runtime.player_port import PlayerPort, SupportsResultFeedback
 from app.store.event_store import EventStore, GameMeta, SeatName
 
 MAX_REJECTIONS = 3  # 截止前允许的非法 intent 次数，超过即落默认行动
@@ -176,11 +176,19 @@ class GameRunner:
                 await self._apply_default(seat)
                 return
             res = step(self.state, action)
-            if res.rejection is None:
-                self._state = res.state
-                await self._commit(res.events)
-                return
-            rejections += 1  # 非法 intent：截止前重试（M2.3 真人重试路径）
+            if res.rejection is not None:
+                port = self._ports[seat]
+                if isinstance(port, SupportsResultFeedback):
+                    port.notify_result(str(res.rejection), self.state.state_version, None)
+                rejections += 1  # 非法 intent：截止前重试（M2.3 真人重试路径）
+                continue
+            self._state = res.state
+            await self._commit(res.events)
+            port = self._ports[seat]
+            if isinstance(port, SupportsResultFeedback):
+                event_id = f"evt_{res.events[0].seq:05d}" if res.events else None
+                port.notify_result(None, self._state.state_version, event_id)
+            return
 
     async def _apply_default(self, seat: int) -> None:
         res = step(self.state, default_action(self.state, seat))
