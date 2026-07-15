@@ -101,9 +101,15 @@ def test_acceptance_isolation_matrix_via_api(client: TestClient) -> None:
         by_faction["WOLF" if role == "WEREWOLF" else "GOOD"].append(evs)
     for evs in by_faction["WOLF"]:
         assert any(e["visibility"] == "WOLVES" for e in evs)
+        assert not any(e["visibility"] == "GM_ONLY" for e in evs)
     for evs in by_faction["GOOD"]:
         assert not any(e["visibility"] == "WOLVES" for e in evs)
-        # ROLE_SELF 只能是自己的
+        assert not any(e["visibility"] == "GM_ONLY" for e in evs)
+    # ROLE_SELF 只能是自己的
+    for seat, _role in roles:
+        tok = tokens.issue(TokenInfo(game_id=gid, seat=seat, kind="PLAYER"))
+        evs = client.get(f"/api/v1/games/{gid}/events", headers=_auth(tok)).json()
+        assert all(e["actor_seat"] == seat for e in evs if e["visibility"] == "ROLE_SELF")
     spec_events = client.get(f"/api/v1/games/{gid}/events", headers=_auth(spec)).json()
     assert all(e["visibility"] == "PUBLIC" for e in spec_events)
 
