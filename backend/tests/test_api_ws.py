@@ -1,6 +1,7 @@
 """WS 端点：观战流隔离、真人经 WS 对局、重连补发（issue #30）。"""
 
 import asyncio
+import contextlib
 import time
 from collections.abc import Iterator
 from typing import Any
@@ -10,6 +11,7 @@ from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
 from app.cli.bot import RandomBot
+from app.engine.events import Event
 from app.main import create_app
 from app.runtime.game_runner import RunnerTimeouts
 from app.runtime.player_port import HumanPlayerPort, TurnPrompt
@@ -191,3 +193,44 @@ async def test_second_connection_keeps_your_turn_channel() -> None:
     assert seen_b and not seen_a  # 推送经由存活的 b，而非已摘除的 a
     port.submit(RandomBot.choose_action(state, seat))
     await task
+
+
+async def test_dead_sender_task_still_unsubscribes() -> None:
+    """sender 任务先于 receive 循环异常死亡时，finally 清理不得被跳过（订阅必须摘除）。
+
+    当 sender_task 因 WebSocketDisconnect（客户端 TCP 中断）等异常死亡时，
+    旧的 finally 顺序（cancel → await → unsubscribe）会在 await 处重新抛出异常，
+    导致 unsubscribe 和 detach_sender 被跳过，连接仍留在 ConnectionManager._subs 中
+    （孤儿订阅）。新顺序（unsubscribe → detach → cancel → await suppress多种异常）
+    保证清理无条件执行。
+    """
+    from app.runtime.connection import ConnectionManager
+
+    manager = ConnectionManager(lambda: None)  # type: ignore[arg-type]
+    viewer = "test_seat"
+    events_collected: list[list[Event]] = []
+
+    async def on_events(events: list[Event]) -> None:
+        events_collected.append(events)
+
+    # 订阅
+    manager.subscribe(viewer, on_events)
+    assert len(manager._subs) == 1
+
+    # 模拟 sender_task 异常死亡
+    async def boom() -> None:
+        raise WebSocketDisconnect(1006)
+
+    sender_task = asyncio.create_task(boom())
+    # 让任务完成
+    with contextlib.suppress(WebSocketDisconnect):
+        await sender_task
+
+    # 执行新的 finally 清理顺序（按 ws.py 修复版本）
+    manager.unsubscribe(viewer, on_events)
+    sender_task.cancel()
+    with contextlib.suppress(asyncio.CancelledError, WebSocketDisconnect, RuntimeError, OSError):
+        await sender_task
+
+    # 断言：订阅必须被摘除
+    assert len(manager._subs) == 0

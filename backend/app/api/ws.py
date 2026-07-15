@@ -161,9 +161,12 @@ async def ws_endpoint(
     except WebSocketDisconnect:
         pass
     finally:
-        sender_task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await sender_task
+        # 先做不可跳过的清理，再回收 sender 任务（其死因与 teardown 无关，一律吞掉）
         handle.connections.unsubscribe(viewer, on_events)
         if port is not None and sender_cb is not None:
             port.detach_sender(sender_cb)
+        sender_task.cancel()
+        with contextlib.suppress(
+            asyncio.CancelledError, WebSocketDisconnect, RuntimeError, OSError
+        ):
+            await sender_task
