@@ -18,7 +18,7 @@ from app.api.deps import (
     require_token,
 )
 from app.engine.config import build_preset
-from app.engine.events import Event, EventType
+from app.engine.events import Event, EventType, Visibility
 from app.engine.observation import build_observation, visible_events
 from app.engine.phases import Phase
 from app.runtime.player_port import NotYourTurnError, TurnPrompt
@@ -160,7 +160,12 @@ def speeches_endpoint(
             cur_round = int(e.payload.round)  # type: ignore[attr-defined]
         elif e.type == EventType.PHASE_CHANGED:
             cur_phase = str(e.payload.to)  # type: ignore[attr-defined]
-        elif e.type == EventType.PLAYER_SPOKE and e.actor_seat is not None:
+        elif (
+            e.type == EventType.PLAYER_SPOKE
+            and e.actor_seat is not None
+            and e.visibility == Visibility.PUBLIC
+        ):
+            # 护栏：即使未来出现非 PUBLIC 的发言类事件（如狼频道），也不得进入公开 speeches
             out.append(
                 SpeechItem(
                     seq=e.seq,
@@ -175,7 +180,8 @@ def speeches_endpoint(
                     kind="speech",
                 )
             )
-        elif e.type == EventType.LAST_WORDS:
+        elif e.type == EventType.LAST_WORDS and e.visibility == Visibility.PUBLIC:
+            # 护栏：即使未来出现非 PUBLIC 的发言类事件（如狼频道），也不得进入公开 speeches
             out.append(
                 SpeechItem(
                     seq=e.seq,

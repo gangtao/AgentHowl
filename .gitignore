@@ -216,3 +216,6 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# 运行时对局事件文件（JsonFileEventStore 默认目录）
+backend/data/
