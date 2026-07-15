@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from typing import Any
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 
 from app.api.deps import (
@@ -14,16 +17,29 @@ from app.api.deps import (
     require_token,
 )
 from app.engine.config import build_preset
-from app.runtime.registry import GameRegistry
-from app.schemas.actions import ToolCallError
+from app.engine.events import Event, EventType
+from app.engine.observation import build_observation, visible_events
+from app.engine.phases import Phase
+from app.runtime.player_port import NotYourTurnError, TurnPrompt
+from app.runtime.registry import GameHandle, GameRegistry
+from app.schemas.actions import (
+    ActionResponse,
+    ToolCall,
+    ToolCallError,
+    available_tools_for,
+    parse_tool_call,
+)
 from app.schemas.games import (
     CreateGameRequest,
     CreateGameResponse,
     JoinRequest,
     JoinResponse,
+    SpectatorView,
+    SpeechItem,
     StartRequest,
     StartResponse,
 )
+from app.store.event_store import event_to_json
 
 router = APIRouter(prefix="/games", tags=["games"])
 
@@ -80,3 +96,179 @@ async def start_endpoint(
     require_kind(info, game_id, "HOST")
     games.start(handle, fill_with_bots=req.fill_with_bots)
     return StartResponse(ok=True, num_players=handle.config.num_players)
+
+
+def _handle_for(games: GameRegistry, game_id: str) -> GameHandle:
+    handle = games.get(game_id)
+    handle.ensure_healthy()
+    return handle
+
+
+def games_store_events(games: GameRegistry, game_id: str) -> list[Event]:
+    return games.store.load_events(game_id)
+
+
+@router.get("/{game_id}/state")
+def state_endpoint(
+    game_id: str,
+    info: TokenInfo = Depends(require_token),
+    games: GameRegistry = Depends(get_games),
+) -> dict[str, Any]:
+    handle = _handle_for(games, game_id)
+    require_kind(info, game_id, "PLAYER", "SPECTATOR")
+    live = handle.live_state()  # 未开局 → LobbyError(409)
+    if info.kind == "PLAYER":
+        assert info.seat is not None
+        return build_observation(live, info.seat).model_dump(mode="json")
+    return SpectatorView(
+        game_id=game_id,
+        phase=str(live.phase),
+        round=live.round,
+        seats=[
+            {
+                "seat": p.seat,
+                "display_name": p.display_name,
+                "alive": p.alive,
+                "is_sheriff": p.is_sheriff,
+                "idiot_revealed": p.idiot_revealed,
+            }
+            for p in live.players
+        ],
+        sheriff_seat=live.sheriff_seat,
+        winner=live.winner,
+    ).model_dump(mode="json")
+
+
+@router.get("/{game_id}/speeches")
+def speeches_endpoint(
+    game_id: str,
+    round: int | None = Query(default=None),
+    phase: str | None = Query(default=None),
+    info: TokenInfo = Depends(require_token),
+    games: GameRegistry = Depends(get_games),
+) -> list[SpeechItem]:
+    handle = _handle_for(games, game_id)
+    require_kind(info, game_id, "PLAYER", "SPECTATOR")
+    if not handle.started:
+        return []
+    # 服务端以 GM 视角扫描以计算 round/phase（返回的两类事件本身是 PUBLIC）
+    out: list[SpeechItem] = []
+    cur_round, cur_phase = 0, ""
+    for e in games_store_events(games, game_id):
+        if e.type == EventType.ROUND_STARTED:
+            cur_round = int(e.payload.round)  # type: ignore[attr-defined]
+        elif e.type == EventType.PHASE_CHANGED:
+            cur_phase = str(e.payload.to)  # type: ignore[attr-defined]
+        elif e.type == EventType.PLAYER_SPOKE and e.actor_seat is not None:
+            out.append(
+                SpeechItem(
+                    seq=e.seq,
+                    round=cur_round,
+                    phase=cur_phase,
+                    seat=e.actor_seat,
+                    content=e.payload.content,  # type: ignore[attr-defined]
+                    claim_role=None
+                    if e.payload.claim_role is None  # type: ignore[attr-defined]
+                    else str(e.payload.claim_role),  # type: ignore[attr-defined]
+                    badge_flow=e.payload.badge_flow,  # type: ignore[attr-defined]
+                    kind="speech",
+                )
+            )
+        elif e.type == EventType.LAST_WORDS:
+            out.append(
+                SpeechItem(
+                    seq=e.seq,
+                    round=cur_round,
+                    phase=cur_phase,
+                    seat=e.payload.seat,  # type: ignore[attr-defined]
+                    content=e.payload.content,  # type: ignore[attr-defined]
+                    kind="last_words",
+                )
+            )
+    if round is not None:
+        out = [s for s in out if s.round == round]
+    if phase is not None:
+        out = [s for s in out if s.phase == phase]
+    return out
+
+
+@router.get("/{game_id}/events")
+def events_endpoint(
+    game_id: str,
+    from_seq: int = Query(default=0),
+    info: TokenInfo = Depends(require_token),
+    games: GameRegistry = Depends(get_games),
+) -> list[dict[str, Any]]:
+    handle = _handle_for(games, game_id)
+    require_kind(info, game_id, "PLAYER", "SPECTATOR")
+    if not handle.started:
+        return []
+    viewer: Any = info.seat if info.kind == "PLAYER" else "SPECTATOR"
+    events = games.store.load_events(game_id, from_seq=from_seq)
+    return [event_to_json(e) for e in visible_events(handle.live_state(), events, viewer)]
+
+
+@router.get("/{game_id}/replay")
+def replay_endpoint(
+    game_id: str,
+    info: TokenInfo = Depends(require_token),
+    games: GameRegistry = Depends(get_games),
+) -> list[dict[str, Any]]:
+    handle = _handle_for(games, game_id)
+    require_kind(info, game_id, "PLAYER", "SPECTATOR", "HOST")
+    if not handle.started or handle.live_state().phase != Phase.GAME_OVER:
+        raise HTTPException(status_code=403, detail="对局未结束，上帝视角回放未开放")
+    return [event_to_json(e) for e in games.store.load_events(game_id)]
+
+
+@router.post("/{game_id}/actions")
+async def actions_endpoint(
+    game_id: str,
+    call: ToolCall,
+    info: TokenInfo = Depends(require_token),
+    games: GameRegistry = Depends(get_games),
+) -> ActionResponse:
+    handle = _handle_for(games, game_id)
+    require_kind(info, game_id, "PLAYER")
+    assert info.seat is not None
+    port = handle.human_ports.get(info.seat)
+    if port is None:
+        raise HTTPException(status_code=403, detail="该座位非外接玩家")
+    action = parse_tool_call(call, actor_seat=info.seat)
+    try:
+        outcome = await port.submit_and_wait(action, timeout=10.0)
+    except TimeoutError:
+        raise NotYourTurnError("行动窗口已关闭（可能已超时代打）") from None
+    return ActionResponse(
+        ok=outcome.ok,
+        event_id=outcome.event_id,
+        state_version=outcome.state_version,
+        rejected_reason=outcome.rejected_reason,
+    )
+
+
+@router.get("/{game_id}/my-turn")
+async def my_turn_endpoint(
+    game_id: str,
+    wait: float = Query(default=25.0, le=30.0),
+    info: TokenInfo = Depends(require_token),
+    games: GameRegistry = Depends(get_games),
+) -> Response:
+    handle = _handle_for(games, game_id)
+    require_kind(info, game_id, "PLAYER")
+    assert info.seat is not None
+    port = handle.human_ports.get(info.seat)
+    if port is None:
+        raise HTTPException(status_code=403, detail="该座位非外接玩家")
+    prompt = await port.wait_armed(wait)
+    if prompt is None:
+        return Response(status_code=204)
+    return JSONResponse(_your_turn_payload(prompt))
+
+
+def _your_turn_payload(prompt: TurnPrompt) -> dict[str, Any]:
+    return {
+        "observation": prompt.observation.model_dump(mode="json"),
+        "available_tools": list(available_tools_for(prompt.observation)),
+        "deadline_ts": prompt.deadline_ts,
+    }

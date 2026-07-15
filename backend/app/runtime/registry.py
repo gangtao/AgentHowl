@@ -82,6 +82,10 @@ class GameRegistry:
         except KeyError:
             raise LookupError(f"对局不存在：{game_id}") from None
 
+    @property
+    def store(self) -> EventStore:
+        return self._store
+
     def join(
         self, handle: GameHandle, display_name: str, player_type: Literal["HUMAN", "AGENT"]
     ) -> int:

@@ -40,6 +40,9 @@ def create_app(
     app.add_exception_handler(ToolCallError, _handler(400))
     app.add_exception_handler(LookupError, _handler(404))
     app.add_exception_handler(StoreError, _handler(500))
+    # runner task 崩溃后 handle.ensure_healthy() 抛出裸 RuntimeError，需兜底为 500（否则落到
+    # Starlette 默认异常页，客户端拿不到 JSON detail）——issue #30 Task 5 复审发现。
+    app.add_exception_handler(RuntimeError, _handler(500))
     return app
 
 
