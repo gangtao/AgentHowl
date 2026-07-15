@@ -112,6 +112,26 @@ class TestReadEndpoints:
         ).json()
         assert suffix == [e for e in full if e["seq"] >= mid]
 
+    def test_my_turn_returns_promptly_after_game_over(self, client: TestClient) -> None:
+        # 白盒注入端口，仅为复现终局后的长轮询路径
+        from app.api.deps import TokenInfo
+        from app.runtime.player_port import HumanPlayerPort
+
+        gid, created = _start_ai_game(client, seed=5)
+        _wait_done(client, gid)
+        # 全AI对局已结束；在座位0注入真人端口
+        handle = client.app.state.games.get(gid)  # type: ignore[attr-defined]
+        handle.human_ports[0] = HumanPlayerPort()
+        # 补发座位0的token
+        tokens = client.app.state.tokens  # type: ignore[attr-defined]
+        tok = tokens.issue(TokenInfo(game_id=gid, seat=0, kind="PLAYER"))
+        # 长轮询应在终局后立即返回204，而非等满wait时间
+        t0 = time.time()
+        r = client.get(f"/api/v1/games/{gid}/my-turn?wait=10", headers=_auth(tok))
+        elapsed = time.time() - t0
+        assert r.status_code == 204
+        assert elapsed < 2.0  # 终局后立即返回，而非等满 wait
+
 
 class TestActions:
     def test_human_seat_plays_via_rest(self, client: TestClient) -> None:

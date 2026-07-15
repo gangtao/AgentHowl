@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
@@ -260,10 +261,16 @@ async def my_turn_endpoint(
     port = handle.human_ports.get(info.seat)
     if port is None:
         raise HTTPException(status_code=403, detail="该座位非外接玩家")
-    prompt = await port.wait_armed(wait)
-    if prompt is None:
-        return Response(status_code=204)
-    return JSONResponse(_your_turn_payload(prompt))
+    deadline = time.time() + wait
+    while True:
+        remaining = deadline - time.time()
+        if remaining <= 0:
+            return Response(status_code=204)
+        if handle.task is not None and handle.task.done():
+            return Response(status_code=204)  # 对局已终局：立即结束长轮询
+        prompt = await port.wait_armed(min(remaining, 0.25))
+        if prompt is not None:
+            return JSONResponse(_your_turn_payload(prompt))
 
 
 def _your_turn_payload(prompt: TurnPrompt) -> dict[str, Any]:
