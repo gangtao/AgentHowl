@@ -103,7 +103,23 @@ class HumanPlayerPort:
             except Exception:
                 self._sender = None  # 坏连接自摘除；玩家可经 REST 轮询发现窗口
         try:
-            return await self._pending
+            try:
+                return await self._pending
+            except asyncio.CancelledError:
+                # submit() 已 resolve _pending，但 runner 的 wait_for 超时在同一 tick
+                # 取消了本 act 任务：提交方的 _outcome 永远等不到 notify_result 回填，
+                # 这里先行回填 WINDOW_CLOSED 避免其挂死，再把取消异常继续向上抛出。
+                if self._outcome is not None and not self._outcome.done():
+                    self._outcome.set_result(
+                        SubmitOutcome(
+                            ok=False,
+                            event_id=None,
+                            state_version=observation.state_version,
+                            rejected_reason="WINDOW_CLOSED",
+                        )
+                    )
+                    self._outcome = None
+                raise
         finally:
             self._pending = None
             self._prompt = None

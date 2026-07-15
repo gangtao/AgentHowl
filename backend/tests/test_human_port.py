@@ -67,6 +67,22 @@ async def test_sender_receives_prompt_and_bad_sender_detached() -> None:
     await task
 
 
+async def test_cancelled_window_backfills_window_closed() -> None:
+    """提交与超时同 tick 竞争：act 被取消时，提交方必须收到 WINDOW_CLOSED 而非挂死。"""
+    state, seat, obs = _obs()
+    port = HumanPlayerPort()
+    task = asyncio.ensure_future(port.act(obs, deadline_ts=time.time() + 30))
+    await port.wait_armed(1.0)
+    outcome_fut = port.submit(RandomBot.choose_action(state, seat))
+    task.cancel()  # 模拟 runner wait_for 超时在同 tick 取消
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    outcome = await asyncio.wait_for(outcome_fut, 1.0)  # 不得挂死
+    assert outcome.ok is False and outcome.rejected_reason == "WINDOW_CLOSED"
+    with pytest.raises(NotYourTurnError):
+        port.submit(RandomBot.choose_action(state, seat))  # 窗口已关
+
+
 async def test_full_game_with_human_seat_via_port() -> None:
     """整局：seat 0 经 HumanPlayerPort 由测试驱动，裁决回填 ok；其余为 bot。"""
     cfg = build_preset("std_9_kill_side").model_copy(update={"seed": 42})
