@@ -81,6 +81,11 @@ def test_bad_tool_and_bad_args_raise_toolcallerror() -> None:
         parse_tool_call(ToolCall(tool="speak", arguments={}), 1)  # 缺 content
     with pytest.raises(ToolCallError):
         parse_tool_call(ToolCall(tool="bid_to_speak", arguments={"bid": 2}), 1)  # 未启用
+    # 新增：vote 须显式 target_seat 或 abstain，键名笔误（如 target 而非 target_seat）不被吞为弃票
+    with pytest.raises(ToolCallError):
+        parse_tool_call(ToolCall(tool="vote", arguments={"target": 7}), 1)  # 键名笔误
+    with pytest.raises(ToolCallError):
+        parse_tool_call(ToolCall(tool="vote", arguments={}), 1)  # 空票面
 
 
 def test_available_tools_by_phase() -> None:

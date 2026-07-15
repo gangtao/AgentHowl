@@ -42,8 +42,8 @@ class ActionResponse(BaseModel):
     rejected_reason: str | None = None
 
 
-def _opt_int(v: object) -> int | None:
-    return None if v is None else int(v)  # type: ignore[call-overload]
+def _opt_int(v: str | int | None) -> int | None:
+    return None if v is None else int(v)
 
 
 def parse_tool_call(call: ToolCall, actor_seat: int) -> Action:
@@ -59,6 +59,9 @@ def parse_tool_call(call: ToolCall, actor_seat: int) -> Action:
                 badge_flow=tuple(int(s) for s in a.get("badge_flow", ())),
             )
         if call.tool == "vote":
+            # 比 §4.1 更严：拒绝空票面，防止键名笔误被引擎当弃票吞掉
+            if "target_seat" not in a and not a.get("abstain"):
+                raise ToolCallError("vote 需要显式 target_seat 或 abstain=true")
             return DayVote(
                 actor_seat=actor_seat,
                 target_seat=_opt_int(a.get("target_seat")),
