@@ -66,18 +66,29 @@ async def test_speech_act_maps_to_speak() -> None:
 
 
 async def test_wolf_night_then_day_isolation() -> None:
-    """核心隔离测试：狼夜私谋文本绝不出现在任何昼间 prompt 中。"""
+    """核心隔离测试：狼夜私谋文本绝不出现在任何昼间 prompt 中；
+    公私分离正向路径：第1夜私谋通过 night_private_context() 流入第2夜 prompt。"""
+
+    wolf_call_count = 0  # 追踪狼夜调用序号
 
     def script(rm: type[BaseModel], system: str, user: str) -> BaseModel:
+        nonlocal wolf_call_count
         if rm is WolfDeliberation:
             assert "队友" in user  # 狼夜 prompt 含私有段
-            return WolfDeliberation(analysis=SECRET, proposed_target=3)
+            wolf_call_count += 1
+            if wolf_call_count == 1:
+                # 第1夜私谋：返回 SECRET
+                return WolfDeliberation(analysis=SECRET, proposed_target=3)
+            else:
+                # 第2夜：私谋应该包含第1夜的 SECRET，在更深的推理中
+                return WolfDeliberation(analysis="夜2分析：基于夜1谋定调整刀目", proposed_target=5)
         assert rm is VoteDecision or rm is SpeechDecision
         if rm is VoteDecision:
             return VoteDecision(reasoning="r", target_seat=3)
         return SpeechDecision(reasoning="r", content="昨晚平安夜")
 
     port, client = _port(script)
+    # 第1轮：狼夜、昼间发言、投票
     kill = await port.act(_obs("NIGHT_WEREWOLF"), time.time() + 30)
     assert kill == NightAction(actor_seat=0, action_type=NightActionType.KILL, target_seat=3)
     assert SECRET in port.memory.night_private_context()
@@ -85,12 +96,27 @@ async def test_wolf_night_then_day_isolation() -> None:
     await port.act(_obs("DAY_SPEECH", state_version=11), time.time() + 30)
     await port.act(_obs("VOTE", state_version=12), time.time() + 30)
 
-    # 私谋文本 SECRET 是狼夜那次调用的响应内容，只在响应返回后才被 note_night_private
-    # 写入 night_private 分区——它不可能出现在产生它自身的那次请求 prompt 里，更不用说
-    # 后续昼间调用。因此正确隔离下，三次调用的请求 prompt 里都不应见到 SECRET。
-    wolf_calls = [c for c in client.calls if SECRET in c[2]]
-    assert len(wolf_calls) == 0
-    for _model, system, user in client.calls:
+    # 第2轮：再来一次狼夜，检验第1夜私谋是否流入第2夜 prompt
+    kill2 = await port.act(_obs("NIGHT_WEREWOLF", round=2, state_version=20), time.time() + 30)
+    assert kill2 == NightAction(actor_seat=0, action_type=NightActionType.KILL, target_seat=5)
+
+    # 验证 1：私谋文本 SECRET 是狼夜那次调用的响应内容，只在响应返回后才被
+    # note_night_private 写入 night_private 分区——它不可能出现在产生它自身的那次
+    # 请求 prompt 里，更不用说后续昼间调用。因此正确隔离下，前三次调用
+    # （第1狼夜、昼间、投票）的请求 prompt 里都不应见到 SECRET。
+    early_calls = client.calls[:3]  # 第1狼夜、昼发言、投票
+    for _model, system, user in early_calls:
+        assert SECRET not in user and SECRET not in system
+
+    # 验证 2：公私分离正向路径——第1夜私谋 SECRET 经由 memory.night_private_context()
+    # 流入第2夜的 wolf_night_prompt（在"狼队私有"段）
+    second_wolf_night_call = client.calls[-1]  # 最后一次调用是第2狼夜
+    _, _, user_prompt = second_wolf_night_call
+    assert SECRET in user_prompt, "第1夜私谋应流入第2夜 prompt"
+
+    # 验证 3：昼间调用（发言、投票）永不见 SECRET
+    day_calls = [c for c in client.calls if c[1:] == client.calls[1:3]]  # 第1昼发言、投票
+    for _model, system, user in day_calls:
         assert SECRET not in user and SECRET not in system
 
 
