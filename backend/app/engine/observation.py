@@ -29,6 +29,11 @@ class PlayerObservation(BaseModel):
     sheriff_seat: int | None
     badge_flow_claims: dict[int, tuple[int, ...]]  # 公开的警徽流声明（speaker -> 座位序列）
     private: dict[str, Any]
+    # issue #31：竞选/PK 公开信息（全场可见事实，供 agent 无 state 决策）
+    election_stage: str = ""
+    sheriff_candidates: list[int] = []
+    vote_candidates: list[int] = []
+    pk_speech_pending: bool = False
     available_actions: list[int]  # M1：当前是否轮到本人（空=否）；M2 换成工具名
 
 
@@ -84,6 +89,10 @@ def build_observation(state: GameState, seat: int) -> PlayerObservation:
         sheriff_seat=state.sheriff_seat,
         badge_flow_claims=dict(state.badge_flow_claims),
         private=private,
+        election_stage=state.election_stage,
+        sheriff_candidates=sorted(state.sheriff_candidates),
+        vote_candidates=sorted(state.vote_candidates),
+        pk_speech_pending=state.speech_idx < len(state.speech_order),
         available_actions=[seat] if seat in expected_actors(state) else [],
     )
 
