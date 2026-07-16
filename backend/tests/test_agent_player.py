@@ -114,8 +114,9 @@ async def test_wolf_night_then_day_isolation() -> None:
     _, _, user_prompt = second_wolf_night_call
     assert SECRET in user_prompt, "第1夜私谋应流入第2夜 prompt"
 
-    # 验证 3：昼间调用（发言、投票）永不见 SECRET
-    day_calls = [c for c in client.calls if c[1:] == client.calls[1:3]]  # 第1昼发言、投票
+    # 验证 3：昼间调用（发言、投票）永不见 SECRET（显式取第 2、3 次调用）
+    day_calls = client.calls[1:3]
+    assert len(day_calls) == 2
     for _model, system, user in day_calls:
         assert SECRET not in user and SECRET not in system
 
