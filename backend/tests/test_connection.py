@@ -99,3 +99,23 @@ async def test_empty_subset_not_called() -> None:
     mgr.subscribe("SPECTATOR", cb)
     await mgr.broadcast([_evt(1, Visibility.GM_ONLY)])
     assert calls == []
+
+
+async def test_raising_subscriber_is_evicted_others_delivered() -> None:
+    """坏订阅者被摘除并告警，其余订阅者照常收流（issue #30 前置加固）。"""
+    state = _state()
+    mgr = ConnectionManager(state_provider=lambda: state)
+    got: list[int] = []
+
+    async def bad(events: list[Event]) -> None:
+        raise RuntimeError("坏连接")
+
+    async def good(events: list[Event]) -> None:
+        got.extend(e.seq for e in events)
+
+    mgr.subscribe("GM", bad)
+    mgr.subscribe("GM", good)
+    await mgr.broadcast([_evt(1, Visibility.PUBLIC)])
+    assert got == [1]  # bad 抛错不影响 good
+    await mgr.broadcast([_evt(2, Visibility.PUBLIC)])
+    assert got == [1, 2]  # bad 已被摘除，不再触发

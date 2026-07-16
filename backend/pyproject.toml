@@ -4,7 +4,9 @@ version = "0.1.0"
 description = "AgentHowl 狼人杀游戏平台后端 — 规则引擎、运行时与 Agent 层"
 requires-python = ">=3.11"
 dependencies = [
+    "fastapi>=0.139.0",
     "pydantic>=2.6",
+    "uvicorn>=0.51.0",
 ]
 
 [dependency-groups]
@@ -13,6 +15,7 @@ dev = [
     "mypy>=1.13",
     "pytest>=8",
     "pytest-asyncio>=1.4.0",
+    "httpx>=0.28.1",
 ]
 
 [tool.ruff]
@@ -21,6 +24,10 @@ target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B", "SIM"]
+
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI 依赖注入惯用法：Depends(...) 在参数默认值中求值是框架约定，非可变默认值陷阱
+extend-immutable-calls = ["fastapi.Depends", "fastapi.Query"]
 
 [tool.mypy]
 python_version = "3.11"

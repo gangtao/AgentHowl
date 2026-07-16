@@ -3,6 +3,10 @@
 from __future__ import annotations
 
 from enum import StrEnum
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from app.engine.state import GameState
 
 
 class Phase(StrEnum):
@@ -39,12 +43,6 @@ class ElectionStage(StrEnum):
 
 
 from app.engine.config import GameConfig, RoleType  # noqa: E402
-from app.engine.state import (  # noqa: E402
-    GameState,
-    living,
-    living_of_role,
-    living_wolves,
-)
 
 _ROLE_TO_NIGHT_PHASE: dict[RoleType, Phase] = {
     RoleType.GUARD: Phase.NIGHT_GUARD,
@@ -81,6 +79,9 @@ def next_night_phase(config: GameConfig, current: Phase) -> Phase | None:
 
 def expected_actors(state: GameState) -> set[int]:
     """当前必须行动的座位集合；系统阶段返回空集。"""
+    # 局部导入以打破 phases<->state 的模块级循环依赖（谁先被导入不再敏感）
+    from app.engine.state import living, living_of_role, living_wolves
+
     ph = state.phase
 
     if ph == Phase.NIGHT_GUARD:
