@@ -119,7 +119,10 @@ def test_full_games_with_claims_terminate() -> None:
     from app.engine.events import EventType
 
     saw_claim = False
-    for seed in range(12):
+    # issue #29：GAME_CREATED/GAME_STARTED 头部事件令 seq 整体 +2，
+    # 游戏内随机派生（seq=state_version）随之改变既有 seed 的对局轨迹；
+    # 原 range(12) 内不再命中警徽流声明，故扩大扫描范围以恢复覆盖。
+    for seed in range(32):
         cfg = build_preset("std_12_yn_hunter_guard").model_copy(update={"seed": seed})
         final, events = run_game(cfg, game_id=f"bf{seed}")
         assert final.phase == Phase.GAME_OVER
@@ -128,5 +131,5 @@ def test_full_games_with_claims_terminate() -> None:
             for e in events
         ):
             saw_claim = True
-    # 12 个 seed 中至少一次真实报出警徽流（SHERIFF_PK 发生且 1/4 概率命中）
+    # 32 个 seed 中至少一次真实报出警徽流（SHERIFF_PK 发生且 1/4 概率命中）
     assert saw_claim

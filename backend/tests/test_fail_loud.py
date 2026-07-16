@@ -1,4 +1,4 @@
-"""引擎 fail-loud（issue #4）：畸形事件与预留事件在 reduce 处抛错。"""
+"""引擎 fail-loud（issue #4）：畸形事件在 reduce 处抛错；预留集合已随 issue #29 清空。"""
 
 import pytest
 
@@ -50,18 +50,15 @@ def test_mismatched_payload_raises() -> None:
         reduce(_state(), ev)
 
 
-def test_reserved_type_raises() -> None:
-    # 预留（未实现）类型 -> 抛错（此前静默无操作）
+def test_lifecycle_event_with_wrong_payload_raises() -> None:
+    # GAME_CREATED 已实现：错误 payload 类 -> 抛 payload 错配（预留集合已清空，issue #29）
     ev = _evt(EventType.GAME_CREATED, PhaseChangedPayload(to=Phase.DAY_SPEECH))
-    with pytest.raises(EngineInvariantError, match="未实现"):
+    with pytest.raises(EngineInvariantError, match="payload"):
         reduce(_state(), ev)
 
 
 def test_mapping_covers_exactly_implemented_types() -> None:
-    reserved = {
-        EventType.GAME_CREATED,
-        EventType.GAME_STARTED,
-    }
+    reserved: set[EventType] = set()
     # 枚举新增成员时此断言强制作者决策：入映射（实现）或入 reserved（预留）
     assert set(EVENT_PAYLOAD_TYPES) == set(EventType) - reserved
 

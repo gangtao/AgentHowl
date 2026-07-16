@@ -70,6 +70,16 @@ class EventPayload(BaseModel):
     model_config = ConfigDict(frozen=True)
 
 
+class GameCreatedPayload(EventPayload):
+    """对局创建（生命周期标记；num_players 供日志/前端自述，状态不依赖它）。"""
+
+    num_players: int
+
+
+class GameStartedPayload(EventPayload):
+    """对局开始（纯标记，无字段）。"""
+
+
 class RolesAssignedPayload(EventPayload):
     # 座位->角色（GM_ONLY）；用 list[tuple] 以便确定性序列化
     assignments: tuple[tuple[int, RoleType], ...]
@@ -218,9 +228,11 @@ class BadgePassedPayload(EventPayload):
     consumed_turn: bool = False  # True=玩家在遗言回合主动移交/撕徽，消耗其发言回合
 
 
-# EventType -> payload 类。预留类型（GAME_CREATED/GAME_STARTED）有意缺席：
-# 未映射 = 未实现，被 reduce 到即抛错（fail-loud）。
+# EventType -> payload 类。未映射 = 未实现，被 reduce 到即抛错（fail-loud）；
+# 当前无预留类型（issue #29 起 GAME_CREATED/GAME_STARTED 已实现）。
 EVENT_PAYLOAD_TYPES: dict[EventType, type[EventPayload]] = {
+    EventType.GAME_CREATED: GameCreatedPayload,
+    EventType.GAME_STARTED: GameStartedPayload,
     EventType.ROLES_ASSIGNED: RolesAssignedPayload,
     EventType.ROUND_STARTED: RoundStartedPayload,
     EventType.PHASE_CHANGED: PhaseChangedPayload,
@@ -299,6 +311,11 @@ def _reduce_dispatch(state: GameState, event: Event) -> dict[str, object]:
     # 各分支的 isinstance 与 reduce() 前置校验重复，保留仅为 mypy 类型收窄。
     p = event.payload
     t = event.type
+
+    if t in (EventType.GAME_CREATED, EventType.GAME_STARTED):
+        # 生命周期标记事件：状态无字段变化，仅 state_version 随 reduce 常规递增。
+        # 显式空分支 =「已实现的 no-op」，与「未实现类型抛错」的 fail-loud 语义区分。
+        return {}
 
     if t == EventType.ROLES_ASSIGNED and isinstance(p, RolesAssignedPayload):
         role_by_seat = dict(p.assignments)
