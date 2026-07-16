@@ -57,7 +57,11 @@ def create_game_endpoint(
     except (KeyError, ValueError, ValidationError) as exc:
         raise ToolCallError(f"preset/config_override 非法：{exc}") from exc
     handle = games.create(
-        config, allow_spectators=req.allow_spectators, num_ai_players=req.num_ai_players
+        config,
+        allow_spectators=req.allow_spectators,
+        num_ai_players=req.num_ai_players,
+        ai_model=req.ai_model,
+        ai_model_speech=req.ai_model_speech,
     )
     host_token = tokens.issue(TokenInfo(game_id=handle.game_id, seat=None, kind="HOST"))
     spectator_token = (

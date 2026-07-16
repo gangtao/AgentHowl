@@ -13,6 +13,7 @@ from pydantic import BaseModel, ConfigDict
 
 from app.cli.bot import RandomBot
 from app.engine.actions import Action
+from app.engine.events import Event
 from app.engine.observation import PlayerObservation
 from app.engine.state import GameState
 
@@ -67,6 +68,13 @@ class SupportsResultFeedback(Protocol):
     def notify_result(
         self, rejected_reason: str | None, state_version: int, event_id: str | None
     ) -> None: ...
+
+
+@runtime_checkable
+class SupportsEventIngest(Protocol):
+    """可摄入可见事件流的端口能力（AgentPlayerPort 实现；registry 据此订阅 memory）。"""
+
+    async def on_events(self, events: list[Event]) -> None: ...
 
 
 class HumanPlayerPort:
