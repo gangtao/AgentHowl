@@ -46,6 +46,18 @@ def test_vote_candidates_and_pk_pending() -> None:
     assert obs.vote_candidates == sorted(state.vote_candidates)
 
 
+def test_pk_speech_pending_during_vote_pk() -> None:
+    """pk_speech_pending 在 VOTE_PK 阶段当存在待发言时为 True（行为驱动测试）。"""
+    config = build_preset("std_9_kill_side").model_copy(update={"seed": 1})
+    state = create_game(config, "g_obs_pk_test").state
+    state = _advance_until(
+        state,
+        lambda s: s.phase == Phase.VOTE_PK and s.speech_idx < len(s.speech_order),
+    )
+    obs = build_observation(state, 0)
+    assert obs.pk_speech_pending is True
+
+
 def test_defaults_keep_old_constructions_valid() -> None:
     config = build_preset("std_9_kill_side").model_copy(update={"seed": 11})
     state = create_game(config, "g_obs3").state

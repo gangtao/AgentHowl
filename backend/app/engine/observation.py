@@ -33,6 +33,8 @@ class PlayerObservation(BaseModel):
     election_stage: str = ""
     sheriff_candidates: list[int] = []
     vote_candidates: list[int] = []
+    # 仅在 SHERIFF_PK/VOTE_PK 阶段有意义；DAY_SPEECH/LAST_WORDS
+    # 等发言队列阶段也会为 True 但语义不同
     pk_speech_pending: bool = False
     available_actions: list[int]  # M1：当前是否轮到本人（空=否）；M2 换成工具名
 
