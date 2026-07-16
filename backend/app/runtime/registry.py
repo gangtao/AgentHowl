@@ -7,13 +7,19 @@ from __future__ import annotations
 
 import asyncio
 import secrets
+from collections.abc import Callable
 from typing import Literal
 
 from app.engine.config import GameConfig
 from app.engine.state import GameState
 from app.runtime.connection import ConnectionManager
 from app.runtime.game_runner import GameLobby, GameRunner, LobbyError, RunnerTimeouts
-from app.runtime.player_port import BotPlayerPort, HumanPlayerPort, PlayerPort
+from app.runtime.player_port import (
+    BotPlayerPort,
+    HumanPlayerPort,
+    PlayerPort,
+    SupportsEventIngest,
+)
 from app.store.event_store import EventStore
 
 
@@ -27,11 +33,15 @@ class GameHandle:
         *,
         allow_spectators: bool,
         num_ai_players: int | None,
+        ai_model: str | None = None,
+        ai_model_speech: str | None = None,
     ) -> None:
         self.game_id = game_id
         self.config = config
         self.allow_spectators = allow_spectators
         self.num_ai_players = num_ai_players
+        self.ai_model = ai_model
+        self.ai_model_speech = ai_model_speech
         self.lobby = GameLobby(config, game_id)
         self.ports: dict[int, PlayerPort] = {}
         self.human_ports: dict[int, HumanPlayerPort] = {}
@@ -57,10 +67,16 @@ class GameHandle:
 
 
 class GameRegistry:
-    def __init__(self, store: EventStore, timeouts: RunnerTimeouts | None = None) -> None:
+    def __init__(
+        self,
+        store: EventStore,
+        timeouts: RunnerTimeouts | None = None,
+        agent_port_factory: Callable[[int, GameHandle], PlayerPort] | None = None,
+    ) -> None:
         self._store = store
         self._timeouts = timeouts
         self._games: dict[str, GameHandle] = {}
+        self._agent_port_factory = agent_port_factory
 
     def create(
         self,
@@ -68,10 +84,17 @@ class GameRegistry:
         *,
         allow_spectators: bool,
         num_ai_players: int | None = None,
+        ai_model: str | None = None,
+        ai_model_speech: str | None = None,
     ) -> GameHandle:
         game_id = f"g_{secrets.token_hex(4)}"
         handle = GameHandle(
-            game_id, config, allow_spectators=allow_spectators, num_ai_players=num_ai_players
+            game_id,
+            config,
+            allow_spectators=allow_spectators,
+            num_ai_players=num_ai_players,
+            ai_model=ai_model,
+            ai_model_speech=ai_model_speech,
         )
         self._games[game_id] = handle
         return handle
@@ -117,7 +140,10 @@ class GameRegistry:
         handle.connections = ConnectionManager(state_provider=_state_of)
         for seat in range(handle.config.num_players):
             if seat not in handle.ports:
-                handle.ports[seat] = BotPlayerPort(state_provider=_state_of)
+                if handle.ai_model is None:
+                    handle.ports[seat] = BotPlayerPort(state_provider=_state_of)
+                else:
+                    handle.ports[seat] = self._build_agent_port(seat, handle)
         runner = GameRunner(
             store=self._store,
             config=handle.config,
@@ -128,4 +154,16 @@ class GameRegistry:
             timeouts=self._timeouts,
         )
         handle.runner = runner
+        # 订阅须在 create_task 之前完成，否则 GAME_CREATED/ROLES_ASSIGNED 首批事件漏投
+        for seat, port in handle.ports.items():
+            if isinstance(port, SupportsEventIngest):
+                handle.connections.subscribe(seat, port.on_events)
         handle.task = asyncio.create_task(runner.run())
+
+    def _build_agent_port(self, seat: int, handle: GameHandle) -> PlayerPort:
+        if self._agent_port_factory is not None:
+            return self._agent_port_factory(seat, handle)
+        from app.agent.agent_player import build_agent_port  # 惰性：litellm 仅在需要时加载
+
+        assert handle.ai_model is not None
+        return build_agent_port(seat, handle.config, handle.ai_model, handle.ai_model_speech)
