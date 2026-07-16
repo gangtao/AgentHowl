@@ -44,3 +44,6 @@ follow_imports = "skip"
 pythonpath = ["."]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+markers = [
+    "smoke: 真模型冒烟测试（需 AGENTHOWL_SMOKE_MODEL 环境变量且 Ollama 端点可达）",
+]
