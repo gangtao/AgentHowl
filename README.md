@@ -95,6 +95,71 @@ uv run ruff check . && uv run ruff format --check .
 - **[docs/specs/requirements.md](docs/specs/requirements.md)** — 权威 PRD：GameConfig schema、阶段状态机、角色时序、Agent 工具契约、API 设计、里程碑
 - **[docs/superpowers/specs/](docs/superpowers/specs/)** 与 **[plans/](docs/superpowers/plans/)** — 每个特性的设计文档与实施计划
 
+## API 快速开始 / API Quick Start
+
+后端提供统一玩家 API（真人与 LLM Agent 走同一套）。启动：
+
+```bash
+cd backend
+uv run uvicorn app.main:app --reload   # http://localhost:8000
+```
+
+一局最小流程（`curl`；`$BASE=http://localhost:8000/api/v1`）：
+
+```bash
+# 1) 建局：9 人屠边预设，空位由 LLM Agent 填充（ai_model 省略则用内置随机 bot）
+curl -s -X POST $BASE/games -H 'Content-Type: application/json' \
+  -d '{"preset":"std_9_kill_side","config_override":{"seed":3},"ai_model":"ollama/llama3.1"}'
+# → {game_id, host_token, spectator_token, config}
+
+# 2) （可选）真人加入任意空座，拿 player_token 与 ws_url
+curl -s -X POST $BASE/games/$GID/join -H 'Content-Type: application/json' \
+  -d '{"display_name":"Alice","player_type":"HUMAN"}'
+# → {player_token, seat, ws_url}
+
+# 3) 开局（仅 host_token）：缺员座位按 ai_model 填充后起 runner
+curl -s -X POST $BASE/games/$GID/start -H "Authorization: Bearer $HOST_TOKEN" \
+  -H 'Content-Type: application/json' -d '{"fill_with_bots":true}'
+
+# 4) 真人轮询自己的行动窗口（长轮询；204=暂未轮到）
+curl -s "$BASE/games/$GID/my-turn?wait=5" -H "Authorization: Bearer $PLAYER_TOKEN"
+
+# 5) 提交工具调用（§4.1 契约；actor_seat 一律取自 token，不接受 body 指定）
+curl -s -X POST $BASE/games/$GID/actions -H "Authorization: Bearer $PLAYER_TOKEN" \
+  -H 'Content-Type: application/json' -d '{"tool":"vote","arguments":{"target_seat":2}}'
+
+# 6) 局终 GM 全量回放
+curl -s $BASE/games/$GID/replay -H "Authorization: Bearer $SPECTATOR_TOKEN"
+```
+
+WebSocket（按视角推送过滤后事件流；断线可凭同 token + `from_seq` 重连补发）：
+
+```
+GET /api/v1/ws?token=<token>[&from_seq=<n>]
+# server→client 帧：game_event / your_turn / phase_change / game_over
+# client→server 帧：与 POST /actions 等价（同 schema 同信封）
+```
+
+真实模型冒烟与 token bench（默认跳过，需本地 Ollama）：
+
+```bash
+ollama pull llama3.1 && ollama serve &
+AGENTHOWL_SMOKE_MODEL=ollama/llama3.1 uv run pytest -m smoke -q -s
+```
+
+## M2 验收矩阵（PRD §9）
+
+| 判据 | 证据（测试） |
+|---|---|
+| 全 AI 完整对局经 API/WS（RandomBot） | `tests/test_api_e2e.py::test_acceptance_12_ai_full_game_via_api` |
+| 全 **LLM Agent** 完整对局经 API/WS | `tests/test_acceptance_m25.py::test_all_agentplayer_game_via_http_ws` |
+| 真人经同一玩家 API 顶替任意座位 | `tests/test_api_e2e.py::test_acceptance_human_can_take_any_seat`、`tests/test_api_ws.py::test_human_plays_whole_game_via_ws` |
+| 超时代打，事件带 `meta.timeout=true` | `tests/test_game_runner.py::TestTimeoutAndRetry::test_hanging_port_replaced_by_default` |
+| 断线重连 `from_seq` 补发一致 | `tests/test_api_e2e.py::test_acceptance_reconnect_restores_view` |
+| 工具契约稳定 + instructor 校验重试 | `tests/test_schemas.py`、`tests/test_agent_llm_client.py::test_instructor_retries_on_invalid_then_valid` |
+| 信息隔离（REST + 活 WS） | `tests/test_api_e2e.py::test_acceptance_isolation_matrix_via_api`、`tests/test_acceptance_m25.py::test_ws_isolation_matrix_wolf_villager_spectator` |
+| 单局 LLM token 粗测 | `tests/test_agent_bench.py::test_single_game_token_bench`（env 门控） |
+
 ## License
 
 [Apache 2.0](LICENSE)
