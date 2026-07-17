@@ -49,3 +49,45 @@ async def test_scripted_client_satisfies_protocol_and_records() -> None:
     )
     assert out == _Echo(text="hi")
     assert scripted.calls == [("scripted", "sys", "usr")]  # type: ignore[attr-defined]
+
+
+async def test_instructor_retries_on_invalid_then_valid(monkeypatch) -> None:
+    """判据 5：底层模型首次返回不合 schema 的 JSON，instructor 校验失败后重试至合法。"""
+    import litellm
+
+    from app.agent.decisions import SpeechDecision
+
+    calls = {"n": 0}
+
+    def _resp(content: str):
+        # 构造 litellm ModelResponse（OpenAI 形状）；instructor JSON mode 从 message.content 解析
+        return litellm.ModelResponse(
+            choices=[
+                {
+                    "index": 0,
+                    "message": {"role": "assistant", "content": content},
+                    "finish_reason": "stop",
+                }
+            ],
+            model="scripted",
+            usage={"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+        )
+
+    async def fake_acompletion(*args, **kwargs):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            # 缺必填字段 content → SpeechDecision 校验失败，触发 instructor 重试
+            return _resp('{"reasoning": "先胡说"}')
+        return _resp('{"reasoning": "ok", "content": "大家好"}')
+
+    monkeypatch.setattr(litellm, "acompletion", fake_acompletion)
+
+    client = LiteLLMInstructorClient(max_retries=2)
+    result = await client.complete_structured(
+        system_prompt="s",
+        user_prompt="u",
+        response_model=SpeechDecision,
+        model="scripted",
+    )
+    assert isinstance(result, SpeechDecision) and result.content == "大家好"
+    assert calls["n"] >= 2  # 首次校验失败确实触发了重试
