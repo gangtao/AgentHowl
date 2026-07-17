@@ -20,7 +20,7 @@ from app.runtime.player_port import PlayerPort
 from app.runtime.registry import GameHandle
 from app.store.event_store import InMemoryEventStore
 from tests.llm_helpers import ScriptedLLMClient, action_to_decision
-from tests.test_api_play import _auth, _wait_done
+from tests.test_api_play import _auth, _start_ai_game, _wait_done
 
 
 def _scripted_agent_factory():
@@ -42,6 +42,16 @@ def _scripted_agent_factory():
         )
 
     return factory
+
+
+@pytest.fixture()
+def client() -> Iterator[TestClient]:
+    """标准 RandomBot 填充 fixture（非 Task 1 的 agent_client）：供活 WS 隔离矩阵测试使用。"""
+    app = create_app(
+        store=InMemoryEventStore(), timeouts=RunnerTimeouts(speech_sec=10.0, action_sec=10.0)
+    )
+    with TestClient(app) as c:
+        yield c
 
 
 @pytest.fixture()
@@ -89,3 +99,52 @@ def test_all_agentplayer_game_via_http_ws(agent_client: TestClient) -> None:
     ).json()
     assert replay[-1]["type"] == "GAME_OVER"
     _wait_done(agent_client, gid)
+
+
+def _drain_ws_events(client: TestClient, gid: str, token: str) -> list[dict[str, Any]]:
+    """从 from_seq=1 连 WS，收集全部 game_event 帧直至 game_over。"""
+    out: list[dict[str, Any]] = []
+    with client.websocket_connect(f"/api/v1/ws?token={token}&from_seq=1") as ws:
+        while True:
+            frame = ws.receive_json()
+            if frame["type"] == "game_event":
+                out.append(frame["event"])
+            if frame["type"] == "game_over":
+                break
+    return out
+
+
+def test_ws_isolation_matrix_wolf_villager_spectator(client: TestClient) -> None:
+    """判据 6：活 WS 流上——狼见 WOLVES、民不见；任何非 GM 流永不见 GM_ONLY。"""
+    from app.api.deps import TokenInfo
+    from app.engine.config import Faction
+
+    gid, created = _start_ai_game(client, seed=3)
+    _wait_done(client, gid)
+
+    handle = client.app.state.games.get(gid)  # type: ignore[attr-defined]
+    tokens = client.app.state.tokens  # type: ignore[attr-defined]
+    state = handle.runner.state
+    wolf_seat = next(p.seat for p in state.players if p.faction == Faction.WOLF)
+    villager_seat = next(p.seat for p in state.players if p.faction != Faction.WOLF)
+
+    wolf_tok = tokens.issue(TokenInfo(game_id=gid, seat=wolf_seat, kind="PLAYER"))
+    vill_tok = tokens.issue(TokenInfo(game_id=gid, seat=villager_seat, kind="PLAYER"))
+    spec_tok = created["spectator_token"]
+
+    wolf_ev = _drain_ws_events(client, gid, wolf_tok)
+    vill_ev = _drain_ws_events(client, gid, vill_tok)
+    spec_ev = _drain_ws_events(client, gid, spec_tok)
+
+    # 狼座 WS 流含 WOLVES 事件；民座与观战流均无
+    assert any(e["visibility"] == "WOLVES" for e in wolf_ev)
+    assert not any(e["visibility"] == "WOLVES" for e in vill_ev)
+    assert not any(e["visibility"] == "WOLVES" for e in spec_ev)
+    # 任何非 GM 流永不含 GM_ONLY
+    for stream in (wolf_ev, vill_ev, spec_ev):
+        assert not any(e["visibility"] == "GM_ONLY" for e in stream)
+    # ROLE_SELF 只能是本座
+    assert all(e["actor_seat"] == wolf_seat for e in wolf_ev if e["visibility"] == "ROLE_SELF")
+    assert all(e["actor_seat"] == villager_seat for e in vill_ev if e["visibility"] == "ROLE_SELF")
+    # 观战流纯 PUBLIC
+    assert all(e["visibility"] == "PUBLIC" for e in spec_ev)
