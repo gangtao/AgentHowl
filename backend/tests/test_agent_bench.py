@@ -62,9 +62,10 @@ async def test_single_game_token_bench() -> None:
     from litellm.integrations.custom_logger import CustomLogger
 
     assert SMOKE_MODEL is not None
+    # _TokenMeter 鸭子实现 CustomLogger.async_log_success_event，挂到 litellm.callbacks
+    # （异步成功事件的稳定接口）；此处 import CustomLogger 仅为语义标注钩子契约。
+    _ = CustomLogger
     meter = _TokenMeter()
-    # CustomLogger 子类实例挂到 litellm.callbacks（异步成功事件的稳定接口）
-    assert isinstance(meter, CustomLogger) or True  # _TokenMeter 鸭子实现 async_log_success_event
     prev_callbacks = list(litellm.callbacks)
     litellm.callbacks = [meter]  # type: ignore[list-item]
     try:
