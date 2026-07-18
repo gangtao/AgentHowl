@@ -160,6 +160,29 @@ AGENTHOWL_SMOKE_MODEL=ollama/llama3.1 uv run pytest -m smoke -q -s
 | 信息隔离（REST + 活 WS） | `tests/test_api_e2e.py::test_acceptance_isolation_matrix_via_api`、`tests/test_acceptance_m25.py::test_ws_isolation_matrix_wolf_villager_spectator` |
 | 单局 LLM token 粗测 | `tests/test_agent_bench.py::test_single_game_token_bench`（env 门控） |
 
+## 终端对局 / CLI Play
+
+无需前端，直接在终端看局或玩局（进程内跑，无需起 server）：
+
+```bash
+cd backend
+
+# 看局：全 bot 自对局，GM 视角逐事件叙述（--delay 控制节奏、--step 回车逐步）
+uv run python -m app.cli.play --seed 3 --delay 0.6
+uv run python -m app.cli.play --view spectator      # 只看公开信息（拟真观战）
+uv run python -m app.cli.play --step                 # 回车逐步推进
+
+# 玩局：你扮演 2 号座位，其余内置 bot 填充
+uv run python -m app.cli.play --seat 2
+#   轮到你时输入：speak 我怀疑3号 / vote 3 / vote abstain /
+#   night check 5 / sheriff vote_sheriff 4 / self_destruct / help
+
+# LLM 自对局（需本地 Ollama）：全座 LLM Agent，GM 视角围观
+uv run python -m app.cli.play --ai-model ollama/llama3.1 --delay 0.3
+```
+
+纯引擎胜负统计（无叙述、极快）另见 `python -m app.cli.simulate --games 100`。
+
 ## License
 
 [Apache 2.0](LICENSE)
