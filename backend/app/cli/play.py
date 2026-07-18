@@ -139,7 +139,7 @@ def main(argv: list[str] | None = None) -> None:
             )
         )
     else:
-        from app.cli.play_human import run_play  # type: ignore[import-not-found]  # Task 3
+        from app.cli.play_human import run_play
 
         asyncio.run(run_play(config, seat=args.seat, ai_model=args.ai_model))
 
