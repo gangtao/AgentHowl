@@ -26,7 +26,13 @@ _CLI_TIMEOUTS = RunnerTimeouts(speech_sec=120.0, action_sec=120.0)
 
 
 async def default_read_line(prompt: str) -> str:
-    """默认行读取器：线程内阻塞 input，不卡事件循环。"""
+    """默认行读取器：线程内阻塞 input，不卡事件循环。
+
+    局限：input() 阻塞在独立线程，asyncio 取消无法中断它。若玩家在 `> ` 提示处
+    发呆到本回合超时（默认行动顶替）且对局随即终局，该线程会滞留到解释器退出时
+    才被 join —— 表现为进程退出前需按一次回车。交互式 CLI 的固有取舍，非 run_play
+    的挂死缺陷（对局逻辑已正常收尾）。
+    """
     return await asyncio.to_thread(input, prompt)
 
 
