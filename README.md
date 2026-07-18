@@ -5,7 +5,8 @@
 ## 当前状态
 
 - ✅ **M1 — 规则引擎核心**（已完成）：纯函数引擎、事件溯源、四套标准板子、随机 bot 全自动对局与 500 局终止性扫描
-- 🚧 **M2 — API + Agent 接入**（[issue #25](https://github.com/gangtao/AgentHowl/issues/25)）：FastAPI REST/WS、事件持久化、超时代打、LiteLLM + instructor 的 Agent 层
+- ✅ **M2 — API + Agent 接入**（[issue #25](https://github.com/gangtao/AgentHowl/issues/25)，已完成）：事件持久化、超时代打运行时、FastAPI REST/WS + token 认证、LiteLLM + instructor 的 Agent 层、端到端验收矩阵
+- ✅ **终端观战/对局器**（[issue #44](https://github.com/gangtao/AgentHowl/issues/44)，已完成）：无需前端，在终端里看局或亲自玩一个座位（见下「终端对局」）
 - 🚧 **M3 — 前端上帝视角**（[issue #26](https://github.com/gangtao/AgentHowl/issues/26)）：React 实时观战/回放，TS 侧与后端对齐的同一 `reduce()`
 
 ## 架构原则
@@ -32,11 +33,21 @@ backend/
 │   │   ├── resolver.py    # 夜间串行结算、胜负判定、计票
 │   │   ├── observation.py # 按视角构建观察（信息隔离）
 │   │   └── rng.py         # 确定性随机派生
+│   ├── store/             # M2.1 事件持久化（append-only；内存 + JSON 文件）
+│   ├── runtime/           # M2.2 对局驱动、超时代打、连接管理、玩家端口
+│   ├── api/               # M2.3 FastAPI REST + WebSocket + token 认证
+│   ├── agent/             # M2.4 LLM Agent 层（LiteLLM + instructor、记忆、prompt）
+│   ├── schemas/           # 请求/响应与工具调用模型
+│   ├── main.py            # FastAPI 装配入口（uvicorn app.main:app）
 │   └── cli/
 │       ├── bot.py         # RandomBot + run_game：全自动对局驱动
-│       └── simulate.py    # 命令行模拟入口
-├── tests/                 # 190+ 测试：规则单测/隔离/确定性/500 局扫描
+│       ├── simulate.py    # 命令行模拟入口（胜负统计）
+│       ├── render.py      # 终端叙述器：事件/观察 → 可读中文
+│       ├── play.py        # 终端观战/对局入口（python -m app.cli.play）
+│       └── play_human.py  # 交互玩局：mini-syntax + turn-loop
+├── tests/                 # 380+ 测试：规则/隔离/确定性/API E2E/Agent/CLI
 └── pyproject.toml
+Makefile                   # 仓库根：dev/test/build/运行命令（make help）
 docs/
 ├── specs/requirements.md  # ★ 权威设计文档（PRD + 技术设计，中文）
 └── superpowers/           # 每个特性的设计 spec 与实施计划（开发记录）
@@ -45,6 +56,18 @@ docs/
 ## 快速开始
 
 依赖 [uv](https://docs.astral.sh/uv/) 与 Python 3.11+。
+
+**最简：从仓库根用 `make`**（各命令自动在 `backend/` 下经 uv 执行，无需手动 `cd`）：
+
+```bash
+make install     # 同步依赖
+make watch       # 终端看一局（GM 视角叙述到终局）
+make play SEAT=2 # 亲自玩 2 号座位
+make check       # 全量质量门：lint + 格式 + 类型 + 测试
+make help        # 查看全部命令
+```
+
+或直接用 uv（需先 `cd backend`）：
 
 ```bash
 cd backend
@@ -70,9 +93,22 @@ uv run python -m app.cli.simulate --preset std_12_yn_hunter_idiot --seed 1 --gam
 
 ## 开发
 
+仓库根的 `Makefile` 封装了全部常用命令（`make help` 查看）：
+
 ```bash
-cd backend
-uv run pytest -q               # 全量测试（含确定性重放与 500 局终止性扫描）
+make check        # 全量质量门：lint + 格式 + 类型 + 测试（= 下面四条）
+make test         # 全量测试（含确定性重放与 500 局终止性扫描）
+make typecheck    # mypy 严格模式
+make lint         # ruff 静态检查
+make format       # ruff 自动格式化
+make serve        # 启动 API 服务（uvicorn 热重载）
+make smoke        # 真模型 smoke（需 AGENTHOWL_SMOKE_MODEL + Ollama）
+```
+
+等价的原始命令（`cd backend` 后）：
+
+```bash
+uv run pytest -q               # 全量测试
 uv run mypy app                # 严格模式类型检查
 uv run ruff check . && uv run ruff format --check .
 ```
@@ -162,26 +198,29 @@ AGENTHOWL_SMOKE_MODEL=ollama/llama3.1 uv run pytest -m smoke -q -s
 
 ## 终端对局 / CLI Play
 
-无需前端，直接在终端看局或玩局（进程内跑，无需起 server）：
+无需前端，直接在终端看局或玩局（进程内跑，无需起 server）。**从仓库根用 `make`**：
+
+```bash
+make watch                       # 看一局（GM 视角叙述到终局）
+make watch VIEW=spectator        # 只看公开信息（拟真观战）
+make watch SEED=3 ARGS=--step    # 指定 seed + 回车逐步推进
+make play SEAT=2                 # 亲自玩 2 号座位，其余内置 bot
+make watch ARGS="--ai-model ollama/llama3.1 --delay 0.3"  # LLM 自对局（需 Ollama）
+make sim GAMES=100               # 纯引擎胜负统计（无叙述、极快）
+```
+
+玩局时轮到你，按提示输入：`speak 我怀疑3号` / `vote 3` / `vote abstain` / `night check 5` / `sheriff vote_sheriff 4` / `self_destruct` / `help`。
+
+等价的原始命令（`cd backend` 后，`python -m app.cli.play`）：
 
 ```bash
 cd backend
-
-# 看局：全 bot 自对局，GM 视角逐事件叙述（--delay 控制节奏、--step 回车逐步）
-uv run python -m app.cli.play --seed 3 --delay 0.6
-uv run python -m app.cli.play --view spectator      # 只看公开信息（拟真观战）
-uv run python -m app.cli.play --step                 # 回车逐步推进
-
-# 玩局：你扮演 2 号座位，其余内置 bot 填充
-uv run python -m app.cli.play --seat 2
-#   轮到你时输入：speak 我怀疑3号 / vote 3 / vote abstain /
-#   night check 5 / sheriff vote_sheriff 4 / self_destruct / help
-
-# LLM 自对局（需本地 Ollama）：全座 LLM Agent，GM 视角围观
-uv run python -m app.cli.play --ai-model ollama/llama3.1 --delay 0.3
+uv run python -m app.cli.play --seed 3 --delay 0.6            # 看局
+uv run python -m app.cli.play --view spectator                # 拟真观战
+uv run python -m app.cli.play --seat 2                        # 玩 2 号座位
+uv run python -m app.cli.play --ai-model ollama/llama3.1      # LLM 自对局
+uv run python -m app.cli.simulate --games 100                 # 纯引擎胜负统计
 ```
-
-纯引擎胜负统计（无叙述、极快）另见 `uv run python -m app.cli.simulate --games 100`。
 
 ## License
 
