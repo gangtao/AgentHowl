@@ -29,11 +29,19 @@ class LLMClient(Protocol):
         response_model: type[TModel],
         model: str,
         temperature: float = 0.3,
+        thinking: bool = False,
     ) -> TModel: ...
 
 
-def _pick_mode(model: str) -> instructor.Mode:
-    """支持函数调用 → TOOLS；不支持或未知模型 → JSON（instructor 校验+重试兜底）。"""
+def _pick_mode(model: str, thinking: bool = False) -> instructor.Mode:
+    """选 instructor 解析模式。
+
+    thinking=True：用 MD_JSON（软 JSON，容忍 ```json 围栏、不硬发 format=json）——
+    推理模型开启思考时会把思考写进思考通道、把 JSON 裹在围栏里返回，硬发 format=json
+    反而使 content 为空。thinking=False：支持函数调用 → TOOLS，否则 JSON（硬约束更稳）。
+    """
+    if thinking:
+        return instructor.Mode.MD_JSON
     try:
         supported = bool(litellm.supports_function_calling(model))
     except Exception:
@@ -59,8 +67,14 @@ class LiteLLMInstructorClient:
         response_model: type[TModel],
         model: str,
         temperature: float = 0.3,
+        thinking: bool = False,
     ) -> TModel:
-        client = self._client_for(_pick_mode(model))
+        client = self._client_for(_pick_mode(model, thinking))
+        # Ollama 的 think 参数直接控制模型思考开关；对 ollama/* 显式传（含 False——
+        # think=False 能修复推理模型在硬 JSON 下 content 为空的问题）。非 ollama 不传。
+        extra: dict[str, Any] = {}
+        if model.startswith("ollama/"):
+            extra["think"] = thinking
         result = await client.chat.completions.create(
             model=model,
             response_model=response_model,
@@ -70,6 +84,7 @@ class LiteLLMInstructorClient:
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ],
+            **extra,
         )
         assert isinstance(result, response_model)  # instructor 已校验；为 mypy 窄化
         return result

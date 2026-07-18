@@ -211,6 +211,21 @@ make sim GAMES=100               # 纯引擎胜负统计（无叙述、极快）
 
 玩局时轮到你，按提示输入：`speak 我怀疑3号` / `vote 3` / `vote abstain` / `night check 5` / `sheriff vote_sheriff 4` / `self_destruct` / `help`。
 
+### 本地 LLM 模型选择
+
+结构化输出对本地模型敏感。经实测（结构化决策成功率）：
+
+- **快速可靠首选：`ollama/qwen2.5-coder:7b`**（结构化 JSON 稳、~4s/次）。
+- **推理模型（qwen3/qwen3.5 等）默认不可用**：它们在硬 JSON 模式下把内容写进思考通道、
+  返回空 content 而解析失败。加 `--thinking` 开启思考模式（软 JSON 解析 + Ollama `think`），
+  即可用其更强的推理，但**单次决策可达数分钟**、整局很慢：
+
+```bash
+make watch ARGS="--ai-model ollama/qwen3:8b --thinking --delay 0"
+```
+
+不加 `--thinking` 时对 Ollama 模型会显式传 `think=false`（这也修复推理模型的空 content 问题）。
+
 等价的原始命令（`cd backend` 后，`python -m app.cli.play`）：
 
 ```bash

@@ -79,11 +79,12 @@ async def run_play(
     *,
     seat: int,
     ai_model: str | None = None,
+    thinking: bool = False,
     read_line: ReadLine = default_read_line,
     on_wired: Callable[[GameRunner], None] | None = None,
 ) -> GameState:
     """真人座玩局：并发 runner + turn-loop，跑到 GAME_OVER。"""
-    runner, conns, ports = _wire_game(config, human_seat=seat, ai_model=ai_model)
+    runner, conns, ports = _wire_game(config, human_seat=seat, ai_model=ai_model, thinking=thinking)
     port = ports[seat]
     assert isinstance(port, HumanPlayerPort)
     if on_wired is not None:

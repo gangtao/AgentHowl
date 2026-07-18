@@ -23,6 +23,8 @@ ReadLine = Callable[[str], Awaitable[str]]
 
 # 宽松默认超时，便于人类从容操作
 _CLI_TIMEOUTS = RunnerTimeouts(speech_sec=120.0, action_sec=120.0)
+# 思考模式：推理模型单次决策可达数分钟，给足窗口
+_THINK_TIMEOUTS = RunnerTimeouts(speech_sec=600.0, action_sec=600.0)
 
 
 async def default_read_line(prompt: str) -> str:
@@ -47,7 +49,11 @@ def _parse_view(view: str) -> Viewer:
 
 
 def _wire_game(
-    config: GameConfig, *, human_seat: int | None = None, ai_model: str | None = None
+    config: GameConfig,
+    *,
+    human_seat: int | None = None,
+    ai_model: str | None = None,
+    thinking: bool = False,
 ) -> tuple[GameRunner, ConnectionManager, dict[int, PlayerPort]]:
     """装配 store/roster/ports/conns/runner（不订阅、不 run）。"""
     from app.store.event_store import InMemoryEventStore
@@ -65,7 +71,7 @@ def _wire_game(
         elif ai_model is not None:
             from app.agent.agent_player import build_agent_port
 
-            ports[seat] = build_agent_port(seat, config, ai_model, None)
+            ports[seat] = build_agent_port(seat, config, ai_model, None, thinking=thinking)
         else:
             ports[seat] = BotPlayerPort(state_provider=state_of)
 
@@ -81,7 +87,8 @@ def _wire_game(
         roster=roster,
         ports=ports,
         connections=conns,
-        timeouts=_CLI_TIMEOUTS,
+        # 思考模式单次决策可达数分钟，放宽窗口避免被超时代打
+        timeouts=_THINK_TIMEOUTS if thinking else _CLI_TIMEOUTS,
     )
     holder["r"] = runner
     return runner, conns, ports
@@ -94,13 +101,15 @@ async def run_watch(
     delay: float,
     step: bool,
     ai_model: str | None = None,
+    thinking: bool = False,
     read_line: ReadLine = default_read_line,
 ) -> GameState:
     """看局：打印型订阅者按 view 叙述，delay/step 限速，跑到 GAME_OVER。
 
     ai_model 设置时全座由 LLM Agent 扮演（自对局）；否则内置随机 bot。
+    thinking=True 时 LLM Agent 开启思考（更强推理但明显更慢）。
     """
-    runner, conns, _ = _wire_game(config, ai_model=ai_model)
+    runner, conns, _ = _wire_game(config, ai_model=ai_model, thinking=thinking)
 
     async def on_events(events: list[Event]) -> None:
         for e in events:  # 已按 view 过滤
@@ -125,6 +134,11 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--delay", type=float, default=0.6, help="看局逐事件延时（秒）")
     parser.add_argument("--step", action="store_true", help="看局逐步（回车推进）")
     parser.add_argument("--ai-model", default=None, help="LLM 自对局模型（如 ollama/llama3.1）")
+    parser.add_argument(
+        "--thinking",
+        action="store_true",
+        help="开启推理模型思考（更强推理，但单次决策可达数分钟）",
+    )
     parser.add_argument("--no-color", action="store_true")
     args = parser.parse_args(argv)
 
@@ -142,12 +156,15 @@ def main(argv: list[str] | None = None) -> None:
                 delay=args.delay,
                 step=args.step,
                 ai_model=args.ai_model,
+                thinking=args.thinking,
             )
         )
     else:
         from app.cli.play_human import run_play
 
-        asyncio.run(run_play(config, seat=args.seat, ai_model=args.ai_model))
+        asyncio.run(
+            run_play(config, seat=args.seat, ai_model=args.ai_model, thinking=args.thinking)
+        )
 
 
 if __name__ == "__main__":

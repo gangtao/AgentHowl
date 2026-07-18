@@ -40,6 +40,7 @@ class ScriptedLLMClient:
         response_model: type[BaseModel],
         model: str,
         temperature: float = 0.3,
+        thinking: bool = False,
     ) -> BaseModel:
         self.calls.append((model, system_prompt, user_prompt))
         return self._script(response_model, system_prompt, user_prompt)
