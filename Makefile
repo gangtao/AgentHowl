@@ -7,12 +7,18 @@
 BACKEND := backend
 UV      := uv run
 
-# 可调参数（示例：make watch SEED=3 VIEW=spectator / make play SEAT=2 / make sim GAMES=100）
-SEED  ?= 42
-VIEW  ?= gm
-SEAT  ?=
-GAMES ?= 1
-ARGS  ?=
+# 可调参数（示例：make watch SEED=3 VIEW=spectator /
+#   make watch AI_MODEL=ollama/qwen2.5-coder:7b / make play SEAT=2 / make sim GAMES=100）
+SEED     ?= 42
+VIEW     ?= gm
+SEAT     ?=
+GAMES    ?= 1
+AI_MODEL ?=            # 设置后由 LLM Agent 自对局（如 ollama/qwen2.5-coder:7b）
+THINKING ?=            # 非空则开启推理模型思考（更强推理但慢；仅推理模型需要）
+ARGS     ?=
+
+# 由 AI_MODEL / THINKING 组装的 LLM 相关命令行片段
+_AIFLAGS := $(if $(AI_MODEL),--ai-model $(AI_MODEL),) $(if $(THINKING),--thinking,)
 
 .DEFAULT_GOAL := help
 
@@ -66,13 +72,13 @@ serve: ## 启动 API 服务（uvicorn，热重载，http://localhost:8000）
 	cd $(BACKEND) && $(UV) uvicorn app.main:app --reload
 
 .PHONY: watch
-watch: ## 终端看局（可选 SEED= VIEW=gm|spectator|seat:N ARGS=）
-	cd $(BACKEND) && $(UV) python -m app.cli.play --seed $(SEED) --view $(VIEW) $(ARGS)
+watch: ## 终端看局（可选 SEED= VIEW=gm|spectator|seat:N AI_MODEL= THINKING=1 ARGS=）
+	cd $(BACKEND) && $(UV) python -m app.cli.play --seed $(SEED) --view $(VIEW) $(_AIFLAGS) $(ARGS)
 
 .PHONY: play
-play: ## 终端玩局，你扮演 SEAT 座位（例：make play SEAT=2）
-	@test -n "$(SEAT)" || { echo "用法：make play SEAT=<座位号>  [ARGS=...]"; exit 2; }
-	cd $(BACKEND) && $(UV) python -m app.cli.play --seat $(SEAT) $(ARGS)
+play: ## 终端玩局，你扮演 SEAT 座位（例：make play SEAT=2 AI_MODEL=ollama/qwen2.5-coder:7b）
+	@test -n "$(SEAT)" || { echo "用法：make play SEAT=<座位号>  [AI_MODEL= THINKING=1 ARGS=]"; exit 2; }
+	cd $(BACKEND) && $(UV) python -m app.cli.play --seat $(SEAT) $(_AIFLAGS) $(ARGS)
 
 .PHONY: sim
 sim: ## 纯引擎随机自对局胜负统计（例：make sim GAMES=100）

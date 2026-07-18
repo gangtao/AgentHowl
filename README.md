@@ -201,12 +201,12 @@ AGENTHOWL_SMOKE_MODEL=ollama/llama3.1 uv run pytest -m smoke -q -s
 无需前端，直接在终端看局或玩局（进程内跑，无需起 server）。**从仓库根用 `make`**：
 
 ```bash
-make watch                       # 看一局（GM 视角叙述到终局）
-make watch VIEW=spectator        # 只看公开信息（拟真观战）
-make watch SEED=3 ARGS=--step    # 指定 seed + 回车逐步推进
-make play SEAT=2                 # 亲自玩 2 号座位，其余内置 bot
-make watch ARGS="--ai-model ollama/llama3.1 --delay 0.3"  # LLM 自对局（需 Ollama）
-make sim GAMES=100               # 纯引擎胜负统计（无叙述、极快）
+make watch                                     # 看一局 bot 对局（GM 视角叙述到终局）
+make watch VIEW=spectator                      # 只看公开信息（拟真观战）
+make watch SEED=3 ARGS=--step                  # 指定 seed + 回车逐步推进
+make play SEAT=2                               # 亲自玩 2 号座位，其余内置 bot
+make watch AI_MODEL=ollama/qwen2.5-coder:7b    # LLM 自对局（需 Ollama）
+make sim GAMES=100                             # 纯引擎胜负统计（无叙述、极快）
 ```
 
 玩局时轮到你，按提示输入：`speak 我怀疑3号` / `vote 3` / `vote abstain` / `night check 5` / `sheriff vote_sheriff 4` / `self_destruct` / `help`。
@@ -215,16 +215,16 @@ make sim GAMES=100               # 纯引擎胜负统计（无叙述、极快）
 
 结构化输出对本地模型敏感。经实测（结构化决策成功率）：
 
-- **快速可靠首选：`ollama/qwen2.5-coder:7b`**（结构化 JSON 稳、~4s/次）。
+- **快速可靠首选：`ollama/qwen2.5-coder:7b`**（结构化 JSON 稳、~4s/次；已实测跑通整局）。
 - **推理模型（qwen3/qwen3.5 等）默认不可用**：它们在硬 JSON 模式下把内容写进思考通道、
-  返回空 content 而解析失败。加 `--thinking` 开启思考模式（软 JSON 解析 + Ollama `think`），
+  返回空 content 而解析失败。用 `THINKING=1` 开启思考模式（软 JSON 解析 + Ollama `think`），
   即可用其更强的推理，但**单次决策可达数分钟**、整局很慢：
 
 ```bash
-make watch ARGS="--ai-model ollama/qwen3:8b --thinking --delay 0"
+make watch AI_MODEL=ollama/qwen3:8b THINKING=1
 ```
 
-不加 `--thinking` 时对 Ollama 模型会显式传 `think=false`（这也修复推理模型的空 content 问题）。
+不开 `THINKING` 时对 Ollama 模型会显式传 `think=false`（这也修复推理模型的空 content 问题）。
 
 等价的原始命令（`cd backend` 后，`python -m app.cli.play`）：
 
