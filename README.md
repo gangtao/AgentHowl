@@ -181,7 +181,7 @@ uv run python -m app.cli.play --seat 2
 uv run python -m app.cli.play --ai-model ollama/llama3.1 --delay 0.3
 ```
 
-纯引擎胜负统计（无叙述、极快）另见 `python -m app.cli.simulate --games 100`。
+纯引擎胜负统计（无叙述、极快）另见 `uv run python -m app.cli.simulate --games 100`。
 
 ## License
 
