@@ -36,6 +36,7 @@ class AgentConfig(BaseModel):
     agent_seed: int = 0
     deadline_margin_s: float = 2.0  # 剩余时间低于此不再发起 LLM 调用
     reflection_min_remaining_s: float = 10.0  # 剩余时间高于此才做惰性反思
+    thinking: bool = False  # 开启推理模型思考（软 JSON 解析；更强推理但明显更慢）
 
 
 class AgentPlayerPort:
@@ -110,6 +111,7 @@ class AgentPlayerPort:
                 response_model=response_model_for(kind),
                 model=self._model_for(kind),
                 temperature=self._cfg.temperature,
+                thinking=self._cfg.thinking,
             ),
             timeout=budget,
         )
@@ -119,7 +121,11 @@ class AgentPlayerPort:
 
 
 def build_agent_port(
-    seat: int, game_config: GameConfig, ai_model: str, ai_model_speech: str | None
+    seat: int,
+    game_config: GameConfig,
+    ai_model: str,
+    ai_model_speech: str | None,
+    thinking: bool = False,
 ) -> AgentPlayerPort:
     """registry 默认工厂：真实 LiteLLM 客户端 + 按 GameConfig.seed 派生 agent_seed。"""
     from app.agent.llm_client import LiteLLMInstructorClient
@@ -131,6 +137,7 @@ def build_agent_port(
             model=ai_model,
             model_speech=ai_model_speech,
             agent_seed=game_config.seed if game_config.seed is not None else 0,
+            thinking=thinking,
         ),
         client=LiteLLMInstructorClient(),
     )

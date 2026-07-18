@@ -91,3 +91,65 @@ async def test_instructor_retries_on_invalid_then_valid(monkeypatch) -> None:
     )
     assert isinstance(result, SpeechDecision) and result.content == "大家好"
     assert calls["n"] >= 2  # 首次校验失败确实触发了重试
+
+
+class _FakeCompletions:
+    """捕获 instructor create(**kwargs)，返回固定合法决策。"""
+
+    def __init__(self) -> None:
+        self.kwargs: dict[str, object] = {}
+
+    async def create(self, **kwargs: object) -> object:
+        from app.agent.decisions import SpeechDecision
+
+        self.kwargs = kwargs
+        return SpeechDecision(reasoning="r", content="hi")
+
+
+class _FakeInstructor:
+    def __init__(self) -> None:
+        self.chat = type("C", (), {"completions": _FakeCompletions()})()
+
+
+async def _run(model: str, thinking: bool, monkeypatch) -> tuple[object, dict[str, object]]:
+    from app.agent.decisions import SpeechDecision
+    from app.agent.llm_client import LiteLLMInstructorClient
+
+    client = LiteLLMInstructorClient()
+    fake = _FakeInstructor()
+    seen: dict[str, object] = {}
+
+    def fake_client_for(mode: object) -> object:
+        seen["mode"] = mode
+        return fake
+
+    monkeypatch.setattr(client, "_client_for", fake_client_for)
+    await client.complete_structured(
+        system_prompt="s",
+        user_prompt="u",
+        response_model=SpeechDecision,
+        model=model,
+        thinking=thinking,
+    )
+    return seen["mode"], fake.chat.completions.kwargs  # type: ignore[attr-defined]
+
+
+async def test_thinking_on_uses_md_json_and_passes_think_true(monkeypatch) -> None:
+    import instructor
+
+    mode, kwargs = await _run("ollama/qwen3:8b", thinking=True, monkeypatch=monkeypatch)
+    assert mode is instructor.Mode.MD_JSON
+    assert kwargs.get("think") is True
+
+
+async def test_thinking_off_ollama_passes_think_false_and_not_md_json(monkeypatch) -> None:
+    import instructor
+
+    mode, kwargs = await _run("ollama/qwen2.5-coder:7b", thinking=False, monkeypatch=monkeypatch)
+    assert mode is not instructor.Mode.MD_JSON  # 关闭思考不用软 JSON（TOOLS/JSON 按模型能力）
+    assert kwargs.get("think") is False  # think=False 修复推理模型空 content
+
+
+async def test_non_ollama_never_passes_think(monkeypatch) -> None:
+    _mode, kwargs = await _run("gpt-4o-mini", thinking=True, monkeypatch=monkeypatch)
+    assert "think" not in kwargs  # 非 ollama 不传 think（否则 provider 报错）
