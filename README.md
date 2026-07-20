@@ -272,11 +272,13 @@ GROQ_API_KEY=...             make watch AI_MODEL=groq/llama-3.1-70b-versatile
 **AWS Bedrock（Anthropic 模型）** 需额外装 `boto3`（可选依赖组）：
 
 ```bash
-uv sync --extra bedrock          # 装 boto3；或 cd backend && uv add boto3
+uv sync --extra bedrock          # 装 boto3（litellm bedrock 后端需要）；或 cd backend && uv add boto3
 
-# AWS 凭证走标准链（环境变量 / ~/.aws / IAM 角色）
-export AWS_ACCESS_KEY_ID=...  AWS_SECRET_ACCESS_KEY=...  AWS_REGION_NAME=us-east-1
-# 临时凭证再加 AWS_SESSION_TOKEN=...
+# 鉴权二选一：
+# 方式 A（Bedrock API 令牌，推荐）—— litellm 读 AWS_BEARER_TOKEN_BEDROCK：
+export AWS_BEARER_TOKEN_BEDROCK=<你的 bedrock api 令牌>  AWS_REGION_NAME=us-east-1
+# 方式 B（IAM 长期/临时凭证，走标准链 环境变量 / ~/.aws / IAM 角色）：
+export AWS_ACCESS_KEY_ID=...  AWS_SECRET_ACCESS_KEY=...  AWS_REGION_NAME=us-east-1  # 临时凭证再加 AWS_SESSION_TOKEN=...
 
 # 模型串 = bedrock/<model-id>。新版 Claude 多为“推理配置文件”（inference profile），
 # 需用带区域前缀的 ID（us./eu./apac.），而非裸 on-demand ID：
@@ -297,8 +299,9 @@ make watch AI_MODEL=ollama/qwen2.5-coder:7b AI_MODEL_SPEECH=anthropic/claude-3-5
 模型落 JSON 模式；`--thinking` 走 MD_JSON 软解析（见上「本地 LLM 模型选择」）。
 
 > 说明：本地 Ollama 路径经完整实测（含整局）。Bedrock 路径已验证到「litellm 识别
-> bedrock 提供方 + 选 TOOLS 模式 + boto3 就位 + 凭证成功到达 Bedrock API」，但未跑
-> 真实推理计费验证；其它云端提供方（OpenAI/Anthropic 直连/Gemini/Groq）走同一 litellm
+> bedrock 提供方 + 选 TOOLS 模式 + boto3 就位 + 凭证成功到达 Bedrock API」，且 litellm
+> 支持 `AWS_BEARER_TOKEN_BEDROCK` 令牌鉴权（源码确认）；均未跑真实推理计费验证。
+> 其它云端提供方（OpenAI/Anthropic 直连/Gemini/Groq）走同一 litellm
 > 路径、理论可用，同样尚未端到端跑通。`think` 参数仅对 `ollama/*` 生效，不影响云模型。
 
 ## License
