@@ -237,6 +237,73 @@ uv run python -m app.cli.play --ai-model ollama/llama3.1      # LLM 自对局
 uv run python -m app.cli.simulate --games 100                 # 纯引擎胜负统计
 ```
 
+## LLM 提供方配置 / LLM Providers
+
+Agent 层用 **LiteLLM + instructor**（`app/agent/llm_client.py`），模型是一个
+litellm 的 `provider/model` 字符串——任意 litellm 支持的提供方都能用（本地或云端），
+代码里不硬编码提供方。**API key 由 litellm 从各提供方的标准环境变量读取**，本项目不
+经手密钥；切换提供方 = 换模型字符串 + 设对应环境变量。默认模型 `ollama/llama3.1`。
+
+模型字符串在三处配置（均为同一 litellm 字符串）：
+
+| 入口 | 方式 |
+|---|---|
+| CLI | `--ai-model` / `--ai-model-speech` / `--reflection-model`（或 `make … AI_MODEL= AI_MODEL_SPEECH= REFLECTION_MODEL=`） |
+| HTTP API | `POST /games` 的 `ai_model` / `ai_model_speech` |
+| 代码 | `AgentConfig.model` / `model_speech` / `reflection_model` |
+
+常见提供方（模型字符串 + 环境变量）：
+
+```bash
+# 本地 Ollama（默认）；远程 Ollama 用 OLLAMA_API_BASE 指向主机
+make watch AI_MODEL=ollama/qwen2.5-coder:7b
+OLLAMA_API_BASE=http://gpu-host:11434 make watch AI_MODEL=ollama/qwen2.5-coder:7b
+
+# OpenAI
+OPENAI_API_KEY=sk-...        make watch AI_MODEL=openai/gpt-4o-mini
+# Anthropic
+ANTHROPIC_API_KEY=sk-ant-... make watch AI_MODEL=anthropic/claude-3-5-haiku-latest
+# Gemini
+GEMINI_API_KEY=...           make watch AI_MODEL=gemini/gemini-1.5-flash
+# Groq
+GROQ_API_KEY=...             make watch AI_MODEL=groq/llama-3.1-70b-versatile
+```
+
+**AWS Bedrock（Anthropic 模型）** 需额外装 `boto3`（可选依赖组）：
+
+```bash
+uv sync --extra bedrock          # 装 boto3（litellm bedrock 后端需要）；或 cd backend && uv add boto3
+
+# 鉴权二选一：
+# 方式 A（Bedrock API 令牌，推荐）—— litellm 读 AWS_BEARER_TOKEN_BEDROCK：
+export AWS_BEARER_TOKEN_BEDROCK=<你的 bedrock api 令牌>  AWS_REGION_NAME=us-east-1
+# 方式 B（IAM 长期/临时凭证，走标准链 环境变量 / ~/.aws / IAM 角色）：
+export AWS_ACCESS_KEY_ID=...  AWS_SECRET_ACCESS_KEY=...  AWS_REGION_NAME=us-east-1  # 临时凭证再加 AWS_SESSION_TOKEN=...
+
+# 模型串 = bedrock/<model-id>。新版 Claude 多为“推理配置文件”（inference profile），
+# 需用带区域前缀的 ID（us./eu./apac.），而非裸 on-demand ID：
+make watch AI_MODEL=bedrock/us.anthropic.claude-sonnet-4-5-20250929-v1:0
+```
+
+（本账号可用模型可用 `aws bedrock list-foundation-models --by-provider anthropic` 查。）
+
+**分层路由**：`--ai-model-speech` 给白天发言单独用（可更强的）模型，`--reflection-model`
+给每轮记忆反思用（通常更便宜的）模型；两者缺省都等同 `--ai-model`。例如便宜模型跑
+夜间/投票、强模型只用于发言：
+
+```bash
+make watch AI_MODEL=ollama/qwen2.5-coder:7b AI_MODEL_SPEECH=anthropic/claude-3-5-sonnet-latest
+```
+
+**解析模式自适应**：支持函数调用的云模型走 instructor TOOLS 模式（结构化更稳）；本地
+模型落 JSON 模式；`--thinking` 走 MD_JSON 软解析（见上「本地 LLM 模型选择」）。
+
+> 说明：本地 Ollama 路径经完整实测（含整局）。Bedrock 路径已验证到「litellm 识别
+> bedrock 提供方 + 选 TOOLS 模式 + boto3 就位 + 凭证成功到达 Bedrock API」，且 litellm
+> 支持 `AWS_BEARER_TOKEN_BEDROCK` 令牌鉴权（源码确认）；均未跑真实推理计费验证。
+> 其它云端提供方（OpenAI/Anthropic 直连/Gemini/Groq）走同一 litellm
+> 路径、理论可用，同样尚未端到端跑通。`think` 参数仅对 `ollama/*` 生效，不影响云模型。
+
 ## License
 
 [Apache 2.0](LICENSE)
