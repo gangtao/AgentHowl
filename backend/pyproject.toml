@@ -12,6 +12,11 @@ dependencies = [
     "uvicorn>=0.51.0",
 ]
 
+[project.optional-dependencies]
+bedrock = [
+    "boto3>=1.43.51",
+]
+
 [dependency-groups]
 dev = [
     "ruff>=0.8",

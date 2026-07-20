@@ -269,6 +269,22 @@ GEMINI_API_KEY=...           make watch AI_MODEL=gemini/gemini-1.5-flash
 GROQ_API_KEY=...             make watch AI_MODEL=groq/llama-3.1-70b-versatile
 ```
 
+**AWS Bedrock（Anthropic 模型）** 需额外装 `boto3`（可选依赖组）：
+
+```bash
+uv sync --extra bedrock          # 装 boto3；或 cd backend && uv add boto3
+
+# AWS 凭证走标准链（环境变量 / ~/.aws / IAM 角色）
+export AWS_ACCESS_KEY_ID=...  AWS_SECRET_ACCESS_KEY=...  AWS_REGION_NAME=us-east-1
+# 临时凭证再加 AWS_SESSION_TOKEN=...
+
+# 模型串 = bedrock/<model-id>。新版 Claude 多为“推理配置文件”（inference profile），
+# 需用带区域前缀的 ID（us./eu./apac.），而非裸 on-demand ID：
+make watch AI_MODEL=bedrock/us.anthropic.claude-sonnet-4-5-20250929-v1:0
+```
+
+（本账号可用模型可用 `aws bedrock list-foundation-models --by-provider anthropic` 查。）
+
 **分层路由**：`--ai-model-speech` 给白天发言单独用（可更强的）模型，`--reflection-model`
 给每轮记忆反思用（通常更便宜的）模型；两者缺省都等同 `--ai-model`。例如便宜模型跑
 夜间/投票、强模型只用于发言：
@@ -280,8 +296,10 @@ make watch AI_MODEL=ollama/qwen2.5-coder:7b AI_MODEL_SPEECH=anthropic/claude-3-5
 **解析模式自适应**：支持函数调用的云模型走 instructor TOOLS 模式（结构化更稳）；本地
 模型落 JSON 模式；`--thinking` 走 MD_JSON 软解析（见上「本地 LLM 模型选择」）。
 
-> 说明：目前仅本地 Ollama 路径经过实测；云端提供方走同一 litellm 路径、理论可用，
-> 但尚未端到端验证。`think` 参数仅对 `ollama/*` 生效，不影响云模型。
+> 说明：本地 Ollama 路径经完整实测（含整局）。Bedrock 路径已验证到「litellm 识别
+> bedrock 提供方 + 选 TOOLS 模式 + boto3 就位 + 凭证成功到达 Bedrock API」，但未跑
+> 真实推理计费验证；其它云端提供方（OpenAI/Anthropic 直连/Gemini/Groq）走同一 litellm
+> 路径、理论可用，同样尚未端到端跑通。`think` 参数仅对 `ollama/*` 生效，不影响云模型。
 
 ## License
 
