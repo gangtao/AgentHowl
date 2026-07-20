@@ -237,6 +237,52 @@ uv run python -m app.cli.play --ai-model ollama/llama3.1      # LLM 自对局
 uv run python -m app.cli.simulate --games 100                 # 纯引擎胜负统计
 ```
 
+## LLM 提供方配置 / LLM Providers
+
+Agent 层用 **LiteLLM + instructor**（`app/agent/llm_client.py`），模型是一个
+litellm 的 `provider/model` 字符串——任意 litellm 支持的提供方都能用（本地或云端），
+代码里不硬编码提供方。**API key 由 litellm 从各提供方的标准环境变量读取**，本项目不
+经手密钥；切换提供方 = 换模型字符串 + 设对应环境变量。默认模型 `ollama/llama3.1`。
+
+模型字符串在三处配置（均为同一 litellm 字符串）：
+
+| 入口 | 方式 |
+|---|---|
+| CLI | `--ai-model` / `--ai-model-speech` / `--reflection-model`（或 `make … AI_MODEL= AI_MODEL_SPEECH= REFLECTION_MODEL=`） |
+| HTTP API | `POST /games` 的 `ai_model` / `ai_model_speech` |
+| 代码 | `AgentConfig.model` / `model_speech` / `reflection_model` |
+
+常见提供方（模型字符串 + 环境变量）：
+
+```bash
+# 本地 Ollama（默认）；远程 Ollama 用 OLLAMA_API_BASE 指向主机
+make watch AI_MODEL=ollama/qwen2.5-coder:7b
+OLLAMA_API_BASE=http://gpu-host:11434 make watch AI_MODEL=ollama/qwen2.5-coder:7b
+
+# OpenAI
+OPENAI_API_KEY=sk-...        make watch AI_MODEL=openai/gpt-4o-mini
+# Anthropic
+ANTHROPIC_API_KEY=sk-ant-... make watch AI_MODEL=anthropic/claude-3-5-haiku-latest
+# Gemini
+GEMINI_API_KEY=...           make watch AI_MODEL=gemini/gemini-1.5-flash
+# Groq
+GROQ_API_KEY=...             make watch AI_MODEL=groq/llama-3.1-70b-versatile
+```
+
+**分层路由**：`--ai-model-speech` 给白天发言单独用（可更强的）模型，`--reflection-model`
+给每轮记忆反思用（通常更便宜的）模型；两者缺省都等同 `--ai-model`。例如便宜模型跑
+夜间/投票、强模型只用于发言：
+
+```bash
+make watch AI_MODEL=ollama/qwen2.5-coder:7b AI_MODEL_SPEECH=anthropic/claude-3-5-sonnet-latest
+```
+
+**解析模式自适应**：支持函数调用的云模型走 instructor TOOLS 模式（结构化更稳）；本地
+模型落 JSON 模式；`--thinking` 走 MD_JSON 软解析（见上「本地 LLM 模型选择」）。
+
+> 说明：目前仅本地 Ollama 路径经过实测；云端提供方走同一 litellm 路径、理论可用，
+> 但尚未端到端验证。`think` 参数仅对 `ollama/*` 生效，不影响云模型。
+
 ## License
 
 [Apache 2.0](LICENSE)

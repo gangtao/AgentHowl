@@ -126,6 +126,7 @@ def build_agent_port(
     ai_model: str,
     ai_model_speech: str | None,
     thinking: bool = False,
+    reflection_model: str | None = None,
 ) -> AgentPlayerPort:
     """registry 默认工厂：真实 LiteLLM 客户端 + 按 GameConfig.seed 派生 agent_seed。"""
     from app.agent.llm_client import LiteLLMInstructorClient
@@ -136,6 +137,7 @@ def build_agent_port(
         agent_config=AgentConfig(
             model=ai_model,
             model_speech=ai_model_speech,
+            reflection_model=reflection_model,
             agent_seed=game_config.seed if game_config.seed is not None else 0,
             thinking=thinking,
         ),

@@ -47,3 +47,23 @@ def test_watch_spectator_hides_gm_lines(capsys) -> None:
     out = capsys.readouterr().out
     assert "游戏结束" in out
     assert "[GM]" not in out  # 观战视角无夜间内幕
+
+
+def test_wire_game_threads_speech_and_reflection_models() -> None:
+    """分层路由 CLI 旋钮：ai_model_speech / reflection_model 落到 AgentConfig。"""
+    from app.agent.agent_player import AgentPlayerPort
+    from app.cli.play import _wire_game
+    from app.engine.config import build_preset
+
+    config = build_preset("std_9_kill_side").model_copy(update={"seed": 3})
+    _runner, _conns, ports = _wire_game(
+        config,
+        ai_model="ollama/a",
+        ai_model_speech="ollama/b",
+        reflection_model="ollama/c",
+    )
+    p = ports[0]
+    assert isinstance(p, AgentPlayerPort)
+    assert p._cfg.model == "ollama/a"
+    assert p._cfg.model_speech == "ollama/b"
+    assert p._cfg.reflection_model == "ollama/c"

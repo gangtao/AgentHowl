@@ -53,6 +53,8 @@ def _wire_game(
     *,
     human_seat: int | None = None,
     ai_model: str | None = None,
+    ai_model_speech: str | None = None,
+    reflection_model: str | None = None,
     thinking: bool = False,
 ) -> tuple[GameRunner, ConnectionManager, dict[int, PlayerPort]]:
     """装配 store/roster/ports/conns/runner（不订阅、不 run）。"""
@@ -71,7 +73,14 @@ def _wire_game(
         elif ai_model is not None:
             from app.agent.agent_player import build_agent_port
 
-            ports[seat] = build_agent_port(seat, config, ai_model, None, thinking=thinking)
+            ports[seat] = build_agent_port(
+                seat,
+                config,
+                ai_model,
+                ai_model_speech,
+                thinking=thinking,
+                reflection_model=reflection_model,
+            )
         else:
             ports[seat] = BotPlayerPort(state_provider=state_of)
 
@@ -101,15 +110,24 @@ async def run_watch(
     delay: float,
     step: bool,
     ai_model: str | None = None,
+    ai_model_speech: str | None = None,
+    reflection_model: str | None = None,
     thinking: bool = False,
     read_line: ReadLine = default_read_line,
 ) -> GameState:
     """看局：打印型订阅者按 view 叙述，delay/step 限速，跑到 GAME_OVER。
 
     ai_model 设置时全座由 LLM Agent 扮演（自对局）；否则内置随机 bot。
+    ai_model_speech/reflection_model 为发言/反思分层路由模型（None=同 ai_model）。
     thinking=True 时 LLM Agent 开启思考（更强推理但明显更慢）。
     """
-    runner, conns, _ = _wire_game(config, ai_model=ai_model, thinking=thinking)
+    runner, conns, _ = _wire_game(
+        config,
+        ai_model=ai_model,
+        ai_model_speech=ai_model_speech,
+        reflection_model=reflection_model,
+        thinking=thinking,
+    )
 
     async def on_events(events: list[Event]) -> None:
         for e in events:  # 已按 view 过滤
@@ -135,6 +153,16 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--step", action="store_true", help="看局逐步（回车推进）")
     parser.add_argument("--ai-model", default=None, help="LLM 自对局模型（如 ollama/llama3.1）")
     parser.add_argument(
+        "--ai-model-speech",
+        default=None,
+        help="发言层单独模型（分层路由；缺省=同 --ai-model）",
+    )
+    parser.add_argument(
+        "--reflection-model",
+        default=None,
+        help="每轮反思单独模型（通常用更便宜的；缺省=同 --ai-model）",
+    )
+    parser.add_argument(
         "--thinking",
         action="store_true",
         help="开启推理模型思考（更强推理，但单次决策可达数分钟）",
@@ -156,6 +184,8 @@ def main(argv: list[str] | None = None) -> None:
                 delay=args.delay,
                 step=args.step,
                 ai_model=args.ai_model,
+                ai_model_speech=args.ai_model_speech,
+                reflection_model=args.reflection_model,
                 thinking=args.thinking,
             )
         )
@@ -163,7 +193,14 @@ def main(argv: list[str] | None = None) -> None:
         from app.cli.play_human import run_play
 
         asyncio.run(
-            run_play(config, seat=args.seat, ai_model=args.ai_model, thinking=args.thinking)
+            run_play(
+                config,
+                seat=args.seat,
+                ai_model=args.ai_model,
+                ai_model_speech=args.ai_model_speech,
+                reflection_model=args.reflection_model,
+                thinking=args.thinking,
+            )
         )
 
 

@@ -13,12 +13,17 @@ SEED     ?= 42
 VIEW     ?= gm
 SEAT     ?=
 GAMES    ?= 1
-AI_MODEL ?=            # 设置后由 LLM Agent 自对局（如 ollama/qwen2.5-coder:7b）
-THINKING ?=            # 非空则开启推理模型思考（更强推理但慢；仅推理模型需要）
-ARGS     ?=
+AI_MODEL        ?=     # 设置后由 LLM Agent 自对局（如 ollama/qwen2.5-coder:7b）
+AI_MODEL_SPEECH ?=     # 发言层单独模型（分层路由；缺省=同 AI_MODEL）
+REFLECTION_MODEL ?=    # 每轮反思单独模型（通常更便宜；缺省=同 AI_MODEL）
+THINKING        ?=     # 非空则开启推理模型思考（更强推理但慢；仅推理模型需要）
+ARGS            ?=
 
-# 由 AI_MODEL / THINKING 组装的 LLM 相关命令行片段
-_AIFLAGS := $(if $(AI_MODEL),--ai-model $(AI_MODEL),) $(if $(THINKING),--thinking,)
+# 由 AI_MODEL / *_MODEL / THINKING 组装的 LLM 相关命令行片段
+_AIFLAGS := $(if $(AI_MODEL),--ai-model $(AI_MODEL),) \
+	$(if $(AI_MODEL_SPEECH),--ai-model-speech $(AI_MODEL_SPEECH),) \
+	$(if $(REFLECTION_MODEL),--reflection-model $(REFLECTION_MODEL),) \
+	$(if $(THINKING),--thinking,)
 
 .DEFAULT_GOAL := help
 
