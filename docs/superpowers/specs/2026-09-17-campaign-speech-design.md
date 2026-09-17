@@ -69,6 +69,8 @@ class SheriffRule(BaseModel):
 | 模块 | 改动 |
 |---|---|
 | `runtime/defaults.py` | `stage == SPEECH` → `Speak(content=TIMEOUT_SPEECH)`。现状会落入 vote 分支产出被引擎拒绝的 `VOTE_SHERIFF`，必须修 |
+| `runtime/game_runner.py` | `_speech_window` 须把上警发言计为发言型窗口（取 `speech_timeout_sec` 而非 `action_timeout_sec`）。**终审补记**：本表初稿按「谁按竞选子阶段分支」枚举，漏了这个按「是否发言窗口」分支的模块；根因是发言队列谓词多处手写，已收敛为 `phases.pk_speaking` / `phases.speech_queue_pending` 供校验、默认行动、bot、runner 共用 |
+| `agent/memory.py` | `_render` 为 `ELECTION_STAGE_CHANGED` 加专用渲染（终审补记；不用全局 `exclude_none`，以免丢掉弃票 `target=None` 等有语义的 None） |
 | `cli/bot.py` | speech 子阶段随机发言；1/4 概率附带合法警徽流。把 PK 发言分支里的警徽流生成抽成局部 helper 共用 |
 | `agent/decisions.py` | `SHERIFF_ELECTION` 且 `obs.election_stage == "speech"` → `DecisionKind.SPEECH`；其余子阶段仍 `SHERIFF` |
 | `agent/prompts.py` | 警徽流字段开放条件由「phase ∈ {SHERIFF_PK}」改为「SHERIFF_PK 或 (SHERIFF_ELECTION 且 stage=speech)」；新增上警发言引导语（竞选理由、可声称身份、预言家报查验与警徽流）。狼人公开发言沿用既有昼间装配签名隔离，私有分区不入 prompt |
