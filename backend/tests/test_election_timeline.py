@@ -62,7 +62,8 @@ def test_reduce_writes_election_stage() -> None:
 
 # 合法子阶段转移（时间线语法）：任何阶段都可经流失/自爆直接收尾到 ""
 _VALID_NEXT: dict[str, set[str]] = {
-    "candidacy": {"withdraw", ""},
+    "candidacy": {"speech", "withdraw", ""},  # withdraw 直达 = campaign_speech_enabled=False
+    "speech": {"withdraw", ""},
     "withdraw": {"vote", ""},
     "vote": {"direction", ""},
     "direction": {"announce", ""},

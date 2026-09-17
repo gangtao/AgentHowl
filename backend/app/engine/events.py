@@ -208,7 +208,8 @@ class SheriffBadgeLostPayload(EventPayload):
 
 class ElectionStageChangedPayload(EventPayload):
     stage: ElectionStage  # 子阶段标记；reduce 据此写 election_stage（issue #17）
-    # 进入 speech 子阶段时一并设定上警发言顺序（issue #47）；与 PhaseChangedPayload.speech_order 同语义
+    # 进入 speech 子阶段时一并设定上警发言顺序（issue #47）；
+    # 与 PhaseChangedPayload.speech_order 同语义
     speech_order: tuple[int, ...] | None = None
 
 

@@ -93,6 +93,13 @@ def _sweep(preset: str, seed: int, **cfg_override: object) -> set[Phase]:
                 assert d.direction == Direction.LEFT
             if (
                 state.phase == Phase.SHERIFF_ELECTION
+                and state.election_stage == ElectionStage.SPEECH
+            ):
+                # 上警发言超时默认空发言，不得落投票分支
+                assert isinstance(d, Speak)
+                assert d.content == TIMEOUT_SPEECH
+            if (
+                state.phase == Phase.SHERIFF_ELECTION
                 and state.election_stage == ElectionStage.WITHDRAW
             ):
                 # 退水确认窗口默认留任

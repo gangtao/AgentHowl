@@ -24,6 +24,7 @@ from app.engine.actions import (
     Speak,
 )
 from app.engine.config import (
+    CampaignSpeechOrder,
     Faction,
     GameConfig,
     RoleType,
@@ -76,6 +77,7 @@ from app.engine.events import (
 from app.engine.phases import (
     ElectionStage,
     Phase,
+    campaign_speaking,
     expected_actors,
     next_night_phase,
     night_phase_sequence,
@@ -231,21 +233,27 @@ def _validate(state: GameState, action: Action) -> RejectedReason | None:
     if isinstance(action, NightAction):
         return _validate_night(state, pl, action)
     if isinstance(action, Speak):
-        # 发言合法阶段：白天发言、遗言，以及 PK 发言期（队列未耗尽）
+        # 发言合法阶段：白天发言、遗言、PK 发言期、上警发言期（队列未耗尽）
         pk_speaking = state.phase in (Phase.VOTE_PK, Phase.SHERIFF_PK) and (
             state.speech_idx < len(state.speech_order)
         )
-        if state.phase not in (Phase.DAY_SPEECH, Phase.LAST_WORDS) and not pk_speaking:
+        campaigning = campaign_speaking(state)
+        if (
+            state.phase not in (Phase.DAY_SPEECH, Phase.LAST_WORDS)
+            and not pk_speaking
+            and not campaigning
+        ):
             return RejectedReason.WRONG_PHASE
         if (
             state.phase == Phase.DAY_SPEECH or pk_speaking
         ) and state.config.speech_order_rule == SpeechOrderRule.BIDDING:
             return RejectedReason.BIDDING_NOT_IMPLEMENTED
         if action.badge_flow:
-            # 警徽流：仅 SHERIFF_PK 发言回合接受；只验结构，不验真实性/角色（悍跳合法）
+            # 警徽流：仅竞选语境发言（SHERIFF_PK 发言回合 / 上警发言）接受；
+            # 只验结构，不验真实性/角色（悍跳合法）
             sr = state.config.sheriff
             if (
-                not (state.phase == Phase.SHERIFF_PK and pk_speaking)
+                not ((state.phase == Phase.SHERIFF_PK and pk_speaking) or campaigning)
                 or not sr.badge_flow_enabled
                 or len(action.badge_flow) > sr.badge_flow_max_length
                 or len(set(action.badge_flow)) != len(action.badge_flow)
@@ -394,6 +402,13 @@ def _validate_sheriff(state: GameState, a: SheriffAction) -> RejectedReason | No
             return RejectedReason.CANNOT_VOTE
     if a.actor_seat not in expected_actors(state):
         return RejectedReason.NOT_YOUR_TURN
+    # 发言期守卫（issue #47）：竞选语境下发言队列未耗尽时不接受任何警长行动。
+    # 当前发言者恰在 expected_actors 内，不设此守卫则 VOTE_SHERIFF 会落入末尾兜底分支被接受
+    # （SHERIFF_PK 发言期的同一口子为既有漏洞，一并堵上）。
+    if campaign_speaking(state) or (
+        state.phase == Phase.SHERIFF_PK and state.speech_idx < len(state.speech_order)
+    ):
+        return RejectedReason.WRONG_PHASE
     at = a.action_type
     if state.phase == Phase.LAST_WORDS:
         if at not in (SheriffActionType.PASS_BADGE, SheriffActionType.TEAR_BADGE):
@@ -1027,6 +1042,32 @@ def _announce_and_continue_night(
     return _finish_night_deaths(state, ordered, events)
 
 
+def _campaign_speech_order(state: GameState) -> tuple[int, ...]:
+    """上警发言顺序（issue #47）。JUDGE_ODD_EVEN = 法官「看时间单顺双逆」：
+    引擎无钟表，以 seeded RNG 抽奇偶位，在座号升序/降序间二选一。"""
+    asc = tuple(sorted(state.sheriff_candidates))
+    if state.config.sheriff.campaign_speech_order == CampaignSpeechOrder.SEAT_ASC:
+        return asc
+    seed = state.config.seed if state.config.seed is not None else 0
+    flip = rng.derive_int(
+        seed=seed, purpose="campaign_speech_dir", seq=state.state_version, modulo=2
+    )
+    return asc if flip == 0 else tuple(reversed(asc))
+
+
+def _enter_withdraw(state: GameState, events: list[Event]) -> tuple[GameState, list[Event]]:
+    """进入退水确认子阶段（confirmed 是游标，保持 model_copy）。"""
+    state, e = _emit(
+        state,
+        EventType.ELECTION_STAGE_CHANGED,
+        ElectionStageChangedPayload(stage=ElectionStage.WITHDRAW),
+        Visibility.PUBLIC,
+    )
+    events.append(e)
+    state = state.model_copy(update={"sheriff_confirmed": frozenset()})
+    return state, events
+
+
 def _advance_election(state: GameState) -> tuple[GameState, list[Event]]:
     events: list[Event] = []
     if state.election_stage == "direction":
@@ -1045,16 +1086,22 @@ def _advance_election(state: GameState) -> tuple[GameState, list[Event]]:
         # 全员声明完毕
         if not state.sheriff_candidates:
             return _lose_badge(state, BadgeLostReason.NO_CANDIDATES, events)
-        # 进入退水确认子阶段（confirmed 是游标，保持 model_copy）
-        state, e = _emit(
-            state,
-            EventType.ELECTION_STAGE_CHANGED,
-            ElectionStageChangedPayload(stage=ElectionStage.WITHDRAW),
-            Visibility.PUBLIC,
-        )
-        events.append(e)
-        state = state.model_copy(update={"sheriff_confirmed": frozenset()})
-        return state, events
+        if state.config.sheriff.campaign_speech_enabled:
+            # 上警发言（issue #47）：顺序一次算定并随事件入流，回放不重算 RNG
+            state, e = _emit(
+                state,
+                EventType.ELECTION_STAGE_CHANGED,
+                ElectionStageChangedPayload(
+                    stage=ElectionStage.SPEECH, speech_order=_campaign_speech_order(state)
+                ),
+                Visibility.PUBLIC,
+            )
+            events.append(e)
+            return state, events
+        return _enter_withdraw(state, events)
+    if state.election_stage == "speech":
+        # 上警发言队列耗尽 -> 退水确认
+        return _enter_withdraw(state, events)
     if state.election_stage == "withdraw":
         if not state.sheriff_candidates:
             return _lose_badge(state, BadgeLostReason.ALL_WITHDREW, events)

@@ -136,12 +136,18 @@ class GuardRule(BaseModel):
     can_guard_same_target_consecutively: bool = False   # 是否可连守
     guard_plus_antidote_cancels: bool = True            # 同守同救失效
 
+class CampaignSpeechOrder(str, Enum):
+    JUDGE_ODD_EVEN = "JUDGE_ODD_EVEN"   # 法官「单顺双逆」：seeded RNG 抽奇偶，座号升序或降序（默认）
+    SEAT_ASC       = "SEAT_ASC"         # 固定座号升序
+
 class SheriffRule(BaseModel):
     enabled: bool = True
     vote_weight: float = 1.5
     election_before_first_death_announce: bool = True    # 竞选在公布死讯前
     badge_flow_enabled: bool = True                      # 警徽流
     wolf_selfdestruct_eats_badge: bool = True            # 自爆吞警徽
+    campaign_speech_enabled: bool = True                 # 上警发言子阶段（候选人依次发言后再退水）
+    campaign_speech_order: CampaignSpeechOrder = CampaignSpeechOrder.JUDGE_ODD_EVEN
 
 class LastWordsRule(str, Enum):
     FIRST_NIGHT_ONLY = "FIRST_NIGHT_ONLY"   # 仅首夜死者有遗言（默认）

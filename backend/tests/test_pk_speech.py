@@ -164,3 +164,28 @@ def test_full_games_with_pk_still_terminate() -> None:
         cfg = build_preset("std_12_yn_hunter_guard").model_copy(update={"seed": seed})
         final, _ = run_game(cfg, game_id=f"pk{seed}")
         assert final.phase == Phase.GAME_OVER
+
+
+def test_pk_speaker_cannot_vote_during_pk_speech() -> None:
+    # issue #47 顺带修复：SHERIFF_PK 发言期，当前发言者（平票候选人）曾可经
+    # _validate_sheriff 兜底分支投票并计入票型。
+    from app.engine.actions import RejectedReason, SheriffAction, SheriffActionType
+
+    cfg = build_preset("std_9_kill_side").model_copy(update={"num_players": 6, "seed": 1})
+    st = GameState(
+        game_id="g",
+        config=cfg,
+        phase=Phase.SHERIFF_PK,
+        round=1,
+        players=_players(6, wolves=(1,)),
+        sheriff_candidates=(1, 2),
+        speech_order=(1, 2),
+        speech_idx=0,
+        night_deaths=(),
+        resolved_first_night=True,
+    )
+    res = step(
+        st, SheriffAction(actor_seat=1, action_type=SheriffActionType.VOTE_SHERIFF, target_seat=1)
+    )
+    assert res.rejection == RejectedReason.WRONG_PHASE
+    assert res.state.sheriff_votes == {}
