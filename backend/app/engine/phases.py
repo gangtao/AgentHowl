@@ -36,6 +36,7 @@ class ElectionStage(StrEnum):
 
     NONE = ""  # 竞选机器未启动/已结束（显式收尾标记）
     CANDIDACY = "candidacy"
+    SPEECH = "speech"  # 上警发言（issue #47）：候选人按 speech_order 依次发言
     WITHDRAW = "withdraw"
     VOTE = "vote"
     DIRECTION = "direction"
@@ -75,6 +76,15 @@ def next_night_phase(config: GameConfig, current: Phase) -> Phase | None:
         return seq[0] if seq else None
     idx = seq.index(current)
     return seq[idx + 1] if idx + 1 < len(seq) else None
+
+
+def campaign_speaking(state: GameState) -> bool:
+    """上警发言回合进行中（issue #47）：竞选 speech 子阶段且发言队列未耗尽。"""
+    return (
+        state.phase == Phase.SHERIFF_ELECTION
+        and state.election_stage == ElectionStage.SPEECH
+        and state.speech_idx < len(state.speech_order)
+    )
 
 
 def expected_actors(state: GameState) -> set[int]:
@@ -132,6 +142,11 @@ def expected_actors(state: GameState) -> set[int]:
     if ph == Phase.SHERIFF_ELECTION:
         if state.election_stage == "candidacy":
             return {p.seat for p in living(state) if p.seat not in state.sheriff_declared}
+        if state.election_stage == "speech":
+            # 上警发言：仅当前发言者；队列耗尽后空集 -> advance 进入退水确认
+            if state.speech_idx < len(state.speech_order):
+                return {state.speech_order[state.speech_idx]}
+            return set()
         if state.election_stage == "withdraw":
             # 退水确认：尚未表态的候选人
             return {s for s in state.sheriff_candidates if s not in state.sheriff_confirmed}

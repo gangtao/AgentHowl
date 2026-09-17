@@ -43,6 +43,7 @@ def _stage_evt(stage: ElectionStage) -> Event:
 def test_election_stage_enum_values() -> None:
     assert ElectionStage.NONE.value == ""
     assert ElectionStage.CANDIDACY.value == "candidacy"
+    assert ElectionStage.SPEECH.value == "speech"
     assert ElectionStage.WITHDRAW.value == "withdraw"
     assert ElectionStage.VOTE.value == "vote"
     assert ElectionStage.DIRECTION.value == "direction"

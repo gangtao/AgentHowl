@@ -208,6 +208,8 @@ class SheriffBadgeLostPayload(EventPayload):
 
 class ElectionStageChangedPayload(EventPayload):
     stage: ElectionStage  # 子阶段标记；reduce 据此写 election_stage（issue #17）
+    # 进入 speech 子阶段时一并设定上警发言顺序（issue #47）；与 PhaseChangedPayload.speech_order 同语义
+    speech_order: tuple[int, ...] | None = None
 
 
 class SheriffWithdrewPayload(EventPayload):
@@ -487,7 +489,11 @@ def _reduce_dispatch(state: GameState, event: Event) -> dict[str, object]:
         return {"sheriff_speech_direction": p.direction}
 
     if t == EventType.ELECTION_STAGE_CHANGED and isinstance(p, ElectionStageChangedPayload):
-        return {"election_stage": p.stage.value}
+        stage_upd: dict[str, object] = {"election_stage": p.stage.value}
+        if p.speech_order is not None:
+            stage_upd["speech_order"] = p.speech_order
+            stage_upd["speech_idx"] = 0
+        return stage_upd
 
     if t == EventType.WOLF_SELF_DESTRUCT and isinstance(p, WolfSelfDestructPayload):
         return {"players": _replace_player(state.players, p.seat, alive=False)}

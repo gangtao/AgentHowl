@@ -75,6 +75,13 @@ class GuardRule(BaseModel):
     guard_plus_antidote_cancels: bool = True
 
 
+class CampaignSpeechOrder(StrEnum):
+    """上警发言顺序（issue #47）。"""
+
+    JUDGE_ODD_EVEN = "JUDGE_ODD_EVEN"  # 法官「单顺双逆」：seeded RNG 抽奇偶，座号升序或降序
+    SEAT_ASC = "SEAT_ASC"  # 固定座号升序（无随机对照）
+
+
 class SheriffRule(BaseModel):
     model_config = ConfigDict(frozen=True)
     enabled: bool = True
@@ -83,6 +90,8 @@ class SheriffRule(BaseModel):
     badge_flow_enabled: bool = True
     badge_flow_max_length: int = 2  # 警徽流最多声明几夜（「一般留两夜」为约定，可配置）
     wolf_selfdestruct_eats_badge: bool = True
+    campaign_speech_enabled: bool = True  # 上警发言子阶段（issue #47）；False = 上警后直接退水确认
+    campaign_speech_order: CampaignSpeechOrder = CampaignSpeechOrder.JUDGE_ODD_EVEN
 
 
 class RoleSlot(BaseModel):
