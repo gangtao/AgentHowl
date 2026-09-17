@@ -7,6 +7,7 @@ from app.engine.config import (
     SheriffRule,
     build_preset,
 )
+from app.engine.engine import StepResult
 from app.engine.events import (
     ElectionStageChangedPayload,
     Event,
@@ -14,7 +15,14 @@ from app.engine.events import (
     Visibility,
     reduce,
 )
-from app.engine.phases import ElectionStage, Phase, campaign_speaking, expected_actors
+from app.engine.phases import (
+    ElectionStage,
+    Phase,
+    campaign_speaking,
+    expected_actors,
+    pk_speaking,
+    speech_queue_pending,
+)
 from app.engine.state import GameState, Player
 
 
@@ -122,6 +130,29 @@ def test_campaign_speaking_false_outside_speech_stage() -> None:
     assert not campaign_speaking(_state(phase=Phase.SHERIFF_PK, speech_order=(1, 2), speech_idx=0))
 
 
+def test_pk_speaking_and_speech_queue_pending() -> None:
+    # 上警发言中：pending True，pk False
+    campaigning = _state(election_stage="speech", speech_order=(1, 2), speech_idx=0)
+    assert not pk_speaking(campaigning)
+    assert speech_queue_pending(campaigning)
+
+    # SHERIFF_PK / VOTE_PK 发言中：两者皆 True
+    for ph in (Phase.SHERIFF_PK, Phase.VOTE_PK):
+        pk = _state(phase=ph, speech_order=(1, 2), speech_idx=0)
+        assert pk_speaking(pk)
+        assert speech_queue_pending(pk)
+
+    # 队列耗尽：皆 False
+    exhausted = _state(phase=Phase.SHERIFF_PK, speech_order=(1, 2), speech_idx=2)
+    assert not pk_speaking(exhausted)
+    assert not speech_queue_pending(exhausted)
+
+    # withdraw 子阶段：皆 False
+    withdrawing = _state(election_stage="withdraw", speech_order=(1, 2), speech_idx=0)
+    assert not pk_speaking(withdrawing)
+    assert not speech_queue_pending(withdrawing)
+
+
 # ---------- Task 2：内置驱动 ----------
 
 
@@ -184,7 +215,7 @@ def _finish_candidacy(
     seed: int = 1,
     cands: tuple[int, ...] = (1, 2, 3),
     wolves: tuple[int, ...] = (0,),
-):
+) -> StepResult:
     """6 人局 candidacy 收尾：0-4 已声明，5 号最后声明不上警 -> 引擎推进子阶段。"""
     from app.engine.actions import SheriffAction, SheriffActionType
     from app.engine.engine import step
@@ -294,6 +325,19 @@ def test_rejection_matrix() -> None:
     st_w, _ = run_campaign_speeches(st)
     assert step(st_w, Speak(actor_seat=1, content="x")).rejection == RejectedReason.WRONG_PHASE
 
+    # withdraw 子阶段全员坚持竞选（RUN_FOR_SHERIFF 再确认）-> 进入 vote 子阶段；
+    # 此时警下投票人再 Speak -> WRONG_PHASE（F6，规格 §7 点名但缺失的用例）
+    st_v = st_w
+    for seat in sorted(st_w.sheriff_candidates):
+        r = step(
+            st_v, SheriffAction(actor_seat=seat, action_type=SheriffActionType.RUN_FOR_SHERIFF)
+        )
+        assert r.rejection is None
+        st_v = r.state
+    assert st_v.election_stage == "vote"
+    voter = next(p.seat for p in st_v.players if p.seat not in st_v.sheriff_candidates)
+    assert step(st_v, Speak(actor_seat=voter, content="x")).rejection == RejectedReason.WRONG_PHASE
+
 
 def test_badge_flow_in_campaign_speech() -> None:
     from app.engine.actions import RejectedReason, Speak
@@ -308,6 +352,14 @@ def test_badge_flow_in_campaign_speech() -> None:
     for bad in ((4, 5, 0), (4, 4)):  # 超长 / 重复
         r = step(st, Speak(actor_seat=1, content="x", badge_flow=bad))
         assert r.rejection == RejectedReason.BADGE_FLOW_INVALID, bad
+
+    # 死目标：座位 4 非候选人，置为已死亡 -> badge_flow 引用死座位应被拒（F6）
+    dead_players = tuple(
+        p.model_copy(update={"alive": False}) if p.seat == 4 else p for p in st.players
+    )
+    st_dead = st.model_copy(update={"players": dead_players})
+    r = step(st_dead, Speak(actor_seat=1, content="x", badge_flow=(4,)))
+    assert r.rejection == RejectedReason.BADGE_FLOW_INVALID
 
     off = SheriffRule(campaign_speech_order=CampaignSpeechOrder.SEAT_ASC, badge_flow_enabled=False)
     st_off = _finish_candidacy(sheriff=off).state

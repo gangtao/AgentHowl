@@ -40,7 +40,8 @@ _SELF_DESTRUCT_PHASES = frozenset({"DAY_SPEECH", "SHERIFF_ELECTION", "SHERIFF_PK
 
 _CAMPAIGN_SPEECH_GUIDE = (
     "你正在警长竞选的上警发言：说明为什么应由你当警长，可声称身份。"
-    "若你是（或要悍跳）预言家，报出查验结果，并用 badge_flow 给出警徽流（未来两夜的验人顺序）。"
+    "若你是（或要悍跳）预言家，报出查验结果，并用 badge_flow 给出警徽流"
+    "（未来几夜的验人顺序，座位须存活且不重复）。"
     "全部候选人发言结束后你还有一次退水机会"
 )
 

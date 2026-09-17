@@ -61,8 +61,10 @@ def test_reduce_writes_election_stage() -> None:
 
 
 # 合法子阶段转移（时间线语法）：任何阶段都可经流失/自爆直接收尾到 ""
+# candidacy -> withdraw 仅在 campaign_speech_enabled=False 时合法（四个预设默认都开着，
+# 该分支由 test_stage_timeline_reconstructible_and_wellformed 按配置动态放行，见下）。
 _VALID_NEXT: dict[str, set[str]] = {
-    "candidacy": {"speech", "withdraw", ""},  # withdraw 直达 = campaign_speech_enabled=False
+    "candidacy": {"speech", ""},
     "speech": {"withdraw", ""},
     "withdraw": {"vote", ""},
     "vote": {"direction", ""},
@@ -111,7 +113,10 @@ def test_stage_timeline_reconstructible_and_wellformed() -> None:
             assert seq[0] == "candidacy" and seq[-1] == ""
             assert seq.count("candidacy") == 1  # 竞选只在首日发生一次
             for a, b in zip(seq, seq[1:], strict=False):
-                assert b in _VALID_NEXT[a], f"{preset}/{seed}: {a}→{b} 非法（seq={seq}）"
+                allowed = _VALID_NEXT[a]
+                if a == "candidacy" and not cfg.sheriff.campaign_speech_enabled:
+                    allowed = allowed | {"withdraw"}
+                assert b in allowed, f"{preset}/{seed}: {a}→{b} 非法（seq={seq}）"
 
 
 def test_stepwise_replay_equals_live_election_stage() -> None:

@@ -81,6 +81,8 @@ from app.engine.phases import (
     expected_actors,
     next_night_phase,
     night_phase_sequence,
+    pk_speaking,
+    speech_queue_pending,
 )
 from app.engine.resolver import check_win, count_votes, resolve_night
 from app.engine.state import (
@@ -234,18 +236,16 @@ def _validate(state: GameState, action: Action) -> RejectedReason | None:
         return _validate_night(state, pl, action)
     if isinstance(action, Speak):
         # 发言合法阶段：白天发言、遗言、PK 发言期、上警发言期（队列未耗尽）
-        pk_speaking = state.phase in (Phase.VOTE_PK, Phase.SHERIFF_PK) and (
-            state.speech_idx < len(state.speech_order)
-        )
+        in_pk_speech = pk_speaking(state)
         campaigning = campaign_speaking(state)
         if (
             state.phase not in (Phase.DAY_SPEECH, Phase.LAST_WORDS)
-            and not pk_speaking
+            and not in_pk_speech
             and not campaigning
         ):
             return RejectedReason.WRONG_PHASE
         if (
-            state.phase == Phase.DAY_SPEECH or pk_speaking
+            state.phase == Phase.DAY_SPEECH or in_pk_speech
         ) and state.config.speech_order_rule == SpeechOrderRule.BIDDING:
             return RejectedReason.BIDDING_NOT_IMPLEMENTED
         if action.badge_flow:
@@ -253,7 +253,7 @@ def _validate(state: GameState, action: Action) -> RejectedReason | None:
             # 只验结构，不验真实性/角色（悍跳合法）
             sr = state.config.sheriff
             if (
-                not ((state.phase == Phase.SHERIFF_PK and pk_speaking) or campaigning)
+                not ((state.phase == Phase.SHERIFF_PK and in_pk_speech) or campaigning)
                 or not sr.badge_flow_enabled
                 or len(action.badge_flow) > sr.badge_flow_max_length
                 or len(set(action.badge_flow)) != len(action.badge_flow)
@@ -404,10 +404,9 @@ def _validate_sheriff(state: GameState, a: SheriffAction) -> RejectedReason | No
         return RejectedReason.NOT_YOUR_TURN
     # 发言期守卫（issue #47）：竞选语境下发言队列未耗尽时不接受任何警长行动。
     # 当前发言者恰在 expected_actors 内，不设此守卫则 VOTE_SHERIFF 会落入末尾兜底分支被接受
-    # （SHERIFF_PK 发言期的同一口子为既有漏洞，一并堵上）。
-    if campaign_speaking(state) or (
-        state.phase == Phase.SHERIFF_PK and state.speech_idx < len(state.speech_order)
-    ):
+    # （SHERIFF_PK 发言期的同一口子为既有漏洞，一并堵上）。VOTE_PK 阶段本就没有
+    # SheriffAction 的合法出口，末尾会落到 WRONG_PHASE，扩到该阶段不改变结果。
+    if speech_queue_pending(state):
         return RejectedReason.WRONG_PHASE
     at = a.action_type
     if state.phase == Phase.LAST_WORDS:

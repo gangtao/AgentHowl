@@ -95,6 +95,7 @@ def test_campaign_speech_guidance_only_in_campaign_speech() -> None:
     obs_campaign = _obs("SHERIFF_ELECTION", election_stage="speech")
     up = build_prompt(DecisionKind.SPEECH, obs_campaign, "", agent_seed=1)
     assert "上警发言" in up and "self_destruct" in up
+    assert "两夜" not in up  # F3（终审修复）：badge_flow_max_length 可配，不应硬编码「两夜」
 
     for obs in (_obs("DAY_SPEECH"), _obs("SHERIFF_PK", pk_speech_pending=True)):
         assert "上警发言" not in build_prompt(DecisionKind.SPEECH, obs, "", agent_seed=1)

@@ -7,11 +7,19 @@ import pytest
 
 from app.engine.actions import Action, Speak
 from app.engine.config import build_preset
+from app.engine.engine import create_game
 from app.engine.events import EventType
 from app.engine.observation import PlayerObservation
 from app.engine.phases import Phase
+from app.engine.state import GameState
 from app.runtime.connection import ConnectionManager
-from app.runtime.game_runner import GameLobby, GameRunner, LobbyError, RunnerTimeouts
+from app.runtime.game_runner import (
+    GameLobby,
+    GameRunner,
+    LobbyError,
+    RunnerTimeouts,
+    _speech_window,
+)
 from app.runtime.player_port import BotPlayerPort, PlayerPort
 from app.store.event_store import (
     EventStore,
@@ -19,6 +27,22 @@ from app.store.event_store import (
     JsonFileEventStore,
     load_state,
 )
+
+
+def _speech_state(**kw: object) -> GameState:
+    """SHERIFF_ELECTION 语境下的最小 GameState（供 _speech_window 单测复用）。"""
+    cfg = build_preset("std_9_kill_side").model_copy(update={"seed": 1})
+    players = create_game(cfg, game_id="g").state.players
+    base: dict[str, object] = {
+        "game_id": "g",
+        "config": cfg,
+        "phase": Phase.SHERIFF_ELECTION,
+        "round": 1,
+        "players": players,
+        "resolved_first_night": True,
+    }
+    base.update(kw)
+    return GameState(**base)  # type: ignore[arg-type]
 
 
 def _make_runner(store: EventStore, seed: int = 42, preset: str = "std_12_yn_hunter_idiot"):  # type: ignore[no-untyped-def]
@@ -164,6 +188,23 @@ class TestRunnerIntegration:
         await runner.run()
         assert EventType.GAME_CREATED in got
         assert EventType.ROLES_ASSIGNED not in got  # GM_ONLY 不得泄给观众
+
+
+def test_speech_window_covers_campaign_speech() -> None:
+    # F1（issue #47 终审）：上警发言窗口必须走发言超时，不能落到行动超时
+    campaigning = _speech_state(
+        election_stage="speech", sheriff_candidates=(1, 3), speech_order=(3, 1), speech_idx=0
+    )
+    assert _speech_window(campaigning)
+
+    exhausted = campaigning.model_copy(update={"speech_idx": 2})
+    assert not _speech_window(exhausted)
+
+    voting = _speech_state(election_stage="vote", sheriff_candidates=(1, 3))
+    assert not _speech_window(voting)
+
+    day_speech = _speech_state(phase=Phase.DAY_SPEECH, speech_order=(0,), speech_idx=0)
+    assert _speech_window(day_speech)
 
 
 def test_runner_timeouts_from_config() -> None:

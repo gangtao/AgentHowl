@@ -87,6 +87,18 @@ def campaign_speaking(state: GameState) -> bool:
     )
 
 
+def pk_speaking(state: GameState) -> bool:
+    """PK 发言回合进行中：VOTE_PK / SHERIFF_PK 且发言队列未耗尽。"""
+    return state.phase in (Phase.VOTE_PK, Phase.SHERIFF_PK) and state.speech_idx < len(
+        state.speech_order
+    )
+
+
+def speech_queue_pending(state: GameState) -> bool:
+    """发言队列型窗口（PK 发言 / 上警发言，issue #47）：轮到队首发言、其余行动一律不开放。"""
+    return campaign_speaking(state) or pk_speaking(state)
+
+
 def expected_actors(state: GameState) -> set[int]:
     """当前必须行动的座位集合；系统阶段返回空集。"""
     # 局部导入以打破 phases<->state 的模块级循环依赖（谁先被导入不再敏感）

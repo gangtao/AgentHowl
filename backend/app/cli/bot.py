@@ -14,7 +14,7 @@ from app.engine.actions import (
 from app.engine.config import Faction, GameConfig
 from app.engine.engine import create_game, step
 from app.engine.events import Event
-from app.engine.phases import Phase, campaign_speaking, expected_actors
+from app.engine.phases import Phase, campaign_speaking, expected_actors, pk_speaking
 from app.engine.state import GameState, living_seats, player_at
 
 
@@ -80,7 +80,7 @@ class RandomBot:
                 badge_flow=_bot_badge_flow(state, seat, seed),
             )
 
-        if ph in (Phase.VOTE_PK, Phase.SHERIFF_PK) and state.speech_idx < len(state.speech_order):
+        if pk_speaking(state):
             # PK 发言期：轮到的平票者发言；警上 PK 以 1/4 概率附带合法警徽流声明
             bf = _bot_badge_flow(state, seat, seed) if ph == Phase.SHERIFF_PK else ()
             return Speak(actor_seat=seat, content="(bot-pk)", badge_flow=bf)
