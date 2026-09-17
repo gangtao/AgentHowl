@@ -17,7 +17,7 @@ from app.engine.config import GameConfig
 from app.engine.engine import RosterEntry, create_game, step
 from app.engine.events import Event
 from app.engine.observation import build_observation
-from app.engine.phases import Phase, expected_actors
+from app.engine.phases import Phase, expected_actors, speech_queue_pending
 from app.engine.state import GameState
 from app.runtime.connection import ConnectionManager
 from app.runtime.defaults import default_action
@@ -87,9 +87,7 @@ def _speech_window(state: GameState) -> bool:
     """当前窗口是否发言型（超时取 speech_timeout_sec）。"""
     if state.phase in (Phase.DAY_SPEECH, Phase.LAST_WORDS):
         return True
-    return state.phase in (Phase.VOTE_PK, Phase.SHERIFF_PK) and state.speech_idx < len(
-        state.speech_order
-    )
+    return speech_queue_pending(state)
 
 
 class GameRunner:

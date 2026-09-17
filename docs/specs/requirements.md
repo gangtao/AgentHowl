@@ -83,7 +83,7 @@
 - **白痴翻牌**：白天被票出可翻牌免死，保留发言权、**失去投票权**；此后只能被夜晚刀杀/毒杀/枪杀出局。
 - **狼刀在先原则**：若狼人杀人后已达成胜利条件，直接判狼胜，即使女巫随后毒杀/猎人开枪带走最后一只狼也无效。
 - **狼人刀法**：允许空刀、允许自刀；意见不统一视为空刀。
-- **警长竞选**：首个白天、**公布死讯前**进行。上警玩家依次发言→可退水（失去投票权）→警下投票→最高票当选。平票则平票者 PK 发言，再由未平票的警下投票；再次平票则**警徽流失**（本局无警长）。狼人可在竞选阶段自爆，导致**吞警徽**（本局无警长）。
+- **警长竞选**：首个白天、**公布死讯前**进行。上警玩家依次发言（顺序由法官按"单顺双逆"决定，可配置）→可退水（失去投票权）→警下投票→最高票当选。平票则平票者 PK 发言，再由未平票的警下投票；再次平票则**警徽流失**（本局无警长）。狼人可在竞选阶段自爆，导致**吞警徽**（本局无警长）。
 - **警长权利**：投票算 **1.5 票**；决定发言方向（警左/警右，或死左/死右）；发言末尾**归票**；死亡时可**移交警徽或撕掉警徽**。
 - **警徽流**：预言家上警时公布"先验 A 后验 B"（一般留两夜），死后靠警徽传递验人信息。
 - **遗言规则**（默认标准局）：**仅首夜死者有遗言**（无论死几个）；之后夜晚死者无遗言；**所有白天被票/技能出局者都有遗言**。是否有遗言只取决于死亡时间，与死因无关。
@@ -136,12 +136,18 @@ class GuardRule(BaseModel):
     can_guard_same_target_consecutively: bool = False   # 是否可连守
     guard_plus_antidote_cancels: bool = True            # 同守同救失效
 
+class CampaignSpeechOrder(str, Enum):
+    JUDGE_ODD_EVEN = "JUDGE_ODD_EVEN"   # 法官「单顺双逆」：seeded RNG 抽奇偶，座号升序或降序（默认）
+    SEAT_ASC       = "SEAT_ASC"         # 固定座号升序
+
 class SheriffRule(BaseModel):
     enabled: bool = True
     vote_weight: float = 1.5
     election_before_first_death_announce: bool = True    # 竞选在公布死讯前
     badge_flow_enabled: bool = True                      # 警徽流
     wolf_selfdestruct_eats_badge: bool = True            # 自爆吞警徽
+    campaign_speech_enabled: bool = True                 # 上警发言子阶段（候选人依次发言后再退水）
+    campaign_speech_order: CampaignSpeechOrder = CampaignSpeechOrder.JUDGE_ODD_EVEN
 
 class LastWordsRule(str, Enum):
     FIRST_NIGHT_ONLY = "FIRST_NIGHT_ONLY"   # 仅首夜死者有遗言（默认）
@@ -711,6 +717,8 @@ class Event(BaseModel):
 
 **事件类型（Event `type` 枚举，节选）**：
 `GAME_CREATED, PLAYER_JOINED, GAME_STARTED, ROLES_ASSIGNED(GM_ONLY), PHASE_CHANGED, GUARD_PROTECTED(ROLE_SELF), WOLF_KILL_PROPOSED(WOLVES), WOLF_KILL_DECIDED(GM_ONLY), WITCH_SAVED(ROLE_SELF), WITCH_POISONED(ROLE_SELF), SEER_CHECKED(ROLE_SELF), NIGHT_RESOLVED(GM_ONLY), DEATH_ANNOUNCED(PUBLIC), SHERIFF_CANDIDACY(PUBLIC), SHERIFF_WITHDREW(PUBLIC), SHERIFF_VOTE_CAST(PUBLIC), SHERIFF_ELECTED(PUBLIC), SHERIFF_DIRECTION_SET(PUBLIC), SHERIFF_BADGE_LOST(PUBLIC), ELECTION_STAGE_CHANGED(PUBLIC), BADGE_PASSED(PUBLIC), PLAYER_SPOKE(PUBLIC), VOTE_CAST(PUBLIC 或按规则), VOTE_RESULT(PUBLIC), PLAYER_EXILED(PUBLIC), HUNTER_SHOT(PUBLIC), IDIOT_REVEALED(PUBLIC), LAST_WORDS(PUBLIC), GAME_OVER(PUBLIC)`。
+
+`ELECTION_STAGE_CHANGED` 载荷为 `{stage, speech_order?}`：`speech_order` 仅在进入 `speech` 子阶段时非空，reduce 据此重置发言队列与游标，语义与 `PHASE_CHANGED.speech_order` 完全一致（前端 TS reducer 复用同一条规则）。
 
 **回放 = 按 `visibility` 过滤 + 顺序重放**。上帝视角看全部；玩家视角回放只喂该 seat 有权见的 events。`build_observation` 与回放共用同一套 visibility 过滤逻辑，保证"直播即回放"。
 

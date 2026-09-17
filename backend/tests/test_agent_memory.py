@@ -7,10 +7,12 @@ from app.agent.memory import (
     AgentMemory,
     ReflectionQA,
     ReflectionResult,
+    _render,
 )
 from app.engine.config import Faction
 from app.engine.events import (
     DeathAnnouncedPayload,
+    ElectionStageChangedPayload,
     Event,
     EventType,
     PlayerSpokePayload,
@@ -18,6 +20,7 @@ from app.engine.events import (
     SeerCheckedPayload,
     Visibility,
 )
+from app.engine.phases import ElectionStage
 from tests.llm_helpers import ScriptedLLMClient
 
 
@@ -86,6 +89,32 @@ def test_freshness_window_plus_topn() -> None:
     assert "话5" in ctx and "话4" in ctx and "话3" in ctx  # 最近 K=3
     assert "7" in ctx  # 高分死亡事件经 top-N 补充保留
     assert "话0" not in ctx  # 低分旧发言被裁剪
+
+
+def test_render_election_stage_changed_special_cases_speech_order() -> None:
+    # F4（终审修复）：ELECTION_STAGE_CHANGED 不该落回通用回退，把 speech_order=None 渲染成噪音
+    with_order = _ev(
+        1,
+        EventType.ELECTION_STAGE_CHANGED,
+        ElectionStageChangedPayload(stage=ElectionStage.SPEECH, speech_order=(3, 1)),
+    )
+    text = _render(with_order)
+    assert "[3, 1]" in text
+    assert "None" not in text
+
+    without_order = _ev(
+        2,
+        EventType.ELECTION_STAGE_CHANGED,
+        ElectionStageChangedPayload(stage=ElectionStage.WITHDRAW),
+    )
+    text2 = _render(without_order)
+    assert "speech_order" not in text2
+    assert "None" not in text2
+
+    ended = _ev(
+        3, EventType.ELECTION_STAGE_CHANGED, ElectionStageChangedPayload(stage=ElectionStage.NONE)
+    )
+    assert "结束" in _render(ended)
 
 
 def test_night_private_partition_never_in_context() -> None:

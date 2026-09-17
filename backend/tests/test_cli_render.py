@@ -110,3 +110,22 @@ def test_render_observation_and_tools() -> None:
 def test_color_disabled_is_plaintext() -> None:
     assert color("hi", "red", enabled=False) == "hi"
     assert "hi" in color("hi", "red", enabled=True)
+
+
+def test_render_election_stage_changes() -> None:
+    from app.engine.events import ElectionStageChangedPayload
+    from app.engine.phases import ElectionStage
+
+    speech = render_event(
+        _ev(
+            EventType.ELECTION_STAGE_CHANGED,
+            ElectionStageChangedPayload(stage=ElectionStage.SPEECH, speech_order=(8, 5, 4)),
+        )
+    )
+    assert "上警发言" in speech and "8号、5号、4号" in speech
+
+    for stage in ElectionStage:
+        out = render_event(
+            _ev(EventType.ELECTION_STAGE_CHANGED, ElectionStageChangedPayload(stage=stage))
+        )
+        assert out.strip() and "speech_order" not in out and "None" not in out

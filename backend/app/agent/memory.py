@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 
 from app.agent.llm_client import LLMClient
 from app.engine.events import (
+    ElectionStageChangedPayload,
     Event,
     EventType,
     PlayerSpokePayload,
@@ -103,6 +104,9 @@ def _render(event: Event) -> str:
         return f"{event.actor_seat}号发言{claim}{bf}：{p.content}"
     if t == EventType.SEER_CHECKED and isinstance(p, SeerCheckedPayload):
         return f"你查验了{p.target}号：{p.result.value}"
+    if t == EventType.ELECTION_STAGE_CHANGED and isinstance(p, ElectionStageChangedPayload):
+        order = f"，上警发言顺序{list(p.speech_order)}" if p.speech_order is not None else ""
+        return f"竞选子阶段：{p.stage.value or '结束'}{order}"
     dumped = p.model_dump(mode="json")
     actor = f" actor={event.actor_seat}" if event.actor_seat is not None else ""
     return f"{t.value}{actor} {dumped}"

@@ -14,12 +14,34 @@ from app.engine.actions import (
 from app.engine.config import Faction, GameConfig
 from app.engine.engine import create_game, step
 from app.engine.events import Event
-from app.engine.phases import Phase, expected_actors
+from app.engine.phases import Phase, campaign_speaking, expected_actors, pk_speaking
 from app.engine.state import GameState, living_seats, player_at
 
 
 def _legal_night_targets(state: GameState, seat: int) -> list[int]:
     return [s for s in living_seats(state) if s != seat] or living_seats(state)
+
+
+def _bot_badge_flow(state: GameState, seat: int, seed: int) -> tuple[int, ...]:
+    """竞选语境发言以 1/4 概率附带一份结构合法的警徽流声明；警徽流关闭时恒空。"""
+    if not state.config.sheriff.badge_flow_enabled:
+        return ()
+    if rng.derive_int(seed=seed, purpose=f"bot:{seat}:bf", seq=state.state_version, modulo=4) != 0:
+        return ()
+    targets = [s for s in living_seats(state) if s != seat]
+    if not targets:
+        return ()
+    n_claim = 1 + rng.derive_int(
+        seed=seed, purpose=f"bot:{seat}:bfn", seq=state.state_version, modulo=2
+    )
+    picks: list[int] = []
+    for k in range(min(n_claim, len(targets))):
+        idx = rng.derive_int(
+            seed=seed, purpose=f"bot:{seat}:bf{k}", seq=state.state_version, modulo=len(targets)
+        )
+        if targets[idx] not in picks:
+            picks.append(targets[idx])
+    return tuple(picks)
 
 
 class RandomBot:
@@ -50,32 +72,17 @@ class RandomBot:
             # 竞选/警上 PK 阶段偶发自爆（issue #15 覆盖；issue #8 的 skip_day 路径被扫描真实触达）
             return SelfDestruct(actor_seat=seat)
 
-        if ph in (Phase.VOTE_PK, Phase.SHERIFF_PK) and state.speech_idx < len(state.speech_order):
+        if campaign_speaking(state):
+            # 上警发言（issue #47）：轮到的候选人发言，1/4 概率附带合法警徽流声明
+            return Speak(
+                actor_seat=seat,
+                content="(bot-campaign)",
+                badge_flow=_bot_badge_flow(state, seat, seed),
+            )
+
+        if pk_speaking(state):
             # PK 发言期：轮到的平票者发言；警上 PK 以 1/4 概率附带合法警徽流声明
-            bf: tuple[int, ...] = ()
-            if (
-                ph == Phase.SHERIFF_PK
-                and rng.derive_int(
-                    seed=seed, purpose=f"bot:{seat}:bf", seq=state.state_version, modulo=4
-                )
-                == 0
-            ):
-                targets = [s for s in living_seats(state) if s != seat]
-                if targets:
-                    n_claim = 1 + rng.derive_int(
-                        seed=seed, purpose=f"bot:{seat}:bfn", seq=state.state_version, modulo=2
-                    )
-                    picks: list[int] = []
-                    for k in range(min(n_claim, len(targets))):
-                        idx = rng.derive_int(
-                            seed=seed,
-                            purpose=f"bot:{seat}:bf{k}",
-                            seq=state.state_version,
-                            modulo=len(targets),
-                        )
-                        if targets[idx] not in picks:
-                            picks.append(targets[idx])
-                    bf = tuple(picks)
+            bf = _bot_badge_flow(state, seat, seed) if ph == Phase.SHERIFF_PK else ()
             return Speak(actor_seat=seat, content="(bot-pk)", badge_flow=bf)
 
         if ph == Phase.NIGHT_GUARD:

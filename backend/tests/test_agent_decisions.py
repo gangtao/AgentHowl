@@ -61,6 +61,9 @@ def _obs(phase: str, **kw) -> PlayerObservation:
         ("VOTE_PK", {"pk_speech_pending": False}, DecisionKind.VOTE),
         ("SHERIFF_ELECTION", {"election_stage": "candidacy"}, DecisionKind.SHERIFF),
         ("SHERIFF_ELECTION", {"election_stage": "vote"}, DecisionKind.SHERIFF),
+        # 上警发言子阶段（issue #47）走发言决策
+        ("SHERIFF_ELECTION", {"election_stage": "speech"}, DecisionKind.SPEECH),
+        ("SHERIFF_ELECTION", {"election_stage": "withdraw"}, DecisionKind.SHERIFF),
         ("SHERIFF_PK", {"pk_speech_pending": True}, DecisionKind.SPEECH),
         ("SHERIFF_PK", {"pk_speech_pending": False}, DecisionKind.SHERIFF),
         # 未映射阶段回退发言（镜像 RandomBot 兜底分支）

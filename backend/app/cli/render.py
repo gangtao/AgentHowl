@@ -12,6 +12,7 @@ from app.engine.config import Faction, RoleType
 from app.engine.events import (
     BadgePassedPayload,
     DeathAnnouncedPayload,
+    ElectionStageChangedPayload,
     Event,
     EventType,
     GameOverPayload,
@@ -32,6 +33,7 @@ from app.engine.events import (
     WolfSelfDestructPayload,
 )
 from app.engine.observation import PlayerObservation
+from app.engine.phases import ElectionStage
 
 _ANSI = {
     "red": "31",
@@ -66,6 +68,17 @@ def color(text: str, style: str, *, enabled: bool | None = None) -> str:
 
 def _seats(xs: tuple[int, ...]) -> str:
     return "、".join(f"{s}号" for s in xs) if xs else "无"
+
+
+_ELECTION_STAGE_ZH = {
+    ElectionStage.CANDIDACY: "上警报名",
+    ElectionStage.SPEECH: "上警发言",
+    ElectionStage.WITHDRAW: "退水确认",
+    ElectionStage.VOTE: "警下投票",
+    ElectionStage.DIRECTION: "警长决定发言方向",
+    ElectionStage.ANNOUNCE: "公布结果",
+    ElectionStage.NONE: "竞选环节结束",
+}
 
 
 def render_event(event: Event) -> str:  # noqa: PLR0911
@@ -103,6 +116,9 @@ def render_event(event: Event) -> str:  # noqa: PLR0911
         if p.exiled is not None:
             return f"【计票】{p.exiled}号得票最高，出局"
         return f"【计票】平票：{_seats(p.tie_seats)}"
+    if t == EventType.ELECTION_STAGE_CHANGED and isinstance(p, ElectionStageChangedPayload):
+        order = f"，顺序：{_seats(p.speech_order)}" if p.speech_order is not None else ""
+        return f"【竞选】{_ELECTION_STAGE_ZH[p.stage]}{order}"
     if t == EventType.SHERIFF_CANDIDACY and isinstance(p, SheriffCandidacyPayload):
         return f"{p.seat}号{'上警竞选' if p.running else '不上警'}"
     if t == EventType.SHERIFF_ELECTED and isinstance(p, SheriffElectedPayload):
