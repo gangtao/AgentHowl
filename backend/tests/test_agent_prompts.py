@@ -79,15 +79,25 @@ def test_prompts_carry_memory_and_self_check() -> None:
     assert "队友" in wolf and "4" in wolf  # teammates 进狼夜动态段
 
 
-def test_badge_flow_mentioned_only_in_sheriff_pk() -> None:
-    # 评审修正：badge_flow 仅在 SHERIFF_PK 发言引擎合法，其它阶段 → BADGE_FLOW_INVALID
+def test_badge_flow_mentioned_only_in_election_speech_contexts() -> None:
+    # badge_flow 仅在竞选语境发言引擎合法：SHERIFF_PK 发言回合 / 上警发言（issue #47）
     obs_pk = _obs("SHERIFF_PK", pk_speech_pending=True)
-    up_pk = build_prompt(DecisionKind.SPEECH, obs_pk, "", agent_seed=1)
-    assert "badge_flow" in up_pk
+    assert "badge_flow" in build_prompt(DecisionKind.SPEECH, obs_pk, "", agent_seed=1)
+
+    obs_campaign = _obs("SHERIFF_ELECTION", election_stage="speech")
+    assert "badge_flow" in build_prompt(DecisionKind.SPEECH, obs_campaign, "", agent_seed=1)
 
     obs_day = _obs("DAY_SPEECH")
-    up_day = build_prompt(DecisionKind.SPEECH, obs_day, "", agent_seed=1)
-    assert "badge_flow" not in up_day
+    assert "badge_flow" not in build_prompt(DecisionKind.SPEECH, obs_day, "", agent_seed=1)
+
+
+def test_campaign_speech_guidance_only_in_campaign_speech() -> None:
+    obs_campaign = _obs("SHERIFF_ELECTION", election_stage="speech")
+    up = build_prompt(DecisionKind.SPEECH, obs_campaign, "", agent_seed=1)
+    assert "上警发言" in up and "self_destruct" in up
+
+    for obs in (_obs("DAY_SPEECH"), _obs("SHERIFF_PK", pk_speech_pending=True)):
+        assert "上警发言" not in build_prompt(DecisionKind.SPEECH, obs, "", agent_seed=1)
 
 
 def test_self_destruct_mentioned_only_in_legal_phases() -> None:

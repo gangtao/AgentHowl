@@ -31,12 +31,22 @@ _WIN_TEXT = {
 
 _SELF_CHECK = "回答前自检：当前是什么阶段？你的座位号和角色是什么？不要臆造未发生的事件。"
 
-# 评审修正（Task 2 review 摘要）：badge_flow 仅在 SHERIFF_PK 发言引擎合法，
+# 评审修正（Task 2 review 摘要）：badge_flow 仅在竞选语境发言引擎合法
+# （SHERIFF_PK 发言回合 / 上警发言，issue #47），
 # self_destruct 仅在 DAY_SPEECH/SHERIFF_ELECTION/SHERIFF_PK 引擎合法，
 # 其它阶段提交会被引擎拒绝（BADGE_FLOW_INVALID 等）——指令段按阶段裁剪提示，
 # 避免诱导 agent 提交必然非法的字段。
-_BADGE_FLOW_PHASES = frozenset({"SHERIFF_PK"})
 _SELF_DESTRUCT_PHASES = frozenset({"DAY_SPEECH", "SHERIFF_ELECTION", "SHERIFF_PK"})
+
+_CAMPAIGN_SPEECH_GUIDE = (
+    "你正在警长竞选的上警发言：说明为什么应由你当警长，可声称身份。"
+    "若你是（或要悍跳）预言家，报出查验结果，并用 badge_flow 给出警徽流（未来两夜的验人顺序）。"
+    "全部候选人发言结束后你还有一次退水机会"
+)
+
+
+def _is_campaign_speech(obs: PlayerObservation) -> bool:
+    return obs.phase == "SHERIFF_ELECTION" and obs.election_stage == "speech"
 
 
 def shuffle_candidates(
@@ -91,7 +101,10 @@ def _render_observation(obs: PlayerObservation) -> str:
 
 def _speech_instruction(obs: PlayerObservation) -> str:
     parts = ["给出你的发言 content；可选声称身份 claim_role"]
-    if obs.phase in _BADGE_FLOW_PHASES:
+    campaign = _is_campaign_speech(obs)
+    if campaign:
+        parts.insert(0, _CAMPAIGN_SPEECH_GUIDE)
+    if campaign or obs.phase == "SHERIFF_PK":
         parts.append("可报警徽流 badge_flow")
     if obs.phase in _SELF_DESTRUCT_PHASES:
         parts.append("狼人可选 self_destruct 自爆")

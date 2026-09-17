@@ -105,6 +105,9 @@ def decision_kind_for(obs: PlayerObservation) -> DecisionKind:
     if ph == Phase.SHERIFF_PK:
         return DecisionKind.SPEECH if obs.pk_speech_pending else DecisionKind.SHERIFF
     if ph == Phase.SHERIFF_ELECTION:
+        # 上警发言子阶段（issue #47）走发言决策；其余子阶段为警长行动
+        if obs.election_stage == ElectionStage.SPEECH:
+            return DecisionKind.SPEECH
         return DecisionKind.SHERIFF
     # 未映射阶段回退发言（镜像 RandomBot 兜底；如 NIGHT_HUNTER_CONFIRM）
     return DecisionKind.SPEECH
