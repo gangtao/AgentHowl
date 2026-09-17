@@ -100,3 +100,35 @@ def test_available_tools_by_phase() -> None:
     seat = sorted(expected_actors(state))[0]
     tools = available_tools_for(build_observation(state, seat))
     assert "night_action" in tools and "get_game_state" in tools and "speak" not in tools
+
+
+def test_available_tools_in_campaign_speech() -> None:
+    # 上警发言子阶段（issue #47）：只提示发言/自爆，不提示 sheriff_action
+    from app.engine.config import RoleType
+    from app.engine.observation import PlayerObservation
+    from app.schemas.actions import available_tools_for
+
+    def obs(stage: str) -> PlayerObservation:
+        return PlayerObservation(
+            game_id="g",
+            state_version=1,
+            my_seat=0,
+            my_role=RoleType.VILLAGER,
+            my_status="ALIVE",
+            phase="SHERIFF_ELECTION",
+            round=1,
+            seats=[{"seat": 0, "alive": True, "is_sheriff": False}],
+            sheriff_seat=None,
+            badge_flow_claims={},
+            private={},
+            available_actions=[0],
+            election_stage=stage,
+        )
+
+    assert available_tools_for(obs("speech")) == (
+        "speak",
+        "self_destruct",
+        "get_game_state",
+        "get_speeches",
+    )
+    assert "sheriff_action" in available_tools_for(obs("vote"))

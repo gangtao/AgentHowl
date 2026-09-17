@@ -105,6 +105,9 @@ def available_tools_for(obs: PlayerObservation) -> tuple[str, ...]:
         return ("speak", "self_destruct", *_READONLY)
     if ph in ("VOTE", "VOTE_PK"):
         return ("vote", "speak", *_READONLY)
+    if ph == "SHERIFF_ELECTION" and obs.election_stage == "speech":
+        # 上警发言子阶段（issue #47）：发言期不接受任何警长行动
+        return ("speak", "self_destruct", *_READONLY)
     if ph in ("SHERIFF_ELECTION", "SHERIFF_PK"):
         return ("sheriff_action", "speak", "self_destruct", *_READONLY)
     if ph == "LAST_WORDS":
