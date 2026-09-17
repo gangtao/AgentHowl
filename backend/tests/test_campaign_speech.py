@@ -120,3 +120,57 @@ def test_campaign_speaking_false_outside_speech_stage() -> None:
         _state(election_stage="withdraw", speech_order=(1, 2), speech_idx=0)
     )
     assert not campaign_speaking(_state(phase=Phase.SHERIFF_PK, speech_order=(1, 2), speech_idx=0))
+
+
+# ---------- Task 2：内置驱动 ----------
+
+
+def test_bot_speaks_in_campaign_speech() -> None:
+    from app.cli.bot import RandomBot
+    from app.engine.actions import Speak
+
+    st = _state(
+        election_stage="speech", sheriff_candidates=(2, 3), speech_order=(3, 2), speech_idx=0
+    )
+    a = RandomBot.choose_action(st, 3)  # 3 号是好人：不会触发狼自爆掷骰
+    assert isinstance(a, Speak)
+    assert a.actor_seat == 3 and a.content == "(bot-campaign)"
+
+
+def test_bot_campaign_badge_flow_sometimes_and_always_wellformed() -> None:
+    from app.cli.bot import RandomBot
+    from app.engine.actions import Speak
+
+    seen_claim = False
+    for seed in range(1, 41):
+        st = _state(
+            seed=seed,
+            election_stage="speech",
+            sheriff_candidates=(2, 3),
+            speech_order=(3, 2),
+            speech_idx=0,
+        )
+        a = RandomBot.choose_action(st, 3)
+        assert isinstance(a, Speak)
+        bf = a.badge_flow
+        assert len(bf) <= st.config.sheriff.badge_flow_max_length
+        assert len(set(bf)) == len(bf) and 3 not in bf
+        seen_claim = seen_claim or bool(bf)
+    assert seen_claim  # 1/4 概率，40 个 seed 内必现
+
+
+def test_bot_no_badge_flow_when_disabled() -> None:
+    from app.cli.bot import RandomBot
+    from app.engine.actions import Speak
+
+    for seed in range(1, 41):
+        st = _state(
+            seed=seed,
+            sheriff=SheriffRule(badge_flow_enabled=False),
+            election_stage="speech",
+            sheriff_candidates=(2, 3),
+            speech_order=(3, 2),
+            speech_idx=0,
+        )
+        a = RandomBot.choose_action(st, 3)
+        assert isinstance(a, Speak) and a.badge_flow == ()

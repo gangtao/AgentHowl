@@ -17,7 +17,7 @@ from app.engine.actions import (
     Speak,
 )
 from app.engine.config import Faction
-from app.engine.phases import ElectionStage, Phase
+from app.engine.phases import ElectionStage, Phase, campaign_speaking
 from app.engine.state import GameState, living_seats, player_at
 
 TIMEOUT_SPEECH = "（超时，未发言）"
@@ -38,8 +38,10 @@ def default_action(state: GameState, seat: int) -> Action:
         )
         return items[idx]
 
-    # PK 发言期（VOTE_PK / SHERIFF_PK 的发言队列）：空发言跳过
-    if ph in (Phase.VOTE_PK, Phase.SHERIFF_PK) and state.speech_idx < len(state.speech_order):
+    # 发言队列型窗口（PK 发言 / 上警发言，issue #47）：空发言跳过
+    if campaign_speaking(state) or (
+        ph in (Phase.VOTE_PK, Phase.SHERIFF_PK) and state.speech_idx < len(state.speech_order)
+    ):
         return Speak(actor_seat=seat, content=TIMEOUT_SPEECH)
 
     if ph in (Phase.NIGHT_GUARD, Phase.NIGHT_WITCH):

@@ -147,3 +147,23 @@ def test_default_is_deterministic() -> None:
     state = create_game(cfg, game_id="g").state
     seat = sorted(expected_actors(state))[0]
     assert default_action(state, seat) == default_action(state, seat)
+
+
+def test_default_in_campaign_speech_is_empty_speech() -> None:
+    # 上警发言回合超时：空发言跳过，不得落入 vote 分支（issue #47）
+    from app.engine.state import GameState
+
+    cfg = build_preset("std_9_kill_side").model_copy(update={"seed": 1})
+    base = create_game(cfg, game_id="g").state
+    st = GameState(
+        game_id="g",
+        config=cfg,
+        phase=Phase.SHERIFF_ELECTION,
+        round=1,
+        players=base.players,
+        election_stage="speech",
+        sheriff_candidates=(1, 2),
+        speech_order=(2, 1),
+        speech_idx=0,
+    )
+    assert default_action(st, 2) == Speak(actor_seat=2, content=TIMEOUT_SPEECH)
