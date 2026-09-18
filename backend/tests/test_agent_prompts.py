@@ -118,3 +118,42 @@ def test_self_destruct_mentioned_only_in_legal_phases() -> None:
     obs_pk_sheriff = _obs("SHERIFF_PK", pk_speech_pending=False)
     up_pk_sheriff = build_prompt(DecisionKind.SHERIFF, obs_pk_sheriff, "", agent_seed=1)
     assert "self_destruct" in up_pk_sheriff
+
+
+def test_wolf_prompt_lists_teammate_proposals_and_follow_guidance() -> None:
+    obs = _obs(
+        "NIGHT_WEREWOLF",
+        private={
+            "teammates": [4, 7],
+            "tonight_kill_proposals": {4: 8, 7: None},
+            "kill_proposal_history": [],
+            "kill_vote_round": 1,
+            "kill_vote_rounds_max": 2,
+        },
+    )
+    up = build_wolf_night_prompt(obs, "", "", agent_seed=1)
+    assert "4 号提议刀 8 号" in up and "7 号提议空刀" in up
+    assert "跟刀" in up and "全员一致" in up
+    assert "上一轮" not in up
+
+
+def test_wolf_prompt_revote_round_shows_disagreement() -> None:
+    obs = _obs(
+        "NIGHT_WEREWOLF",
+        private={
+            "teammates": [4, 7],
+            "tonight_kill_proposals": {},
+            "kill_proposal_history": [{0: 8, 4: 3, 7: 8}],
+            "kill_vote_round": 2,
+            "kill_vote_rounds_max": 2,
+        },
+    )
+    up = build_wolf_night_prompt(obs, "", "", agent_seed=1)
+    assert "第 2/2 轮" in up and "上一轮" in up
+    assert "0 号→8 号" in up and "4 号→3 号" in up
+    assert "末轮" in up
+
+
+def test_wolf_prompt_tolerates_missing_new_fields() -> None:
+    up = build_wolf_night_prompt(_obs("NIGHT_WEREWOLF"), "", "", agent_seed=1)
+    assert "队友" in up and "提议" not in up

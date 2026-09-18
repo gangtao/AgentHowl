@@ -155,6 +155,43 @@ def build_prompt(
     )
 
 
+def _fmt_target(t: object) -> str:
+    return "空刀" if t is None else f"刀 {t} 号"
+
+
+def _wolf_consensus_section(obs: PlayerObservation) -> str:
+    """狼队本轮提案 + 跟刀/重提引导（issue #46）。旧观察缺键时按空处理。"""
+    priv = obs.private
+    proposals: dict[Any, Any] = priv.get("tonight_kill_proposals") or {}
+    history: list[dict[Any, Any]] = priv.get("kill_proposal_history") or []
+    rnd = int(priv.get("kill_vote_round", 1))
+    rnd_max = int(priv.get("kill_vote_rounds_max", 1))
+    lines: list[str] = []
+    others = {int(s): t for s, t in proposals.items() if int(s) != obs.my_seat}
+    if others:
+        lines.append(
+            "本轮队友已提案："
+            + "；".join(f"{s} 号提议{_fmt_target(t)}" for s, t in sorted(others.items()))
+            + "。"
+        )
+    lines.append(
+        "狼队须全员一致才能出刀，否则空刀。若队友已有提案且你没有强理由反对，"
+        "请跟刀（proposed_target 与之一致）。"
+    )
+    if rnd > 1 and history:
+        prev = history[-1]
+        lines.append(
+            f"第 {rnd}/{rnd_max} 轮：上一轮意见不一致（"
+            + "、".join(
+                f"{int(s)} 号→{'空刀' if t is None else f'{t} 号'}"
+                for s, t in sorted(prev.items(), key=lambda kv: int(kv[0]))
+            )
+            + "），请统一意见。"
+            + ("末轮仍不一致将按规则兜底（默认空刀）。" if rnd >= rnd_max else "")
+        )
+    return "\n".join(lines)
+
+
 def build_wolf_night_prompt(
     obs: PlayerObservation,
     memory_context: str,
@@ -170,13 +207,11 @@ def build_wolf_night_prompt(
         seat=obs.my_seat,
         state_version=obs.state_version,
     )
-    proposal = obs.private.get("tonight_kill_proposal")
-    proposal_line = f"队友已提议刀 {proposal} 号。\n" if proposal is not None else ""
     return (
         f"== 局势 ==\n{_render_observation(obs)}\n\n"
         f"== 你的记忆 ==\n{memory_context or '（暂无）'}\n\n"
-        f"== 狼队私有 ==\n你的队友座位：{teammates}。\n{proposal_line}"
+        f"== 狼队私有 ==\n你的队友座位：{teammates}。\n{_wolf_consensus_section(obs)}\n"
         f"{night_private_context or '（无历史私谋）'}\n\n"
-        f"== 本次决策 ==\n分析局势（analysis）并提议今晚击杀目标 proposed_target。"
+        f"== 本次决策 ==\n分析局势（analysis）并给出今晚击杀目标 proposed_target。"
         f"候选座位（顺序无含义）：{cands}。{_SELF_CHECK}"
     )

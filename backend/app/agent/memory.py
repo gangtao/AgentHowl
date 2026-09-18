@@ -20,6 +20,7 @@ from app.engine.events import (
     PlayerSpokePayload,
     RoundStartedPayload,
     SeerCheckedPayload,
+    WolfKillRevotePayload,
 )
 
 logger = logging.getLogger(__name__)
@@ -71,6 +72,7 @@ _SCORE_2 = {
     EventType.GUARD_PROTECTED,
     EventType.WOLF_KILL_PROPOSED,
     EventType.WOLF_KILL_DECIDED,
+    EventType.WOLF_KILL_REVOTE,
     EventType.VOTE_RESULT,
 }
 
@@ -104,6 +106,11 @@ def _render(event: Event) -> str:
         return f"{event.actor_seat}号发言{claim}{bf}：{p.content}"
     if t == EventType.SEER_CHECKED and isinstance(p, SeerCheckedPayload):
         return f"你查验了{p.target}号：{p.result.value}"
+    if t == EventType.WOLF_KILL_REVOTE and isinstance(p, WolfKillRevotePayload):
+        body = "、".join(
+            f"{s} 号→{'空刀' if tgt is None else f'{tgt} 号'}" for s, tgt in p.proposals
+        )
+        return f"狼队第 {p.round_no} 轮意见不一致（{body}），重新提案"
     if t == EventType.ELECTION_STAGE_CHANGED and isinstance(p, ElectionStageChangedPayload):
         order = f"，上警发言顺序{list(p.speech_order)}" if p.speech_order is not None else ""
         return f"竞选子阶段：{p.stage.value or '结束'}{order}"
