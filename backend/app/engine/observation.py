@@ -9,7 +9,7 @@ from pydantic import BaseModel, ConfigDict
 
 from app.engine.config import Faction, RoleType
 from app.engine.events import Event, Visibility
-from app.engine.phases import expected_actors
+from app.engine.phases import expected_actors, night_phase_sequence
 from app.engine.state import GameState, living_wolves, player_at
 
 Viewer = int | Literal["SPECTATOR", "GM"]
@@ -59,6 +59,16 @@ def build_observation(state: GameState, seat: int) -> PlayerObservation:
         if me.faction == Faction.WOLF:
             private["teammates"] = sorted(w.seat for w in living_wolves(state) if w.seat != seat)
             private["wolf_chat"] = []  # M1 无私聊内容；结构预留
+            # 狼队本轮提案与收敛轮信息（issue #46）：后手狼据此跟刀，重提轮据此看分歧。
+            # 规格 §5：仅狼存活且处于夜间时可见（终审 F2）——避免整晚刀口账本
+            # 带进狼的白天发言 prompt，把私谋泄进公开发言语境。
+            if state.phase in night_phase_sequence(state.config):
+                private["tonight_kill_proposals"] = dict(sorted(state.wolf_proposals.items()))
+                private["kill_proposal_history"] = [dict(r) for r in state.wolf_proposal_history]
+                private["kill_vote_round"] = state.wolf_kill_round
+                private["kill_vote_rounds_max"] = state.config.wolf_consensus_rounds
+                # 刀口裁决规则（终审 F1）：prompt 据此选择规则句，避免写死「全员一致」
+                private["kill_rule"] = state.config.wolf_kill_rule.value
             if state.pending_night.wolf_target is not None:
                 private["tonight_kill_proposal"] = state.pending_night.wolf_target
 

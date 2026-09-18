@@ -168,3 +168,22 @@ async def test_on_events_is_pure_ingest() -> None:
     mem = AgentMemory(seat=0)
     await mem.on_events([_ev(1, EventType.ROUND_STARTED, RoundStartedPayload(round=1))])
     assert len(mem.entries) == 1
+
+
+def test_render_and_score_wolf_kill_revote() -> None:
+    from app.agent.memory import _render, _score
+    from app.engine.events import WolfKillRevotePayload
+
+    ev = Event(
+        seq=1,
+        game_id="g",
+        ts=1.0,
+        type=EventType.WOLF_KILL_REVOTE,
+        actor_seat=None,
+        payload=WolfKillRevotePayload(round_no=1, proposals=((0, 8), (1, None), (2, 8))),
+        visibility=Visibility.WOLVES,
+    )
+    out = _render(ev)
+    assert "第 1 轮" in out and "0 号→8 号" in out and "1 号→空刀" in out
+    assert "None" not in out and "proposals" not in out
+    assert _score(ev, seat=0) == 2

@@ -71,6 +71,7 @@ from app.engine.events import (
     WitchPotionConsumedPayload,
     WolfKillDecidedPayload,
     WolfKillProposedPayload,
+    WolfKillRevotePayload,
     WolfSelfDestructPayload,
     reduce,
 )
@@ -794,6 +795,16 @@ def _wolf_consensus(state: GameState) -> int | None:
     return None
 
 
+def _wolf_revote_pending(state: GameState) -> bool:
+    """狼队本轮裁决为空刀但存在非空提案且轮次未用尽 -> 再开一轮（issue #46）。
+    全员主动空刀不算分歧；RANDOM_PROPOSAL 有非空提案必出结果、天然不重提。"""
+    if state.wolf_kill_round >= state.config.wolf_consensus_rounds:
+        return False
+    if not any(t is not None for t in state.wolf_proposals.values()):
+        return False
+    return _wolf_consensus(state) is None
+
+
 def _night_role_present(state: GameState, phase: Phase) -> bool:
     role_by_phase = {
         Phase.NIGHT_GUARD: RoleType.GUARD,
@@ -831,6 +842,20 @@ def _system_transition(state: GameState) -> tuple[GameState, list[Event]]:
     # --- 夜间子阶段收尾 ---
     if ph in night_phase_sequence(state.config):
         if ph == Phase.NIGHT_WEREWOLF:
+            if _wolf_revote_pending(state):
+                # 意见不一致：清空提案再开一轮，狼重新成为行动者，advance 循环在此停下
+                state, e = _emit(
+                    state,
+                    EventType.WOLF_KILL_REVOTE,
+                    WolfKillRevotePayload(
+                        round_no=state.wolf_kill_round,
+                        proposals=tuple(sorted(state.wolf_proposals.items())),
+                    ),
+                    Visibility.WOLVES,
+                )
+                # F7（终审修复，deferred）：拼上 events 前缀而非单独 [e]——今日此处
+                # events 可证为空、行为不变，但免疫将来在此分支前插入代码时吞事件
+                return state, [*events, e]
             state, e = _emit(
                 state,
                 EventType.WOLF_KILL_DECIDED,

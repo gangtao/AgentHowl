@@ -30,6 +30,7 @@ from app.engine.events import (
     VoteResultPayload,
     WolfKillDecidedPayload,
     WolfKillProposedPayload,
+    WolfKillRevotePayload,
     WolfSelfDestructPayload,
 )
 from app.engine.observation import PlayerObservation
@@ -142,12 +143,20 @@ def render_event(event: Event) -> str:  # noqa: PLR0911
         return f"[GM] {p.wolf_seat}号狼提议刀 {p.target}号"
     if t == EventType.WOLF_KILL_DECIDED and isinstance(p, WolfKillDecidedPayload):
         return f"[GM] 狼队决定刀 {p.target}号" if p.target is not None else "[GM] 狼队空刀"
+    if t == EventType.WOLF_KILL_REVOTE and isinstance(p, WolfKillRevotePayload):
+        body = "、".join(f"{s}号→{'空刀' if tgt is None else f'{tgt}号'}" for s, tgt in p.proposals)
+        return f"[GM] 狼队第 {p.round_no} 轮意见不一致（{body}），重新提案"
 
     # 通用回退：可读、非 raw dict
     fields = p.model_dump(mode="json")
     actor = f"{event.actor_seat}号 " if event.actor_seat is not None else ""
     body = "，".join(f"{k}={v}" for k, v in fields.items()) if fields else ""
     return f"[{t.value}] {actor}{body}".rstrip()
+
+
+def _format_proposal_pair(wolf_seat: int, target: int | None) -> str:
+    """格式化狼提案对：座号→目标。"""
+    return f"{wolf_seat}号→{'空刀' if target is None else f'{target}号'}"
 
 
 def render_observation(obs: PlayerObservation) -> str:
@@ -164,6 +173,18 @@ def render_observation(obs: PlayerObservation) -> str:
     if obs.badge_flow_claims:
         lines.append(f"公开警徽流：{obs.badge_flow_claims}")
     priv = {k: v for k, v in obs.private.items() if k != "wolf_chat"}
+    proposals = priv.pop("tonight_kill_proposals", None)
+    history = priv.pop("kill_proposal_history", None)
+    rnd = priv.pop("kill_vote_round", None)
+    rnd_max = priv.pop("kill_vote_rounds_max", None)
+    if proposals is not None:
+        pairs = [_format_proposal_pair(s, t) for s, t in sorted(proposals.items())]
+        body = "、".join(pairs) or "暂无"
+        lines.append(f"狼队第 {rnd}/{rnd_max} 轮 · 队友提案：{body}")
+        if history:
+            prev_pairs = [_format_proposal_pair(s, t) for s, t in sorted(history[-1].items())]
+            prev = "、".join(prev_pairs)
+            lines.append(f"上一轮分歧：{prev}")
     if priv:
         lines.append(f"你的私有信息：{priv}")
     return "\n".join(lines)

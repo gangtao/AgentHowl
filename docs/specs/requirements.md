@@ -82,7 +82,7 @@
 - **猎人开枪**：被狼刀或被票出局可开枪带走一人；**被女巫毒死不能开枪**；情侣殉情不能开枪。猎人枪杀目标视为与猎人同时死亡。
 - **白痴翻牌**：白天被票出可翻牌免死，保留发言权、**失去投票权**；此后只能被夜晚刀杀/毒杀/枪杀出局。
 - **狼刀在先原则**：若狼人杀人后已达成胜利条件，直接判狼胜，即使女巫随后毒杀/猎人开枪带走最后一只狼也无效。
-- **狼人刀法**：允许空刀、允许自刀；意见不统一视为空刀。
+- **狼人刀法**：允许空刀、允许自刀；意见不统一视为空刀（可配置 `wolf_consensus_rounds` 轮重提，末轮仍不一致才空刀）。
 - **警长竞选**：首个白天、**公布死讯前**进行。上警玩家依次发言（顺序由法官按"单顺双逆"决定，可配置）→可退水（失去投票权）→警下投票→最高票当选。平票则平票者 PK 发言，再由未平票的警下投票；再次平票则**警徽流失**（本局无警长）。狼人可在竞选阶段自爆，导致**吞警徽**（本局无警长）。
 - **警长权利**：投票算 **1.5 票**；决定发言方向（警左/警右，或死左/死右）；发言末尾**归票**；死亡时可**移交警徽或撕掉警徽**。
 - **警徽流**：预言家上警时公布"先验 A 后验 B"（一般留两夜），死后靠警徽传递验人信息。
@@ -184,6 +184,7 @@ class GameConfig(BaseModel):
     last_words: LastWordsRule = LastWordsRule.FIRST_NIGHT_ONLY
     allow_wolf_self_knife: bool = True       # 允许自刀
     allow_wolf_empty_knife: bool = True      # 允许空刀
+    wolf_consensus_rounds: int = 2           # 狼队提案最多几轮，不一致则重提（1=一轮定夺）
     wolf_first_kill_priority: bool = True    # 狼刀在先原则
     speech_timeout_sec: int = 90             # 单次发言超时
     action_timeout_sec: int = 45             # 夜间行动超时
@@ -284,7 +285,7 @@ def resolve_night(state, night_actions) -> deaths:
 | 角色 | 行动阶段 | 工具 `action_type` | 时序/约束 |
 |---|---|---|---|
 | 守卫 GUARD | NIGHT_GUARD | `guard` | 每夜守一人；不可连守同一人；可自守（可配）；先于狼人 |
-| 狼人 WEREWOLF | NIGHT_WEREWOLF | `kill` | 队内共识；允许空刀/自刀；须在守卫后、女巫前 |
+| 狼人 WEREWOLF | NIGHT_WEREWOLF | `kill` | 队内共识（不一致可重提）；允许空刀/自刀；须在守卫后、女巫前 |
 | 女巫 WITCH | NIGHT_WITCH | `save` / `poison` / `skip` | 拿到刀口后行动；同夜单药；解药用完后不再告知刀口；首夜自救可配 |
 | 预言家 SEER | NIGHT_SEER | `check` | 每夜验一人，返回 `GOOD`/`WEREWOLF` |
 | 猎人 HUNTER | NIGHT_HUNTER_CONFIRM（首夜确认）/ HUNTER_SHOOT（出局时） | `shoot` / `skip` | 被毒不能开枪 |
@@ -447,7 +448,7 @@ class PlayerObservation(BaseModel):
 ```
 
 **`private` 字段按角色注入规则**（引擎 `build_observation(state, seat)` 实现）：
-- **狼人**：`private.teammates = [座号...]`；`private.wolf_chat = [...]`（狼队夜间私聊）；夜晚可见 `private.tonight_kill_proposal`。
+- **狼人**：`private.teammates = [座号...]`；`private.wolf_chat = [...]`（狼队夜间私聊，预留）；夜晚可见 `private.tonight_kill_proposals`（本轮队友已提案 `{seat: target|null}`）、`kill_proposal_history`（之前各轮快照）、`kill_vote_round` / `kill_vote_rounds_max`；裁决后可见 `private.tonight_kill_proposal`（刀口）。
 - **预言家**：`private.check_results = [{round, seat, result}]`。
 - **女巫**：`private.tonight_killed_seat`（仅当解药未用完）；`private.antidote_available`；`private.poison_available`。
 - **守卫**：`private.last_guard_target`（用于禁止连守）。
@@ -716,9 +717,11 @@ class Event(BaseModel):
 ```
 
 **事件类型（Event `type` 枚举，节选）**：
-`GAME_CREATED, PLAYER_JOINED, GAME_STARTED, ROLES_ASSIGNED(GM_ONLY), PHASE_CHANGED, GUARD_PROTECTED(ROLE_SELF), WOLF_KILL_PROPOSED(WOLVES), WOLF_KILL_DECIDED(GM_ONLY), WITCH_SAVED(ROLE_SELF), WITCH_POISONED(ROLE_SELF), SEER_CHECKED(ROLE_SELF), NIGHT_RESOLVED(GM_ONLY), DEATH_ANNOUNCED(PUBLIC), SHERIFF_CANDIDACY(PUBLIC), SHERIFF_WITHDREW(PUBLIC), SHERIFF_VOTE_CAST(PUBLIC), SHERIFF_ELECTED(PUBLIC), SHERIFF_DIRECTION_SET(PUBLIC), SHERIFF_BADGE_LOST(PUBLIC), ELECTION_STAGE_CHANGED(PUBLIC), BADGE_PASSED(PUBLIC), PLAYER_SPOKE(PUBLIC), VOTE_CAST(PUBLIC 或按规则), VOTE_RESULT(PUBLIC), PLAYER_EXILED(PUBLIC), HUNTER_SHOT(PUBLIC), IDIOT_REVEALED(PUBLIC), LAST_WORDS(PUBLIC), GAME_OVER(PUBLIC)`。
+`GAME_CREATED, PLAYER_JOINED, GAME_STARTED, ROLES_ASSIGNED(GM_ONLY), PHASE_CHANGED, GUARD_PROTECTED(ROLE_SELF), WOLF_KILL_PROPOSED(WOLVES), WOLF_KILL_DECIDED(GM_ONLY), WOLF_KILL_REVOTE(WOLVES), WITCH_SAVED(ROLE_SELF), WITCH_POISONED(ROLE_SELF), SEER_CHECKED(ROLE_SELF), NIGHT_RESOLVED(GM_ONLY), DEATH_ANNOUNCED(PUBLIC), SHERIFF_CANDIDACY(PUBLIC), SHERIFF_WITHDREW(PUBLIC), SHERIFF_VOTE_CAST(PUBLIC), SHERIFF_ELECTED(PUBLIC), SHERIFF_DIRECTION_SET(PUBLIC), SHERIFF_BADGE_LOST(PUBLIC), ELECTION_STAGE_CHANGED(PUBLIC), BADGE_PASSED(PUBLIC), PLAYER_SPOKE(PUBLIC), VOTE_CAST(PUBLIC 或按规则), VOTE_RESULT(PUBLIC), PLAYER_EXILED(PUBLIC), HUNTER_SHOT(PUBLIC), IDIOT_REVEALED(PUBLIC), LAST_WORDS(PUBLIC), GAME_OVER(PUBLIC)`。
 
 `ELECTION_STAGE_CHANGED` 载荷为 `{stage, speech_order?}`：`speech_order` 仅在进入 `speech` 子阶段时非空，reduce 据此重置发言队列与游标，语义与 `PHASE_CHANGED.speech_order` 完全一致（前端 TS reducer 复用同一条规则）。
+
+`WOLF_KILL_REVOTE` 载荷为 `{round_no, proposals: [[seat, target|null], ...]}`；reduce：清空 `wolf_proposals`、`wolf_kill_round + 1`、把 `proposals` 快照追加到 `wolf_proposal_history`；`ROUND_STARTED` 将两者重置为 1 / 空。
 
 **回放 = 按 `visibility` 过滤 + 顺序重放**。上帝视角看全部；玩家视角回放只喂该 seat 有权见的 events。`build_observation` 与回放共用同一套 visibility 过滤逻辑，保证"直播即回放"。
 

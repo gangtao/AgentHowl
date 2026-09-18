@@ -129,3 +129,27 @@ def test_render_election_stage_changes() -> None:
             _ev(EventType.ELECTION_STAGE_CHANGED, ElectionStageChangedPayload(stage=stage))
         )
         assert out.strip() and "speech_order" not in out and "None" not in out
+
+
+def test_render_wolf_kill_revote_and_wolf_observation() -> None:
+    from app.engine.events import WolfKillRevotePayload
+
+    payload = WolfKillRevotePayload(round_no=1, proposals=((0, 8), (1, None)))
+    out = render_event(_ev(EventType.WOLF_KILL_REVOTE, payload))
+    assert "[GM]" in out and "第 1 轮" in out and "0号→8号" in out and "1号→空刀" in out
+    assert "None" not in out and "proposals" not in out
+
+    obs = _obs("NIGHT_WEREWOLF")
+    obs = obs.model_copy(
+        update={
+            "private": {
+                "teammates": [4],
+                "tonight_kill_proposals": {4: 8},
+                "kill_proposal_history": [],
+                "kill_vote_round": 2,
+                "kill_vote_rounds_max": 2,
+            }
+        }
+    )
+    text = render_observation(obs)
+    assert "队友提案" in text and "4号→8号" in text and "第 2/2 轮" in text

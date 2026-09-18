@@ -9,6 +9,7 @@ from app.engine.events import (
     SeerCheckedPayload,
     Visibility,
     WolfKillProposedPayload,
+    WolfKillRevotePayload,
 )
 from app.engine.observation import build_observation, make_visibility_filter, visible_events
 from app.engine.phases import Phase
@@ -27,6 +28,8 @@ def test_non_wolf_has_no_teammates_or_chat() -> None:
         if p.faction != Faction.WOLF:
             assert obs.private.get("teammates") in (None, [])
             assert obs.private.get("wolf_chat") in (None, [])
+            assert "tonight_kill_proposals" not in obs.private
+            assert "kill_proposal_history" not in obs.private
 
 
 def test_wolf_sees_teammates() -> None:
@@ -180,13 +183,20 @@ def test_every_visibility_class_filtered_correctly() -> None:
             Visibility.ROLE_SELF,
             actor=seer,
         ),
+        # F3（终审修复）：WOLF_KILL_REVOTE 与 WOLF_KILL_PROPOSED 同口径（狼可见，其余不可见）
+        ev(
+            4,
+            EventType.WOLF_KILL_REVOTE,
+            WolfKillRevotePayload(round_no=1, proposals=((wolf, 0),)),
+            Visibility.WOLVES,
+        ),
     ]
     # 狼能看 WOLVES，看不到别人的 ROLE_SELF，看不到 GM_ONLY
     wolf_view = {e.seq for e in visible_events(state, events, wolf)}
-    assert wolf_view == {2}
+    assert wolf_view == {2, 4}
     seer_view = {e.seq for e in visible_events(state, events, seer)}
     assert seer_view == {3}
     spec_view = {e.seq for e in visible_events(state, events, "SPECTATOR")}
     assert spec_view == set()
     gm_view = {e.seq for e in visible_events(state, events, "GM")}
-    assert gm_view == {1, 2, 3}
+    assert gm_view == {1, 2, 3, 4}

@@ -84,6 +84,21 @@ def candidates_for(kind: DecisionKind, obs: PlayerObservation) -> list[int]:
     return _alive_others(obs)
 
 
+# 狼队收敛信息（issue #46）：结构化段（_wolf_consensus_section）已单独呈现它们，
+# 「== 局势 ==」的原始 dict 打印段须排除，避免重复打印且把刀口账本带进白天 prompt
+# （observation 已按夜间门控，此处是第二道防线；终审 F2）。
+_WOLF_CONSENSUS_KEYS = frozenset(
+    {
+        "wolf_chat",
+        "tonight_kill_proposals",
+        "kill_proposal_history",
+        "kill_vote_round",
+        "kill_vote_rounds_max",
+        "kill_rule",
+    }
+)
+
+
 def _render_observation(obs: PlayerObservation) -> str:
     alive = [s["seat"] for s in obs.seats if s.get("alive")]
     lines = [
@@ -94,7 +109,7 @@ def _render_observation(obs: PlayerObservation) -> str:
         lines.append(f"竞选子阶段：{obs.election_stage}；候选人：{obs.sheriff_candidates}。")
     if obs.badge_flow_claims:
         lines.append(f"公开警徽流声明：{obs.badge_flow_claims}。")
-    priv = {k: v for k, v in obs.private.items() if k != "wolf_chat"}
+    priv = {k: v for k, v in obs.private.items() if k not in _WOLF_CONSENSUS_KEYS}
     if priv:
         lines.append(f"你的私有信息：{priv}。")
     return "\n".join(lines)
@@ -155,6 +170,66 @@ def build_prompt(
     )
 
 
+def _fmt_target(t: object) -> str:
+    return "空刀" if t is None else f"刀 {t} 号"
+
+
+# 刀口裁决规则句（终审 F1）：随 wolf_kill_rule 分支，避免与 --wolf-rule 矛盾
+# （旧文案无条件写「全员一致」，在 MAJORITY/RANDOM_PROPOSAL 下是假规则）。
+_KILL_RULE_TEXT: dict[str, str] = {
+    "UNANIMOUS_OR_NO_KILL": (
+        "狼队须全员一致才能出刀，否则空刀。若队友已有提案且你没有强理由反对，"
+        "请跟刀（proposed_target 与之一致）。"
+    ),
+    "MAJORITY": (
+        "狼队按相对多数裁决刀口，并列即空刀。若队友已有提案且你没有强理由反对，"
+        "请向多数靠拢（proposed_target 与之一致）。"
+    ),
+    "RANDOM_PROPOSAL": (
+        "狼队将在非空提案中加权随机选定刀口（同一目标提案越多越可能被选中）。"
+        "若队友已有提案且你没有强理由反对，请跟刀以提高命中概率。"
+    ),
+}
+
+# 末轮重提提示（终审 F1）：RANDOM_PROPOSAL 天然不重提（引擎保证），无需条目。
+_LAST_ROUND_HINT: dict[str, str] = {
+    "UNANIMOUS_OR_NO_KILL": "末轮仍不一致将空刀。",
+    "MAJORITY": "末轮仍并列将空刀。",
+}
+
+
+def _wolf_consensus_section(obs: PlayerObservation) -> str:
+    """狼队本轮提案 + 跟刀/重提引导（issue #46）。旧观察缺键时按空/UNANIMOUS 处理。"""
+    priv = obs.private
+    proposals: dict[Any, Any] = priv.get("tonight_kill_proposals") or {}
+    history: list[dict[Any, Any]] = priv.get("kill_proposal_history") or []
+    rnd = int(priv.get("kill_vote_round", 1))
+    rnd_max = int(priv.get("kill_vote_rounds_max", 1))
+    rule = str(priv.get("kill_rule", "UNANIMOUS_OR_NO_KILL"))
+    lines: list[str] = []
+    others = {int(s): t for s, t in proposals.items() if int(s) != obs.my_seat}
+    if others:
+        lines.append(
+            "本轮队友已提案："
+            + "；".join(f"{s} 号提议{_fmt_target(t)}" for s, t in sorted(others.items()))
+            + "。"
+        )
+    lines.append(_KILL_RULE_TEXT.get(rule, _KILL_RULE_TEXT["UNANIMOUS_OR_NO_KILL"]))
+    if rnd > 1 and history:
+        prev = history[-1]
+        hint = _LAST_ROUND_HINT.get(rule, "")
+        lines.append(
+            f"第 {rnd}/{rnd_max} 轮：上一轮意见不一致（"
+            + "、".join(
+                f"{int(s)} 号→{'空刀' if t is None else f'{t} 号'}"
+                for s, t in sorted(prev.items(), key=lambda kv: int(kv[0]))
+            )
+            + "），请统一意见。"
+            + (hint if rnd >= rnd_max else "")
+        )
+    return "\n".join(lines)
+
+
 def build_wolf_night_prompt(
     obs: PlayerObservation,
     memory_context: str,
@@ -170,12 +245,10 @@ def build_wolf_night_prompt(
         seat=obs.my_seat,
         state_version=obs.state_version,
     )
-    proposal = obs.private.get("tonight_kill_proposal")
-    proposal_line = f"队友已提议刀 {proposal} 号。\n" if proposal is not None else ""
     return (
         f"== 局势 ==\n{_render_observation(obs)}\n\n"
         f"== 你的记忆 ==\n{memory_context or '（暂无）'}\n\n"
-        f"== 狼队私有 ==\n你的队友座位：{teammates}。\n{proposal_line}"
+        f"== 狼队私有 ==\n你的队友座位：{teammates}。\n{_wolf_consensus_section(obs)}\n"
         f"{night_private_context or '（无历史私谋）'}\n\n"
         f"== 本次决策 ==\n分析局势（analysis）并提议今晚击杀目标 proposed_target。"
         f"候选座位（顺序无含义）：{cands}。{_SELF_CHECK}"
