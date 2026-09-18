@@ -10,6 +10,14 @@ import secrets
 from collections.abc import Callable
 from typing import Literal
 
+from app.agent.profile import (
+    AgentProfile,
+    AgentProfiles,
+    legacy_to_profiles,
+    merge_profiles,
+    profile_for,
+    validate_profiles,
+)
 from app.engine.config import GameConfig
 from app.engine.state import GameState
 from app.runtime.connection import ConnectionManager
@@ -33,15 +41,13 @@ class GameHandle:
         *,
         allow_spectators: bool,
         num_ai_players: int | None,
-        ai_model: str | None = None,
-        ai_model_speech: str | None = None,
+        agents: AgentProfiles,
     ) -> None:
         self.game_id = game_id
         self.config = config
         self.allow_spectators = allow_spectators
         self.num_ai_players = num_ai_players
-        self.ai_model = ai_model
-        self.ai_model_speech = ai_model_speech
+        self.agents = agents
         self.lobby = GameLobby(config, game_id)
         self.ports: dict[int, PlayerPort] = {}
         self.human_ports: dict[int, HumanPlayerPort] = {}
@@ -52,6 +58,9 @@ class GameHandle:
     @property
     def started(self) -> bool:
         return self.runner is not None
+
+    def profile_for(self, seat: int) -> AgentProfile | None:
+        return profile_for(self.agents, seat)
 
     def live_state(self) -> GameState:
         if self.runner is None:
@@ -84,17 +93,20 @@ class GameRegistry:
         *,
         allow_spectators: bool,
         num_ai_players: int | None = None,
+        agents: AgentProfiles | None = None,
         ai_model: str | None = None,
         ai_model_speech: str | None = None,
     ) -> GameHandle:
+        # 旧入口 ai_model 折叠为 "*" 默认档案；与显式 agents["*"] 冲突、座位键非法 → ValueError
+        resolved = merge_profiles(agents, legacy_to_profiles(ai_model, ai_model_speech))
+        validate_profiles(resolved, config.num_players)
         game_id = f"g_{secrets.token_hex(4)}"
         handle = GameHandle(
             game_id,
             config,
             allow_spectators=allow_spectators,
             num_ai_players=num_ai_players,
-            ai_model=ai_model,
-            ai_model_speech=ai_model_speech,
+            agents=resolved,
         )
         self._games[game_id] = handle
         return handle
@@ -130,7 +142,12 @@ class GameRegistry:
             if empty != handle.num_ai_players:
                 raise LobbyError(f"num_ai_players={handle.num_ai_players} 与空位数 {empty} 不符")
         if fill_with_bots:
-            handle.lobby.fill_with_bots()
+
+            def _bot_name(seat: int) -> str:
+                p = handle.profile_for(seat)
+                return p.name if p is not None and p.name else f"Bot{seat}"
+
+            handle.lobby.fill_with_bots(name_for=_bot_name)
         roster = handle.lobby.roster()  # 未满员在此抛 LobbyError
 
         def _state_of() -> GameState:
@@ -140,7 +157,7 @@ class GameRegistry:
         handle.connections = ConnectionManager(state_provider=_state_of)
         for seat in range(handle.config.num_players):
             if seat not in handle.ports:
-                if handle.ai_model is None:
+                if handle.profile_for(seat) is None:
                     handle.ports[seat] = BotPlayerPort(state_provider=_state_of)
                 else:
                     handle.ports[seat] = self._build_agent_port(seat, handle)
@@ -165,5 +182,6 @@ class GameRegistry:
             return self._agent_port_factory(seat, handle)
         from app.agent.agent_player import build_agent_port  # 惰性：litellm 仅在需要时加载
 
-        assert handle.ai_model is not None
-        return build_agent_port(seat, handle.config, handle.ai_model, handle.ai_model_speech)
+        profile = handle.profile_for(seat)
+        assert profile is not None
+        return build_agent_port(seat, handle.config, profile)

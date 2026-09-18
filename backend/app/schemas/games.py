@@ -6,6 +6,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+from app.agent.profile import AgentProfile
+
 
 class CreateGameRequest(BaseModel):
     preset: str = "std_9_kill_side"
@@ -14,6 +16,7 @@ class CreateGameRequest(BaseModel):
     allow_spectators: bool = True
     ai_model: str | None = None  # 设置后空位由 LLM Agent 填充（None=沿用 RandomBot）
     ai_model_speech: str | None = None  # 发言层模型（None=同 ai_model；PRD §8.3 分层路由）
+    agents: dict[str, AgentProfile] = Field(default_factory=dict)  # 档案：座位号或 "*"（issue #56）
 
 
 class CreateGameResponse(BaseModel):
@@ -21,6 +24,7 @@ class CreateGameResponse(BaseModel):
     host_token: str
     spectator_token: str | None
     config: dict[str, Any]
+    agents: dict[str, AgentProfile]  # 解析后的档案映射（含旧 ai_model 折叠为 "*"）
 
 
 class JoinRequest(BaseModel):

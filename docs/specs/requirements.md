@@ -577,6 +577,12 @@ POST /api/v1/games
 { "game_id": "g_a1b2c3", "join_token_host": "tok_host_xyz", "config": { } }
 ```
 
+`agents: {"<seat>"|"*": AgentProfile}`（issue #56）：每座位内置 Agent 档案，字段
+`model` / `model_speech` / `reflection_model` / `thinking` / `temperature` / `name`。
+查找按座位号优先于 `"*"`；未匹配座位用内置随机 bot。`ai_model` / `ai_model_speech`
+等价于 `agents["*"]`；两者同时给出（`agents` 含 `"*"` 且又给了 `ai_model`）→ 400。
+响应体 `agents` 字段回显解析后的最终映射（含旧字段折叠结果）。
+
 **加入对局**：
 ```json
 POST /api/v1/games/g_a1b2c3/join

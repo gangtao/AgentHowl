@@ -102,3 +102,57 @@ def test_bad_preset_400_unknown_game_404(client: TestClient) -> None:
 def test_no_spectator_token_when_disabled(client: TestClient) -> None:
     body = client.post("/api/v1/games", json={"allow_spectators": False}).json()
     assert body["spectator_token"] is None
+
+
+def test_create_with_agents_echoes_resolved_profiles(client: TestClient) -> None:
+    r = client.post(
+        "/api/v1/games",
+        json={
+            "preset": "std_9_kill_side",
+            "agents": {"0": {"name": "老张", "model": "ollama/a"}, "*": {"model": "ollama/b"}},
+        },
+    )
+    assert r.status_code == 200, r.text
+    agents = r.json()["agents"]
+    assert agents["0"]["name"] == "老张" and agents["0"]["model"] == "ollama/a"
+    assert agents["*"]["model"] == "ollama/b" and agents["*"]["temperature"] == 0.3
+
+
+def test_create_legacy_ai_model_echoes_star(client: TestClient) -> None:
+    r = client.post(
+        "/api/v1/games",
+        json={"preset": "std_9_kill_side", "ai_model": "ollama/a", "ai_model_speech": "ollama/b"},
+    )
+    assert r.status_code == 200
+    assert r.json()["agents"] == {
+        "*": {
+            "name": None,
+            "model": "ollama/a",
+            "model_speech": "ollama/b",
+            "reflection_model": None,
+            "thinking": False,
+            "temperature": 0.3,
+        }
+    }
+    r2 = client.post("/api/v1/games", json={"preset": "std_9_kill_side"})
+    assert r2.status_code == 200 and r2.json()["agents"] == {}
+
+
+def test_create_agents_errors(client: TestClient) -> None:
+    # 新旧冲突 → 400
+    r = client.post(
+        "/api/v1/games",
+        json={"preset": "std_9_kill_side", "ai_model": "x", "agents": {"*": {"model": "y"}}},
+    )
+    assert r.status_code == 400 and "agents" in r.json()["detail"]
+    # 座位键越界 → 400
+    r = client.post(
+        "/api/v1/games", json={"preset": "std_9_kill_side", "agents": {"9": {"model": "y"}}}
+    )
+    assert r.status_code == 400 and "座位" in r.json()["detail"]
+    # 档案未知键 → 422（请求体校验）
+    r = client.post(
+        "/api/v1/games",
+        json={"preset": "std_9_kill_side", "agents": {"0": {"model": "y", "modle_speech": "z"}}},
+    )
+    assert r.status_code == 422

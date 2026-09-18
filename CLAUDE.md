@@ -21,6 +21,7 @@ AgentHowl is a multi-agent Werewolf (狼人杀) game platform where every seat c
 - Information isolation is a **server-side** security boundary. The frontend does no filtering; it only renders what the server sends per view.
 - All randomness goes through one seeded RNG (`GameConfig.seed`) so deals and tie-breaks are reproducible.
 - No game rule is hardcoded — every rule variant is a `GameConfig` toggle.
+- app/runtime、app/api、app/cli 不得在模块级 import app.agent.agent_player / app.agent.llm_client（litellm 惰性加载）；tests/test_agent_profile.py::test_importing_registry_does_not_load_litellm 守卫此约束。
 
 ## Game-logic gotchas (spec §5)
 

@@ -153,3 +153,22 @@ def test_render_wolf_kill_revote_and_wolf_observation() -> None:
     )
     text = render_observation(obs)
     assert "队友提案" in text and "4号→8号" in text and "第 2/2 轮" in text
+
+
+def test_render_agent_roster() -> None:
+    from app.agent.profile import AgentProfile
+    from app.cli.render import render_agent_roster
+
+    agents = {
+        "0": AgentProfile(name="老张", model="ollama/a", model_speech="ollama/b", thinking=True),
+        "*": AgentProfile(model="ollama/z", temperature=0.7),
+    }
+    out = render_agent_roster(agents, num_players=3, human_seat=2)
+    lines = out.splitlines()
+    assert len(lines) == 3
+    assert "0号" in lines[0] and "老张" in lines[0] and "ollama/a" in lines[0]
+    assert "ollama/b" in lines[0] and "thinking" in lines[0]
+    assert "1号" in lines[1] and "ollama/z" in lines[1] and "T=0.7" in lines[1]
+    assert "2号" in lines[2] and "真人" in lines[2]
+    bots = render_agent_roster({}, num_players=2, human_seat=None)
+    assert "随机" in bots and bots.count("\n") == 1

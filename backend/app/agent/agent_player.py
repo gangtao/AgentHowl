@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+from typing import TYPE_CHECKING
 
 from pydantic import BaseModel
 
@@ -26,6 +27,9 @@ from app.engine.actions import Action
 from app.engine.config import GameConfig
 from app.engine.events import Event
 from app.engine.observation import PlayerObservation
+
+if TYPE_CHECKING:
+    from app.agent.profile import AgentProfile
 
 
 class AgentConfig(BaseModel):
@@ -120,26 +124,14 @@ class AgentPlayerPort:
         return to_action(kind, decision, observation.my_seat)
 
 
-def build_agent_port(
-    seat: int,
-    game_config: GameConfig,
-    ai_model: str,
-    ai_model_speech: str | None,
-    thinking: bool = False,
-    reflection_model: str | None = None,
-) -> AgentPlayerPort:
-    """registry 默认工厂：真实 LiteLLM 客户端 + 按 GameConfig.seed 派生 agent_seed。"""
+def build_agent_port(seat: int, game_config: GameConfig, profile: AgentProfile) -> AgentPlayerPort:
+    """registry / CLI 默认工厂：真实 LiteLLM 客户端 + 档案映射的 AgentConfig（issue #56）。"""
     from app.agent.llm_client import LiteLLMInstructorClient
+    from app.agent.profile import to_agent_config
 
     return AgentPlayerPort(
         seat=seat,
         game_config=game_config,
-        agent_config=AgentConfig(
-            model=ai_model,
-            model_speech=ai_model_speech,
-            reflection_model=reflection_model,
-            agent_seed=game_config.seed if game_config.seed is not None else 0,
-            thinking=thinking,
-        ),
+        agent_config=to_agent_config(profile, game_config),
         client=LiteLLMInstructorClient(),
     )

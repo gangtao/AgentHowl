@@ -11,6 +11,7 @@ import os
 import httpx
 import pytest
 
+from app.agent.profile import AgentProfile
 from app.cli.play import run_watch
 from app.engine.config import build_preset
 from app.engine.phases import Phase
@@ -49,7 +50,7 @@ def test_cli_llm_self_play_watch(capsys: pytest.CaptureFixture[str]) -> None:
             view="GM",
             delay=0.0,
             step=False,
-            ai_model=SMOKE_MODEL,
+            agents={"*": AgentProfile(model=SMOKE_MODEL)},
             read_line=_no_read,
         )
     )

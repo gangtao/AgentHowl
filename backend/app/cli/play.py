@@ -9,7 +9,18 @@ import argparse
 import asyncio
 from collections.abc import Awaitable, Callable
 
-from app.cli.render import render_event
+import yaml
+from pydantic import ValidationError
+
+from app.agent.profile import (
+    AgentProfile,
+    AgentProfiles,
+    legacy_to_profiles,
+    merge_profiles,
+    profile_for,
+    validate_profiles,
+)
+from app.cli.render import render_agent_roster, render_event
 from app.engine.config import GameConfig, WolfKillRule, build_preset
 from app.engine.engine import RosterEntry
 from app.engine.events import Event
@@ -75,18 +86,41 @@ def _apply_wolf_knobs(
     return config.model_copy(update=update) if update else config
 
 
+def load_agent_profiles(path: str) -> AgentProfiles:
+    """--agents 档案文件：YAML（JSON 亦可），顶层 seats 映射；任何错误 → 参数错误（含文件名）。"""
+    try:
+        with open(path, encoding="utf-8") as f:
+            raw = yaml.safe_load(f)
+    except (OSError, yaml.YAMLError) as exc:
+        raise argparse.ArgumentTypeError(f"{path}: 无法读取档案文件：{exc}") from exc
+    if not isinstance(raw, dict) or not isinstance(raw.get("seats"), dict):
+        raise argparse.ArgumentTypeError(f"{path}: 顶层须为 seats 映射（键为座位号或 '*'）")
+    agents: AgentProfiles = {}
+    for key, body in raw["seats"].items():
+        # PyYAML 里 0（int）与 "0"（str）是不同键，折叠成 str 后需自行查重，
+        # 否则后写入的一份会静默覆盖前一份（终审 F8）。
+        str_key = str(key)
+        if str_key in agents:
+            raise argparse.ArgumentTypeError(
+                f'{path}: seats 键 {key!r} 与已有键重复（0 与 "0" 视为同一座位）'
+            )
+        try:
+            agents[str_key] = AgentProfile.model_validate(body)
+        except ValidationError as exc:
+            raise argparse.ArgumentTypeError(f"{path}: seats[{key!r}] 非法：{exc}") from exc
+    return agents
+
+
 def _wire_game(
     config: GameConfig,
     *,
     human_seat: int | None = None,
-    ai_model: str | None = None,
-    ai_model_speech: str | None = None,
-    reflection_model: str | None = None,
-    thinking: bool = False,
+    agents: AgentProfiles | None = None,
 ) -> tuple[GameRunner, ConnectionManager, dict[int, PlayerPort]]:
-    """装配 store/roster/ports/conns/runner（不订阅、不 run）。"""
+    """装配 store/roster/ports/conns/runner（不订阅、不 run）。agents 缺省=全随机 bot。"""
     from app.store.event_store import InMemoryEventStore
 
+    agents = agents or {}
     n = config.num_players
     holder: dict[str, GameRunner] = {}
 
@@ -94,27 +128,26 @@ def _wire_game(
         return holder["r"].state  # run 前不会被调用（订阅先于 run，bot.act 在 run 内）
 
     ports: dict[int, PlayerPort] = {}
+    names: list[str] = []
+    used_profiles: list[AgentProfile] = []  # 只收实际建成 Agent 端口的座位（F5 终审修复）
     for seat in range(n):
+        profile = None if seat == human_seat else profile_for(agents, seat)
         if seat == human_seat:
             ports[seat] = HumanPlayerPort()
-        elif ai_model is not None:
+        elif profile is not None:
             from app.agent.agent_player import build_agent_port
 
-            ports[seat] = build_agent_port(
-                seat,
-                config,
-                ai_model,
-                ai_model_speech,
-                thinking=thinking,
-                reflection_model=reflection_model,
-            )
+            ports[seat] = build_agent_port(seat, config, profile)
+            used_profiles.append(profile)
         else:
             ports[seat] = BotPlayerPort(state_provider=state_of)
+        names.append(profile.name if profile is not None and profile.name else f"P{seat}")
 
     roster = [
-        RosterEntry(display_name=f"P{i}", player_type=("HUMAN" if i == human_seat else "AGENT"))
+        RosterEntry(display_name=names[i], player_type=("HUMAN" if i == human_seat else "AGENT"))
         for i in range(n)
     ]
+    any_thinking = any(p.thinking for p in used_profiles)
     conns = ConnectionManager(state_provider=state_of)
     runner = GameRunner(
         store=InMemoryEventStore(),
@@ -124,7 +157,7 @@ def _wire_game(
         ports=ports,
         connections=conns,
         # 思考模式单次决策可达数分钟，放宽窗口避免被超时代打
-        timeouts=_THINK_TIMEOUTS if thinking else _CLI_TIMEOUTS,
+        timeouts=_THINK_TIMEOUTS if any_thinking else _CLI_TIMEOUTS,
     )
     holder["r"] = runner
     return runner, conns, ports
@@ -136,25 +169,15 @@ async def run_watch(
     view: Viewer,
     delay: float,
     step: bool,
-    ai_model: str | None = None,
-    ai_model_speech: str | None = None,
-    reflection_model: str | None = None,
-    thinking: bool = False,
+    agents: AgentProfiles | None = None,
     read_line: ReadLine = default_read_line,
 ) -> GameState:
     """看局：打印型订阅者按 view 叙述，delay/step 限速，跑到 GAME_OVER。
 
-    ai_model 设置时全座由 LLM Agent 扮演（自对局）；否则内置随机 bot。
-    ai_model_speech/reflection_model 为发言/反思分层路由模型（None=同 ai_model）。
-    thinking=True 时 LLM Agent 开启思考（更强推理但明显更慢）。
+    agents 按座位配置 LLM Agent（座位号字符串或 "*"）；未匹配的座位为内置随机 bot。
     """
-    runner, conns, _ = _wire_game(
-        config,
-        ai_model=ai_model,
-        ai_model_speech=ai_model_speech,
-        reflection_model=reflection_model,
-        thinking=thinking,
-    )
+    runner, conns, _ = _wire_game(config, agents=agents)
+    print(render_agent_roster(agents or {}, config.num_players, None))
 
     async def on_events(events: list[Event]) -> None:
         for e in events:  # 已按 view 过滤
@@ -196,6 +219,12 @@ def main(argv: list[str] | None = None) -> None:
     )
     parser.add_argument("--no-color", action="store_true")
     parser.add_argument(
+        "--agents",
+        type=load_agent_profiles,
+        default=None,
+        help="每座位 Agent 档案 YAML（seats: {座位号|'*': {model, ...}}；'*' 须加引号）",
+    )
+    parser.add_argument(
         "--wolf-rule",
         choices=sorted(_WOLF_RULES),
         default=None,
@@ -216,6 +245,24 @@ def main(argv: list[str] | None = None) -> None:
 
         os.environ["NO_COLOR"] = "1"
 
+    if args.ai_model is None and (args.ai_model_speech or args.reflection_model or args.thinking):
+        parser.error(
+            "--ai-model-speech / --reflection-model / --thinking 须与 --ai-model 同时给出；"
+            "使用 --agents 时请写进档案文件"
+        )
+
+    legacy = legacy_to_profiles(
+        args.ai_model,
+        args.ai_model_speech,
+        reflection_model=args.reflection_model,
+        thinking=args.thinking,
+    )
+    try:
+        agents = merge_profiles(args.agents, legacy)
+        validate_profiles(agents, config.num_players)
+    except ValueError as exc:
+        parser.error(str(exc))
+
     if args.seat is None:
         asyncio.run(
             run_watch(
@@ -223,10 +270,7 @@ def main(argv: list[str] | None = None) -> None:
                 view=_parse_view(args.view),
                 delay=args.delay,
                 step=args.step,
-                ai_model=args.ai_model,
-                ai_model_speech=args.ai_model_speech,
-                reflection_model=args.reflection_model,
-                thinking=args.thinking,
+                agents=agents,
             )
         )
     else:
@@ -236,10 +280,7 @@ def main(argv: list[str] | None = None) -> None:
             run_play(
                 config,
                 seat=args.seat,
-                ai_model=args.ai_model,
-                ai_model_speech=args.ai_model_speech,
-                reflection_model=args.reflection_model,
-                thinking=args.thinking,
+                agents=agents,
             )
         )
 
