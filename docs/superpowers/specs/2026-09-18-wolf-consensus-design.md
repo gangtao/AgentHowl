@@ -85,6 +85,7 @@ emit WOLF_KILL_DECIDED(target)  # 现有路径（含末轮兜底）
 
 | 字段 | 值 |
 |---|---|
+| `kill_rule` | `config.wolf_kill_rule` 的值（**终审补记**：供 prompt 规则句分支） |
 | `tonight_kill_proposals` | 本轮已提交提案 `{seat: target\|None}`（含自己；模型内键为 `int` 座位号，经 API JSON 序列化后为字符串——与既有 `badge_flow_claims` 同口径） |
 | `kill_proposal_history` | 之前各轮快照列表，每项形如 `{seat: target\|None}` |
 | `kill_vote_round` / `kill_vote_rounds_max` | 当前轮次 / `wolf_consensus_rounds` |
@@ -95,7 +96,7 @@ emit WOLF_KILL_DECIDED(target)  # 现有路径（含末轮兜底）
 
 | 模块 | 改动 |
 |---|---|
-| `agent/prompts.py` `build_wolf_night_prompt` | 「狼队私有」段改读新字段：列出本轮队友提案（`队友 3 号提议刀 8 号；队友 6 号提议空刀`）；**跟刀引导**：「狼队须全员一致才能出刀，否则空刀。若队友已有提案且你没有强理由反对，请跟刀（proposed_target 与之一致）」；重提轮（`kill_vote_round>1`）追加：「第 k/N 轮：上一轮意见不一致（{分歧}），请统一意见；末轮仍不一致将按规则{兜底口径}」。删除失效的 `tonight_kill_proposal` 行（该字段在狼行动时恒空） |
+| `agent/prompts.py` `build_wolf_night_prompt` | 「狼队私有」段改读新字段：列出本轮队友提案（`队友 3 号提议刀 8 号；队友 6 号提议空刀`）；**跟刀引导**（**终审修正**：规则句须按 `private.kill_rule` 分支，不得写死）：UNANIMOUS「狼队须全员一致才能出刀，否则空刀……请跟刀」/ MAJORITY「按相对多数裁决，并列即空刀……请向多数靠拢」/ RANDOM「在非空提案中加权随机选定……请跟刀以提高命中概率」；重提轮（`kill_vote_round>1`）追加：「第 k/N 轮：上一轮意见不一致（{分歧}），请统一意见」，末轮提示按规则（UNANIMOUS「仍不一致将空刀」/ MAJORITY「仍并列将空刀」；RANDOM 无重提轮）。`_render_observation` 的「局势」段排除这些收敛键（结构化段已单独呈现，避免原始 dict 重复）。删除失效的 `tonight_kill_proposal` 行（该字段在狼行动时恒空） |
 | `agent/memory.py` | `_render` 给 `WOLF_KILL_REVOTE` 专用渲染（「狼队第 k 轮意见不一致：…，重新提案」）；`_SCORE_2` 加入该类型（与 `WOLF_KILL_PROPOSED` 同档） |
 | `agent/decisions.py` | 不变（`WOLF_NIGHT` → `WolfDeliberation`） |
 | `cli/bot.py` / `runtime/defaults.py` | 不变：重提轮 `expected_actors` 重新包含狼，bot 随机再提、超时默认仍是空刀/随机目标 |
