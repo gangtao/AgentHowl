@@ -102,6 +102,17 @@ def test_wire_game_star_profile_and_human_seat() -> None:
     assert runner._timeouts == _CLI_TIMEOUTS
 
 
+def test_wire_game_any_thinking_ignores_unused_profile() -> None:
+    """F5（终审修复）：human_seat 顶掉的座位档案不参与 any_thinking 判断。"""
+    from app.agent.profile import AgentProfile
+    from app.cli.play import _CLI_TIMEOUTS
+
+    config = build_preset("std_9_kill_side").model_copy(update={"seed": 3})
+    agents = {"0": AgentProfile(model="ollama/a", thinking=True)}
+    runner, _conns, _ports = _wire_game(config, human_seat=0, agents=agents)
+    assert runner._timeouts == _CLI_TIMEOUTS
+
+
 def test_load_agent_profiles_yaml_and_errors(tmp_path) -> None:
     from app.cli.play import load_agent_profiles
 
@@ -126,6 +137,33 @@ def test_load_agent_profiles_yaml_and_errors(tmp_path) -> None:
 
     with pytest.raises(argparse.ArgumentTypeError):
         load_agent_profiles(str(tmp_path / "missing.yaml"))
+
+    dup_key = tmp_path / "dup.yaml"
+    dup_key.write_text(
+        'seats:\n  0: {model: ollama/a}\n  "0": {model: ollama/b}\n', encoding="utf-8"
+    )
+    with pytest.raises(argparse.ArgumentTypeError, match="重复"):
+        load_agent_profiles(str(dup_key))
+
+
+def test_main_rejects_conflict_and_bad_seat_and_orphan_knobs(tmp_path, capsys) -> None:
+    from app.cli.play import main
+
+    star = tmp_path / "star.yaml"
+    star.write_text('seats:\n  "*": {model: ollama/a}\n', encoding="utf-8")
+    with pytest.raises(SystemExit) as e:
+        main(["--agents", str(star), "--ai-model", "ollama/b"])
+    assert e.value.code == 2 and "agents['*']" in capsys.readouterr().err
+
+    bad = tmp_path / "bad.yaml"
+    bad.write_text('seats:\n  "9": {model: ollama/a}\n', encoding="utf-8")
+    with pytest.raises(SystemExit) as e:
+        main(["--agents", str(bad)])  # 默认 preset 9 人，座位 9 越界
+    assert e.value.code == 2 and "座位" in capsys.readouterr().err
+
+    with pytest.raises(SystemExit) as e:
+        main(["--agents", str(star), "--thinking"])
+    assert e.value.code == 2 and "--thinking" in capsys.readouterr().err
 
 
 def test_apply_wolf_knobs() -> None:

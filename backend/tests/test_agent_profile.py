@@ -26,6 +26,11 @@ def test_schema_defaults_and_forbid_unknown_keys() -> None:
         AgentProfile()  # type: ignore[call-arg]  # 缺 model
 
 
+def test_name_strips_whitespace_and_blank_becomes_none() -> None:
+    assert AgentProfile(model="m", name="  ").name is None
+    assert AgentProfile(model="m", name=" 老张 ").name == "老张"
+
+
 def test_profile_for_prefers_seat_then_star() -> None:
     star = AgentProfile(model="ollama/star")
     seat3 = AgentProfile(model="ollama/three")
@@ -81,9 +86,14 @@ def test_importing_registry_does_not_load_litellm() -> None:
     """档案模块进 registry 的 import 图后，服务启动不得连带加载 litellm（惰性加载设计）。"""
     import subprocess
     import sys
+    from pathlib import Path
 
     code = "import sys, app.runtime.registry, app.agent.profile; print('litellm' in sys.modules)"
     out = subprocess.run(
-        [sys.executable, "-c", code], capture_output=True, text=True, check=True, cwd="."
+        [sys.executable, "-c", code],
+        capture_output=True,
+        text=True,
+        check=True,
+        cwd=Path(__file__).resolve().parents[1],
     ).stdout.strip()
     assert out == "False"

@@ -97,8 +97,15 @@ def load_agent_profiles(path: str) -> AgentProfiles:
         raise argparse.ArgumentTypeError(f"{path}: 顶层须为 seats 映射（键为座位号或 '*'）")
     agents: AgentProfiles = {}
     for key, body in raw["seats"].items():
+        # PyYAML 里 0（int）与 "0"（str）是不同键，折叠成 str 后需自行查重，
+        # 否则后写入的一份会静默覆盖前一份（终审 F8）。
+        str_key = str(key)
+        if str_key in agents:
+            raise argparse.ArgumentTypeError(
+                f'{path}: seats 键 {key!r} 与已有键重复（0 与 "0" 视为同一座位）'
+            )
         try:
-            agents[str(key)] = AgentProfile.model_validate(body)
+            agents[str_key] = AgentProfile.model_validate(body)
         except ValidationError as exc:
             raise argparse.ArgumentTypeError(f"{path}: seats[{key!r}] 非法：{exc}") from exc
     return agents
@@ -122,6 +129,7 @@ def _wire_game(
 
     ports: dict[int, PlayerPort] = {}
     names: list[str] = []
+    used_profiles: list[AgentProfile] = []  # 只收实际建成 Agent 端口的座位（F5 终审修复）
     for seat in range(n):
         profile = None if seat == human_seat else profile_for(agents, seat)
         if seat == human_seat:
@@ -130,6 +138,7 @@ def _wire_game(
             from app.agent.agent_player import build_agent_port
 
             ports[seat] = build_agent_port(seat, config, profile)
+            used_profiles.append(profile)
         else:
             ports[seat] = BotPlayerPort(state_provider=state_of)
         names.append(profile.name if profile is not None and profile.name else f"P{seat}")
@@ -138,7 +147,7 @@ def _wire_game(
         RosterEntry(display_name=names[i], player_type=("HUMAN" if i == human_seat else "AGENT"))
         for i in range(n)
     ]
-    any_thinking = any(p.thinking for p in agents.values())
+    any_thinking = any(p.thinking for p in used_profiles)
     conns = ConnectionManager(state_provider=state_of)
     runner = GameRunner(
         store=InMemoryEventStore(),
@@ -213,7 +222,7 @@ def main(argv: list[str] | None = None) -> None:
         "--agents",
         type=load_agent_profiles,
         default=None,
-        help="每座位 Agent 档案 YAML（seats: {座位号|'*': {model, ...}}）",
+        help="每座位 Agent 档案 YAML（seats: {座位号|'*': {model, ...}}；'*' 须加引号）",
     )
     parser.add_argument(
         "--wolf-rule",
@@ -235,6 +244,12 @@ def main(argv: list[str] | None = None) -> None:
         import os
 
         os.environ["NO_COLOR"] = "1"
+
+    if args.ai_model is None and (args.ai_model_speech or args.reflection_model or args.thinking):
+        parser.error(
+            "--ai-model-speech / --reflection-model / --thinking 须与 --ai-model 同时给出；"
+            "使用 --agents 时请写进档案文件"
+        )
 
     legacy = legacy_to_profiles(
         args.ai_model,

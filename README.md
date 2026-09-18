@@ -267,13 +267,14 @@ litellm 的 `provider/model` 字符串——任意 litellm 支持的提供方都
 代码里不硬编码提供方。**API key 由 litellm 从各提供方的标准环境变量读取**，本项目不
 经手密钥；切换提供方 = 换模型字符串 + 设对应环境变量。默认模型 `ollama/llama3.1`。
 
-模型字符串在三处配置（均为同一 litellm 字符串）：
+模型字符串在四处配置（均为同一 litellm 字符串）：
 
 | 入口 | 方式 |
 |---|---|
 | CLI | `--ai-model` / `--ai-model-speech` / `--reflection-model`（或 `make … AI_MODEL= AI_MODEL_SPEECH= REFLECTION_MODEL=`） |
 | HTTP API | `POST /games` 的 `ai_model` / `ai_model_speech` |
 | 代码 | `AgentConfig.model` / `model_speech` / `reflection_model` |
+| 每座位档案 | `--agents agents.yaml` 的 `seats.<座位>.model`（或 API `agents`）；座位优先于 `*` |
 
 常见提供方（模型字符串 + 环境变量）：
 

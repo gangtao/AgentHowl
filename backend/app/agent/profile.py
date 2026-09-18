@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.engine.config import GameConfig
 
@@ -31,13 +31,27 @@ class AgentProfile(BaseModel):
     thinking: bool = False
     temperature: float = Field(default=0.3, ge=0.0, le=2.0)
 
+    @field_validator("name", mode="before")
+    @classmethod
+    def _strip_name(cls, v: object) -> object:
+        """去首尾空白；去空后为空串归一为 None（非 str 交给 pydantic 原校验报错）。"""
+        if isinstance(v, str):
+            v = v.strip()
+            return v or None
+        return v
+
 
 AgentProfiles = dict[str, AgentProfile]
 
 
 def profile_for(agents: AgentProfiles, seat: int) -> AgentProfile | None:
-    """座位专属档案优先，其次 "*"；都没有 → None（该座位用 RandomBot）。"""
-    return agents.get(str(seat)) or agents.get(STAR)
+    """座位专属档案优先，其次 "*"；都没有 → None（该座位用 RandomBot）。
+
+    用 is not None 而非 `or`：座位档案本身是 truthy 的 BaseModel 实例，
+    但显式写成 is not None 避免未来模型加 __bool__/__len__ 语义时静默改变优先级。
+    """
+    p = agents.get(str(seat))
+    return p if p is not None else agents.get(STAR)
 
 
 def validate_profiles(agents: AgentProfiles, num_players: int) -> None:
@@ -70,7 +84,12 @@ def legacy_to_profiles(
 
 
 def merge_profiles(agents: AgentProfiles | None, legacy: AgentProfiles) -> AgentProfiles:
-    """合并显式档案与旧字段折叠结果；两边都给了 "*" 视为冲突。"""
+    """合并显式档案与旧字段折叠结果；两边都给了 "*" 视为冲突。
+
+    legacy 只可能是 legacy_to_profiles 的输出：空映射或单键 "*"；下面的覆盖逻辑
+    （update）依赖这个隐式契约，若 legacy 携带其他键会静默覆盖对应座位档案。
+    """
+    assert set(legacy) <= {STAR}, f"legacy 只应含 '*' 键，实为 {set(legacy)!r}"
     agents = dict(agents or {})
     if STAR in agents and STAR in legacy:
         raise ValueError("ai_model 与 agents['*'] 不能同时指定")
