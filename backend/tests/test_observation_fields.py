@@ -27,7 +27,9 @@ def _advance_until(state: GameState, pred) -> GameState:
 
 
 def test_election_fields_visible_to_all_seats() -> None:
-    config = build_preset("std_9_kill_side").model_copy(update={"seed": 11})
+    # seed=11：issue #46 激活狼队重提后 RandomBot 轨迹改变，该种子局不再经过竞选投票阶段
+    # （狼夜多消耗随机步数，下游随机序列整体偏移）；换用仍命中目标阶段的种子，断言不变。
+    config = build_preset("std_9_kill_side").model_copy(update={"seed": 1})
     state = create_game(config, "g_obs").state
     state = _advance_until(
         state, lambda s: s.phase == Phase.SHERIFF_ELECTION and s.election_stage == "vote"
