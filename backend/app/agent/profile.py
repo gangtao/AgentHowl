@@ -1,0 +1,84 @@
+"""AgentProfile（issue #56）：每座位独立的内置 Agent 配置。
+
+registry / api / cli 三个入口都只经本模块解析档案：查找（座位优先于 "*"）、
+键校验、旧字段（ai_model 等）折叠、到 AgentConfig 的映射。本期只有模型路由一组字段；
+人格 / 技能 / 记忆标识由各自 issue 增量添加，extra="forbid" 保证在此之前被拒绝而非静默忽略。
+"""
+
+from __future__ import annotations
+
+from pydantic import BaseModel, ConfigDict, Field
+
+from app.agent.agent_player import AgentConfig
+from app.engine.config import GameConfig
+
+STAR = "*"  # 默认档案键：未单独配置的空位
+
+
+class AgentProfile(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    name: str | None = None  # 展示名（roster display_name）；缺省 Bot{seat}
+    model: str
+    model_speech: str | None = None  # 发言层模型（None=同 model；PRD §8.3 分层路由）
+    reflection_model: str | None = None
+    thinking: bool = False
+    temperature: float = Field(default=0.3, ge=0.0, le=2.0)
+
+
+AgentProfiles = dict[str, AgentProfile]
+
+
+def profile_for(agents: AgentProfiles, seat: int) -> AgentProfile | None:
+    """座位专属档案优先，其次 "*"；都没有 → None（该座位用 RandomBot）。"""
+    return agents.get(str(seat)) or agents.get(STAR)
+
+
+def validate_profiles(agents: AgentProfiles, num_players: int) -> None:
+    """键只能是 "*" 或 0..num_players-1 的十进制座位号。"""
+    for key in agents:
+        if key == STAR:
+            continue
+        if not key.isdecimal() or str(int(key)) != key or not 0 <= int(key) < num_players:
+            raise ValueError(f"agents 键 {key!r} 非法：须为 '*' 或 0..{num_players - 1} 的座位号")
+
+
+def legacy_to_profiles(
+    ai_model: str | None,
+    ai_model_speech: str | None = None,
+    *,
+    reflection_model: str | None = None,
+    thinking: bool = False,
+) -> AgentProfiles:
+    """旧入口（ai_model 等）等价于 "*" 默认档案；ai_model 为空 → 空映射（全 RandomBot）。"""
+    if ai_model is None:
+        return {}
+    return {
+        STAR: AgentProfile(
+            model=ai_model,
+            model_speech=ai_model_speech,
+            reflection_model=reflection_model,
+            thinking=thinking,
+        )
+    }
+
+
+def merge_profiles(agents: AgentProfiles | None, legacy: AgentProfiles) -> AgentProfiles:
+    """合并显式档案与旧字段折叠结果；两边都给了 "*" 视为冲突。"""
+    agents = dict(agents or {})
+    if STAR in agents and STAR in legacy:
+        raise ValueError("ai_model 与 agents['*'] 不能同时指定")
+    agents.update(legacy)
+    return agents
+
+
+def to_agent_config(profile: AgentProfile, game_config: GameConfig) -> AgentConfig:
+    """agent_seed 仍取 GameConfig.seed（候选洗牌本已按座位区分），其余字段逐项映射。"""
+    return AgentConfig(
+        model=profile.model,
+        model_speech=profile.model_speech,
+        reflection_model=profile.reflection_model,
+        thinking=profile.thinking,
+        temperature=profile.temperature,
+        agent_seed=game_config.seed if game_config.seed is not None else 0,
+    )
