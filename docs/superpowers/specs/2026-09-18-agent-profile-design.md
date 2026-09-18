@@ -19,7 +19,7 @@
 ```python
 class AgentProfile(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")  # 键名笔误 fail-loud
-    name: str | None = None            # 展示名（roster display_name）；缺省 Bot{seat}
+    name: str | None = None            # 展示名（roster display_name）；缺省 Bot{seat}（终审补记：去首尾空白，空串归一为 None）
     model: str
     model_speech: str | None = None    # 发言层模型（None=同 model）
     reflection_model: str | None = None
@@ -53,7 +53,7 @@ AgentProfiles = dict[str, AgentProfile]   # 键：座位号字符串（"0".."N-1
 ### 3.3 `cli/play.py` / `cli/play_human.py` / `cli/render.py`
 
 - `load_agent_profiles(path) -> AgentProfiles`：`yaml.safe_load` 读文件（YAML 为 JSON 超集，`.json` 亦可），顶层须为 `{"seats": {...}}`；每项 `AgentProfile.model_validate`；解析/校验错误 → `argparse.ArgumentTypeError`（含文件名与出错键）。
-- `main`：`--agents PATH`；旧旋钮 `--ai-model` / `--ai-model-speech` / `--reflection-model` / `--thinking` 经 `legacy_to_profiles` 折叠为 `"*"`；两者冲突（文件含 `"*"` 且给了 `--ai-model`）→ 参数错误。`validate_profiles(agents, config.num_players)`。
+- `main`：`--agents PATH`；旧旋钮 `--ai-model` / `--ai-model-speech` / `--reflection-model` / `--thinking` 经 `legacy_to_profiles` 折叠为 `"*"`；两者冲突（文件含 `"*"` 且给了 `--ai-model`）→ 参数错误。`validate_profiles(agents, config.num_players)`。**终审补记**：`--ai-model` 缺席而给了其他旧旋钮 → 参数错误（不静默丢弃，不叠加到档案）；YAML 中 `0:` 与 `"0":` 折叠后重复 → 参数错误；`'*'` 须加引号写进 `--agents` 帮助。
 - `_wire_game(config, *, human_seat=None, agents: AgentProfiles | None = None)`：取代 `ai_model` 等四个参数；每座位 `profile_for` → `build_agent_port` / `BotPlayerPort`；roster 展示名 = `profile.name or f"P{i}"`（真人座仍 `P{i}`）；**任一档案 `thinking=True`** → `_THINK_TIMEOUTS`。`run_watch` / `run_play` 相应改为接收 `agents`。
 - `render.py` 新增 `render_agent_roster(agents: AgentProfiles, num_players: int, human_seat: int | None) -> str`：一行一座位 `0号 老张 · ollama/qwen3:8b（发言 openai/gpt-4o-mini）· thinking · T=0.7`，bot 座 `0号 Bot（随机）`，真人座 `2号 你（真人）`；看局/玩局开始时打印（GM 视角信息，仅终端本地）。
 - `Makefile`：`AGENTS ?=`，`_AIFLAGS` 加 `$(if $(AGENTS),--agents $(AGENTS),)`。
@@ -65,7 +65,9 @@ AgentProfiles = dict[str, AgentProfile]   # 键：座位号字符串（"0".."N-1
 - `CreateGameResponse.agents: dict[str, AgentProfile]` 回显 handle 里解析后的映射（含旧字段折叠结果）。
 - 档案属 HOST 建局输入，不进 observation / 观众视图（不新增读取端点；YAGNI）。
 
-### 3.5 依赖
+### 3.5 依赖与 import 纪律（终审补记）
+
+`app/runtime`、`app/api`、`app/cli` 不得在模块级 import `app.agent.agent_player` / `app.agent.llm_client`（litellm 惰性加载）；`profile.py` 对 `AgentConfig` 的引用经 `TYPE_CHECKING` 守卫 + 函数内 import；`tests/test_agent_profile.py::test_importing_registry_does_not_load_litellm` 守卫此约束（已写入 CLAUDE.md）。
 
 `pyyaml` 加入核心依赖；`types-PyYAML` 加入 dev 组（mypy strict）。
 
