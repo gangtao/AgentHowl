@@ -302,6 +302,29 @@ def test_wolf_fields_present_even_when_no_proposal_yet() -> None:
     assert priv["kill_vote_round"] == 1
 
 
+def test_wolf_fields_absent_outside_night() -> None:
+    """规格 §5：收敛字段只在狼存活且处于夜间时可见（终审 F2）。"""
+    from app.engine.observation import build_observation
+
+    day_keys = (
+        "tonight_kill_proposals",
+        "kill_proposal_history",
+        "kill_vote_round",
+        "kill_vote_rounds_max",
+        "kill_rule",
+    )
+    st_day = _state(phase=Phase.DAY_SPEECH, wolf_proposals={0: 8})
+    priv_day = build_observation(st_day, 1).private
+    for key in day_keys:
+        assert key not in priv_day
+
+    # 夜间其他子阶段（非 NIGHT_WEREWOLF）仍可见——供跟刀/收敛引导使用
+    st_witch = _state(phase=Phase.NIGHT_WITCH, wolf_proposals={0: 8, 1: 8, 2: 8})
+    priv_witch = build_observation(st_witch, 1).private
+    for key in day_keys:
+        assert key in priv_witch
+
+
 def test_non_wolf_and_dead_wolf_do_not_see_proposals() -> None:
     from app.engine.observation import build_observation
 

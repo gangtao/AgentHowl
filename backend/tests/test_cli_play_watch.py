@@ -1,9 +1,19 @@
 """CLI 看局（issue #44 Task 2）：全 bot 局经进程内 runner 叙述到终局。"""
 
+import argparse
 import asyncio
 
-from app.cli.play import _parse_view, _wire_game, run_watch
+import pytest
+
+from app.cli.play import _parse_view, _positive_int, _wire_game, run_watch
 from app.engine.config import build_preset
+
+
+def test_wolf_rounds_rejects_non_positive() -> None:
+    # F6（终审修复）：--wolf-rounds 0 应是 argparse 错误而非引擎里的 traceback
+    assert _positive_int("2") == 2
+    with pytest.raises(argparse.ArgumentTypeError):
+        _positive_int("0")
 
 
 def test_parse_view() -> None:

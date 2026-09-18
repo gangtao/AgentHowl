@@ -88,6 +88,7 @@ async def test_all_agent_game_reaches_game_over_and_memory_ingests() -> None:
             kinds = {e.kind for e in port.memory.entries}
             assert "WOLF_KILL_PROPOSED" not in kinds
             assert "WOLF_KILL_DECIDED" not in kinds
+            assert "WOLF_KILL_REVOTE" not in kinds
 
 
 async def test_broken_agent_falls_back_to_default_and_game_completes() -> None:

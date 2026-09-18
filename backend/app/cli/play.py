@@ -55,6 +55,14 @@ _WOLF_RULES = {
 }
 
 
+def _positive_int(s: str) -> int:
+    """--wolf-rounds 的 argparse type：< 1 时给出参数错误而非引擎里的 traceback（终审 F6）。"""
+    v = int(s)
+    if v < 1:
+        raise argparse.ArgumentTypeError("须 ≥ 1")
+    return v
+
+
 def _apply_wolf_knobs(
     config: GameConfig, wolf_rule: str | None, wolf_rounds: int | None
 ) -> GameConfig:
@@ -194,7 +202,10 @@ def main(argv: list[str] | None = None) -> None:
         help="狼刀裁决规则：unanimous（全员一致，默认）|majority（相对多数）|random（加权随机）",
     )
     parser.add_argument(
-        "--wolf-rounds", type=int, default=None, help="狼队提案最多几轮，不一致则重提（默认 2）"
+        "--wolf-rounds",
+        type=_positive_int,
+        default=None,
+        help="狼队提案最多几轮，不一致则重提（默认 2）",
     )
     args = parser.parse_args(argv)
 

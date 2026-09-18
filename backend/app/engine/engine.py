@@ -853,7 +853,9 @@ def _system_transition(state: GameState) -> tuple[GameState, list[Event]]:
                     ),
                     Visibility.WOLVES,
                 )
-                return state, [e]
+                # F7（终审修复，deferred）：拼上 events 前缀而非单独 [e]——今日此处
+                # events 可证为空、行为不变，但免疫将来在此分支前插入代码时吞事件
+                return state, [*events, e]
             state, e = _emit(
                 state,
                 EventType.WOLF_KILL_DECIDED,

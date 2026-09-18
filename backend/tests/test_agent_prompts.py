@@ -157,3 +157,60 @@ def test_wolf_prompt_revote_round_shows_disagreement() -> None:
 def test_wolf_prompt_tolerates_missing_new_fields() -> None:
     up = build_wolf_night_prompt(_obs("NIGHT_WEREWOLF"), "", "", agent_seed=1)
     assert "队友" in up and "本轮队友已提案" not in up and "上一轮" not in up
+
+
+def test_wolf_prompt_rule_text_follows_kill_rule() -> None:
+    # F1（终审修复）：规则句须随 wolf_kill_rule 分支，避免与 --wolf-rule 矛盾
+    def _rule_text(rule: str) -> str:
+        obs = _obs(
+            "NIGHT_WEREWOLF",
+            private={"teammates": [4, 7], "kill_rule": rule},
+        )
+        return build_wolf_night_prompt(obs, "", "", agent_seed=1)
+
+    unanimous = _rule_text("UNANIMOUS_OR_NO_KILL")
+    assert "全员一致" in unanimous
+
+    majority = _rule_text("MAJORITY")
+    assert "相对多数" in majority and "全员一致" not in majority
+
+    random_rule = _rule_text("RANDOM_PROPOSAL")
+    assert "随机" in random_rule
+    assert "全员一致" not in random_rule and "空刀" not in random_rule
+
+
+def test_wolf_prompt_accepts_json_string_keys() -> None:
+    # F8（deferred 回归）：跨 IO 边界（JSON 往返）后 dict 键变字符串，仍须正确渲染
+    obs = _obs(
+        "NIGHT_WEREWOLF",
+        private={
+            "teammates": [4],
+            "tonight_kill_proposals": {"4": 8},
+            "kill_proposal_history": [{"0": 8, "4": 3}],
+            "kill_vote_round": 2,
+            "kill_vote_rounds_max": 2,
+        },
+    )
+    up = build_wolf_night_prompt(obs, "", "", agent_seed=1)
+    assert "4 号提议刀 8 号" in up
+    assert "0 号→8 号" in up
+
+
+def test_day_prompt_and_night_situation_do_not_dump_kill_ledger() -> None:
+    # F2（终审修复）：收敛账本不得原始 dict 打印进「== 局势 ==」段，也不得泄进白天 prompt
+    private = {
+        "teammates": [4, 7],
+        "tonight_kill_proposals": {4: 8},
+        "kill_proposal_history": [],
+        "kill_vote_round": 1,
+        "kill_vote_rounds_max": 2,
+        "kill_rule": "UNANIMOUS_OR_NO_KILL",
+    }
+    obs_night = _obs("NIGHT_WEREWOLF", private=dict(private))
+    up_night = build_wolf_night_prompt(obs_night, "", "", agent_seed=1)
+    situation = up_night.split("== 你的记忆 ==")[0]
+    assert "tonight_kill_proposals" not in situation
+
+    obs_day = _obs("DAY_SPEECH", private=dict(private))
+    up_day = build_prompt(DecisionKind.SPEECH, obs_day, "", agent_seed=1)
+    assert "tonight_kill_proposals" not in up_day
