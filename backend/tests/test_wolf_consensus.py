@@ -276,3 +276,46 @@ def test_full_games_terminate_and_revote_occurs() -> None:
             assert final.phase == Phase.GAME_OVER
             saw_revote = saw_revote or any(e.type == EventType.WOLF_KILL_REVOTE for e in events)
     assert saw_revote  # 随机 bot 几乎必然出现分歧
+
+
+# ---------- Task 3：observation ----------
+
+
+def test_wolf_sees_current_round_proposals_history_and_round() -> None:
+    from app.engine.observation import build_observation
+
+    st = _state({0: 8}, wolf_kill_round=2, wolf_proposal_history=(((0, 8), (1, 3), (2, 8)),))
+    obs = build_observation(st, 1)
+    priv = obs.private
+    assert priv["tonight_kill_proposals"] == {0: 8}
+    assert priv["kill_proposal_history"] == [{0: 8, 1: 3, 2: 8}]
+    assert priv["kill_vote_round"] == 2 and priv["kill_vote_rounds_max"] == 2
+    assert "tonight_kill_proposal" not in priv  # 裁决前无刀口
+
+
+def test_wolf_fields_present_even_when_no_proposal_yet() -> None:
+    from app.engine.observation import build_observation
+
+    priv = build_observation(_state(), 0).private
+    assert priv["tonight_kill_proposals"] == {}
+    assert priv["kill_proposal_history"] == []
+    assert priv["kill_vote_round"] == 1
+
+
+def test_non_wolf_and_dead_wolf_do_not_see_proposals() -> None:
+    from app.engine.observation import build_observation
+
+    st = _state({0: 8, 1: 3})
+    for seat in (3, 4, 8):
+        priv = build_observation(st, seat).private
+        for key in ("tonight_kill_proposals", "kill_proposal_history", "kill_vote_round"):
+            assert key not in priv
+    dead = st.model_copy(
+        update={
+            "players": tuple(
+                p.model_copy(update={"alive": False}) if p.seat == 2 else p for p in st.players
+            )
+        }
+    )
+    priv = build_observation(dead, 2).private
+    assert "tonight_kill_proposals" not in priv and "teammates" not in priv

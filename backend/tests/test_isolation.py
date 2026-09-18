@@ -27,6 +27,8 @@ def test_non_wolf_has_no_teammates_or_chat() -> None:
         if p.faction != Faction.WOLF:
             assert obs.private.get("teammates") in (None, [])
             assert obs.private.get("wolf_chat") in (None, [])
+            assert "tonight_kill_proposals" not in obs.private
+            assert "kill_proposal_history" not in obs.private
 
 
 def test_wolf_sees_teammates() -> None:

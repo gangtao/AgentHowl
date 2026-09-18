@@ -184,6 +184,7 @@ class GameConfig(BaseModel):
     last_words: LastWordsRule = LastWordsRule.FIRST_NIGHT_ONLY
     allow_wolf_self_knife: bool = True       # 允许自刀
     allow_wolf_empty_knife: bool = True      # 允许空刀
+    wolf_consensus_rounds: int = 2           # 狼队提案最多几轮，不一致则重提（1=一轮定夺）
     wolf_first_kill_priority: bool = True    # 狼刀在先原则
     speech_timeout_sec: int = 90             # 单次发言超时
     action_timeout_sec: int = 45             # 夜间行动超时
@@ -447,7 +448,7 @@ class PlayerObservation(BaseModel):
 ```
 
 **`private` 字段按角色注入规则**（引擎 `build_observation(state, seat)` 实现）：
-- **狼人**：`private.teammates = [座号...]`；`private.wolf_chat = [...]`（狼队夜间私聊）；夜晚可见 `private.tonight_kill_proposal`。
+- **狼人**：`private.teammates = [座号...]`；`private.wolf_chat = [...]`（狼队夜间私聊，预留）；夜晚可见 `private.tonight_kill_proposals`（本轮队友已提案 `{seat: target|null}`）、`kill_proposal_history`（之前各轮快照）、`kill_vote_round` / `kill_vote_rounds_max`；裁决后可见 `private.tonight_kill_proposal`（刀口）。
 - **预言家**：`private.check_results = [{round, seat, result}]`。
 - **女巫**：`private.tonight_killed_seat`（仅当解药未用完）；`private.antidote_available`；`private.poison_available`。
 - **守卫**：`private.last_guard_target`（用于禁止连守）。
