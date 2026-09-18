@@ -99,15 +99,13 @@ def _wire_game(
             ports[seat] = HumanPlayerPort()
         elif ai_model is not None:
             from app.agent.agent_player import build_agent_port
+            from app.agent.profile import legacy_to_profiles
 
-            ports[seat] = build_agent_port(
-                seat,
-                config,
-                ai_model,
-                ai_model_speech,
-                thinking=thinking,
-                reflection_model=reflection_model,
-            )
+            # 过渡态：_wire_game 签名不变，Task 4 再整体改为接收 agents（issue #56）
+            profile = legacy_to_profiles(
+                ai_model, ai_model_speech, reflection_model=reflection_model, thinking=thinking
+            )["*"]
+            ports[seat] = build_agent_port(seat, config, profile)
         else:
             ports[seat] = BotPlayerPort(state_provider=state_of)
 

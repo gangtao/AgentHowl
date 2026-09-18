@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import time
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime
 from typing import Literal
 
@@ -63,10 +63,12 @@ class GameLobby:
         self._entries.append(RosterEntry(display_name=display_name, player_type=player_type))
         return len(self._entries) - 1
 
-    def fill_with_bots(self) -> None:
+    def fill_with_bots(self, name_for: Callable[[int], str] | None = None) -> None:
+        """填满空位；name_for(seat) 给出展示名（issue #56 档案名），缺省 Bot{seat}。"""
         while not self.is_full:
             seat = len(self._entries)
-            self._entries.append(RosterEntry(display_name=f"Bot{seat}", player_type="AGENT"))
+            name = name_for(seat) if name_for is not None else f"Bot{seat}"
+            self._entries.append(RosterEntry(display_name=name, player_type="AGENT"))
 
     def roster(self) -> tuple[RosterEntry, ...]:
         if not self.is_full:

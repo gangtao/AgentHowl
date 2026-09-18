@@ -116,3 +116,60 @@ def test_get_unknown_game_raises_lookup() -> None:
     reg = _registry()
     with pytest.raises(LookupError):
         reg.get("g_nope")
+
+
+async def test_create_with_agents_resolves_per_seat_and_names_bots() -> None:
+    from app.agent.profile import AgentProfile
+    from app.runtime.player_port import BotPlayerPort
+
+    reg = _registry()
+    cfg = build_preset("std_9_kill_side").model_copy(update={"seed": 5})
+    agents = {"0": AgentProfile(name="老张", model="ollama/a"), "2": AgentProfile(model="ollama/b")}
+    handle = reg.create(cfg, allow_spectators=False, agents=agents)
+    assert handle.profile_for(0) is agents["0"] and handle.profile_for(2) is agents["2"]
+    assert handle.profile_for(1) is None
+    # 有档案的座位由 agent 工厂建端口（此处注入桩，避免 litellm）
+    reg._agent_port_factory = lambda seat, h: BotPlayerPort(state_provider=h.live_state)
+    reg.start(handle, fill_with_bots=True)
+    names = [e.display_name for e in handle.lobby.roster()]
+    # 无 name 缺省 Bot{seat}
+    assert names[0] == "老张" and names[1] == "Bot1" and names[2] == "Bot2"
+    assert handle.task is not None
+    handle.task.cancel()
+
+
+def test_create_legacy_ai_model_folds_to_star_and_conflict_raises() -> None:
+    from app.agent.profile import AgentProfile
+
+    reg = _registry()
+    cfg = build_preset("std_9_kill_side").model_copy(update={"seed": 5})
+    handle = reg.create(
+        cfg, allow_spectators=False, ai_model="ollama/a", ai_model_speech="ollama/b"
+    )
+    star = handle.profile_for(7)
+    assert star is not None and star.model == "ollama/a" and star.model_speech == "ollama/b"
+    with pytest.raises(ValueError, match="agents"):
+        reg.create(
+            cfg,
+            allow_spectators=False,
+            agents={"*": AgentProfile(model="x")},
+            ai_model="ollama/a",
+        )
+    with pytest.raises(ValueError, match="座位"):
+        reg.create(cfg, allow_spectators=False, agents={"9": AgentProfile(model="x")})
+
+
+async def test_human_joined_seat_ignores_profile() -> None:
+    from app.agent.profile import AgentProfile
+    from app.runtime.player_port import BotPlayerPort, HumanPlayerPort
+
+    reg = _registry()
+    cfg = build_preset("std_9_kill_side").model_copy(update={"seed": 5})
+    handle = reg.create(cfg, allow_spectators=False, agents={"0": AgentProfile(model="x")})
+    reg.join(handle, "Alice", "HUMAN")  # 占 0 号
+    reg._agent_port_factory = lambda seat, h: BotPlayerPort(state_provider=h.live_state)
+    reg.start(handle, fill_with_bots=True)
+    assert isinstance(handle.ports[0], HumanPlayerPort)
+    assert handle.lobby.roster()[0].display_name == "Alice"
+    assert handle.task is not None
+    handle.task.cancel()

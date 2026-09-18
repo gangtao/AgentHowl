@@ -114,3 +114,35 @@ def test_create_game_request_accepts_ai_model() -> None:
     req = CreateGameRequest(ai_model="ollama/llama3.1", ai_model_speech="ollama/qwen2.5")
     assert req.ai_model == "ollama/llama3.1"
     assert CreateGameRequest().ai_model is None  # 默认关（现有行为零变化）
+
+
+async def test_per_seat_profiles_reach_agent_config() -> None:
+    """两座位不同档案 → 各自 AgentConfig.model 不同（经 profile_for + to_agent_config）。"""
+    from app.agent.profile import AgentProfile, to_agent_config
+
+    seen: dict[int, str] = {}
+
+    def factory(seat: int, handle: GameHandle) -> PlayerPort:
+        profile = handle.profile_for(seat)
+        assert profile is not None
+        cfg = to_agent_config(profile, handle.config)
+        seen[seat] = cfg.model
+        return AgentPlayerPort(
+            seat=seat,
+            game_config=handle.config,
+            agent_config=cfg,
+            client=ScriptedLLMClient(_omniscient_script(handle, seat)),
+        )
+
+    registry = GameRegistry(InMemoryEventStore(), TIMEOUTS, agent_port_factory=factory)
+    config = build_preset("std_9_kill_side").model_copy(update={"seed": 3})
+    handle = registry.create(
+        config,
+        allow_spectators=False,
+        agents={"0": AgentProfile(model="scripted-zero"), "*": AgentProfile(model="scripted")},
+    )
+    registry.start(handle, fill_with_bots=True)
+    assert handle.task is not None
+    state = await asyncio.wait_for(handle.task, timeout=120)
+    assert state.phase == Phase.GAME_OVER
+    assert seen[0] == "scripted-zero" and seen[1] == "scripted" and len(seen) == 9
