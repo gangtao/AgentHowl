@@ -7,10 +7,16 @@ registry / api / cli 三个入口都只经本模块解析档案：查找（座�
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.agent.agent_player import AgentConfig
 from app.engine.config import GameConfig
+
+if TYPE_CHECKING:
+    # 仅类型标注用；运行期改在 to_agent_config 内局部 import，
+    # 避免 registry 等模块导入本档案模块时连带加载 agent_player → litellm（惰性加载设计）。
+    from app.agent.agent_player import AgentConfig
 
 STAR = "*"  # 默认档案键：未单独配置的空位
 
@@ -74,6 +80,8 @@ def merge_profiles(agents: AgentProfiles | None, legacy: AgentProfiles) -> Agent
 
 def to_agent_config(profile: AgentProfile, game_config: GameConfig) -> AgentConfig:
     """agent_seed 仍取 GameConfig.seed（候选洗牌本已按座位区分），其余字段逐项映射。"""
+    from app.agent.agent_player import AgentConfig  # 局部 import：见文件头 TYPE_CHECKING 注释
+
     return AgentConfig(
         model=profile.model,
         model_speech=profile.model_speech,

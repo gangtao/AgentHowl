@@ -75,3 +75,15 @@ def test_to_agent_config_maps_fields_and_seed() -> None:
     assert ac.thinking is True and ac.temperature == 0.7
     assert ac.agent_seed == 11
     assert to_agent_config(p, cfg.model_copy(update={"seed": None})).agent_seed == 0
+
+
+def test_importing_registry_does_not_load_litellm() -> None:
+    """档案模块进 registry 的 import 图后，服务启动不得连带加载 litellm（惰性加载设计）。"""
+    import subprocess
+    import sys
+
+    code = "import sys, app.runtime.registry, app.agent.profile; print('litellm' in sys.modules)"
+    out = subprocess.run(
+        [sys.executable, "-c", code], capture_output=True, text=True, check=True, cwd="."
+    ).stdout.strip()
+    assert out == "False"
