@@ -8,6 +8,7 @@ from __future__ import annotations
 import os
 import sys
 
+from app.agent.profile import AgentProfiles, profile_for
 from app.engine.config import Faction, RoleType
 from app.engine.events import (
     BadgePassedPayload,
@@ -193,3 +194,26 @@ def render_observation(obs: PlayerObservation) -> str:
 def render_tools(tools: tuple[str, ...]) -> str:
     """可用工具一行摘要。"""
     return "可用工具：" + "、".join(tools)
+
+
+def render_agent_roster(agents: AgentProfiles, num_players: int, human_seat: int | None) -> str:
+    """开局座位档案表（GM 视角，仅本地终端）：一行一座位。"""
+    lines: list[str] = []
+    for seat in range(num_players):
+        if seat == human_seat:
+            lines.append(f"{seat}号 你（真人）")
+            continue
+        p = profile_for(agents, seat)
+        if p is None:
+            lines.append(f"{seat}号 Bot（随机）")
+            continue
+        parts = [p.name or f"Bot{seat}", p.model]
+        if p.model_speech:
+            parts.append(f"发言 {p.model_speech}")
+        if p.reflection_model:
+            parts.append(f"反思 {p.reflection_model}")
+        if p.thinking:
+            parts.append("thinking")
+        parts.append(f"T={p.temperature}")
+        lines.append(f"{seat}号 " + " · ".join(parts))
+    return "\n".join(lines)

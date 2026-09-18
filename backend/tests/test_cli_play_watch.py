@@ -59,24 +59,73 @@ def test_watch_spectator_hides_gm_lines(capsys) -> None:
     assert "[GM]" not in out  # 观战视角无夜间内幕
 
 
-def test_wire_game_threads_speech_and_reflection_models() -> None:
-    """分层路由 CLI 旋钮：ai_model_speech / reflection_model 落到 AgentConfig。"""
+def test_wire_game_threads_profiles_per_seat() -> None:
+    """每座位档案落到各自 AgentConfig；无档案座位为 BotPlayerPort；档案名进 roster。"""
     from app.agent.agent_player import AgentPlayerPort
-    from app.cli.play import _wire_game
-    from app.engine.config import build_preset
+    from app.agent.profile import AgentProfile
+    from app.runtime.player_port import BotPlayerPort
 
     config = build_preset("std_9_kill_side").model_copy(update={"seed": 3})
-    _runner, _conns, ports = _wire_game(
-        config,
-        ai_model="ollama/a",
-        ai_model_speech="ollama/b",
-        reflection_model="ollama/c",
+    agents = {
+        "0": AgentProfile(name="老张", model="ollama/a", model_speech="ollama/b", thinking=True),
+        "2": AgentProfile(model="ollama/c", reflection_model="ollama/d", temperature=0.9),
+    }
+    runner, _conns, ports = _wire_game(config, agents=agents)
+    p0, p2 = ports[0], ports[2]
+    assert isinstance(p0, AgentPlayerPort) and isinstance(p2, AgentPlayerPort)
+    assert (p0._cfg.model, p0._cfg.model_speech, p0._cfg.thinking) == ("ollama/a", "ollama/b", True)
+    assert (p2._cfg.model, p2._cfg.reflection_model, p2._cfg.temperature) == (
+        "ollama/c",
+        "ollama/d",
+        0.9,
     )
-    p = ports[0]
-    assert isinstance(p, AgentPlayerPort)
-    assert p._cfg.model == "ollama/a"
-    assert p._cfg.model_speech == "ollama/b"
-    assert p._cfg.reflection_model == "ollama/c"
+    assert isinstance(ports[1], BotPlayerPort)
+    assert runner._roster[0].display_name == "老张" and runner._roster[1].display_name == "P1"
+    # 任一档案 thinking → 放宽超时
+    from app.cli.play import _THINK_TIMEOUTS
+
+    assert runner._timeouts == _THINK_TIMEOUTS
+
+
+def test_wire_game_star_profile_and_human_seat() -> None:
+    from app.agent.agent_player import AgentPlayerPort
+    from app.agent.profile import AgentProfile
+    from app.cli.play import _CLI_TIMEOUTS
+    from app.runtime.player_port import HumanPlayerPort
+
+    config = build_preset("std_9_kill_side").model_copy(update={"seed": 3})
+    runner, _c, ports = _wire_game(
+        config, human_seat=4, agents={"*": AgentProfile(model="ollama/z")}
+    )
+    assert isinstance(ports[4], HumanPlayerPort)
+    assert all(isinstance(ports[s], AgentPlayerPort) for s in range(9) if s != 4)
+    assert runner._timeouts == _CLI_TIMEOUTS
+
+
+def test_load_agent_profiles_yaml_and_errors(tmp_path) -> None:
+    from app.cli.play import load_agent_profiles
+
+    good = tmp_path / "agents.yaml"
+    good.write_text(
+        'seats:\n  "0": {name: 老张, model: ollama/a, thinking: true}\n  "*": {model: ollama/b}\n',
+        encoding="utf-8",
+    )
+    agents = load_agent_profiles(str(good))
+    assert agents["0"].name == "老张" and agents["0"].thinking is True
+    assert agents["*"].model == "ollama/b"
+
+    bad_key = tmp_path / "bad.yaml"
+    bad_key.write_text('seats:\n  "0": {model: ollama/a, modle_speech: x}\n', encoding="utf-8")
+    with pytest.raises(argparse.ArgumentTypeError, match="bad.yaml"):
+        load_agent_profiles(str(bad_key))
+
+    no_seats = tmp_path / "noseats.yaml"
+    no_seats.write_text("agents: {}\n", encoding="utf-8")
+    with pytest.raises(argparse.ArgumentTypeError, match="seats"):
+        load_agent_profiles(str(no_seats))
+
+    with pytest.raises(argparse.ArgumentTypeError):
+        load_agent_profiles(str(tmp_path / "missing.yaml"))
 
 
 def test_apply_wolf_knobs() -> None:

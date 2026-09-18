@@ -208,6 +208,7 @@ make play SEAT=2                               # 亲自玩 2 号座位，其余�
 make watch AI_MODEL=ollama/qwen2.5-coder:7b    # LLM 自对局（需 Ollama）
 make watch AI_MODEL=ollama/qwen2.5-coder:7b WOLF_RULE=majority   # 狼刀相对多数即可
 make watch WOLF_ROUNDS=3                                        # 狼队最多三轮统一意见
+make watch AGENTS=agents.yaml            # 每座位独立模型/温度/thinking（见下方样例）
 make sim GAMES=100                             # 纯引擎胜负统计（无叙述、极快）
 ```
 
@@ -237,6 +238,26 @@ uv run python -m app.cli.play --view spectator                # 拟真观战
 uv run python -m app.cli.play --seat 2                        # 玩 2 号座位
 uv run python -m app.cli.play --ai-model ollama/llama3.1      # LLM 自对局
 uv run python -m app.cli.simulate --games 100                 # 纯引擎胜负统计
+```
+
+### 每座位 Agent 档案 / Per-seat Agent Profiles
+
+`--agents`（或 `make … AGENTS=`）指向一份 YAML，给每个座位独立配置 `model` /
+`model_speech` / `reflection_model` / `thinking` / `temperature` / `name`（展示名）；
+不带 `--agents` 时行为不变（全内置随机 bot）。查找规则：**座位号优先于 `"*"`**，
+都没配的座位用内置随机 bot；`--ai-model` 等旧旋钮等价于 `agents["*"]`，与档案文件里
+的 `"*"` 同时给出会报参数错误。开局会在终端打印一张座位档案表。
+
+```yaml
+# agents.yaml
+seats:
+  "0": { name: 老张, model: ollama/qwen2.5-coder:7b, thinking: false }
+  "3": { model: ollama/qwen3:8b, thinking: true, temperature: 0.7 }
+  "*": { model: ollama/qwen2.5-coder:7b }   # 其余座位的默认档案
+```
+
+```bash
+make watch AGENTS=agents.yaml
 ```
 
 ## LLM 提供方配置 / LLM Providers
