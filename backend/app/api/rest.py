@@ -56,13 +56,17 @@ def create_game_endpoint(
         config = type(config).model_validate(config.model_dump())  # override 后全量校验
     except (KeyError, ValueError, ValidationError) as exc:
         raise ToolCallError(f"preset/config_override 非法：{exc}") from exc
-    handle = games.create(
-        config,
-        allow_spectators=req.allow_spectators,
-        num_ai_players=req.num_ai_players,
-        ai_model=req.ai_model,
-        ai_model_speech=req.ai_model_speech,
-    )
+    try:
+        handle = games.create(
+            config,
+            allow_spectators=req.allow_spectators,
+            num_ai_players=req.num_ai_players,
+            agents=req.agents,
+            ai_model=req.ai_model,
+            ai_model_speech=req.ai_model_speech,
+        )
+    except ValueError as exc:
+        raise ToolCallError(f"agents 非法：{exc}") from exc
     host_token = tokens.issue(TokenInfo(game_id=handle.game_id, seat=None, kind="HOST"))
     spectator_token = (
         tokens.issue(TokenInfo(game_id=handle.game_id, seat=None, kind="SPECTATOR"))
@@ -74,6 +78,7 @@ def create_game_endpoint(
         host_token=host_token,
         spectator_token=spectator_token,
         config=config.model_dump(mode="json"),
+        agents=handle.agents,
     )
 
 
