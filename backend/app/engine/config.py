@@ -139,6 +139,7 @@ class GameConfig(BaseModel):
     allow_wolf_self_knife: bool = True
     allow_wolf_empty_knife: bool = True
     wolf_kill_rule: WolfKillRule = WolfKillRule.UNANIMOUS_OR_NO_KILL
+    wolf_consensus_rounds: int = 2  # 狼队提案最多几轮（issue #46）；不一致则重提；1 = 一轮定夺
     wolf_first_kill_priority: bool = True
     speech_timeout_sec: int = 90
     action_timeout_sec: int = 45
@@ -246,3 +247,6 @@ def validate_config(config: GameConfig) -> None:
 
     if RoleType.WEREWOLF not in config.night_order:
         raise ConfigError("night_order 必须包含狼人(WEREWOLF)，否则夜晚无法结算")
+
+    if config.wolf_consensus_rounds < 1:
+        raise ConfigError(f"wolf_consensus_rounds 须 ≥ 1，收到 {config.wolf_consensus_rounds}")

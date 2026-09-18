@@ -64,6 +64,10 @@ class GameState(BaseModel):
     # 夜晚收集
     pending_night: NightActions = Field(default_factory=NightActions)
     wolf_proposals: dict[int, int | None] = Field(default_factory=dict)  # seat->target(None=空刀)
+    # 本夜第几轮狼队提案（issue #46；WOLF_KILL_REVOTE 推进，ROUND_STARTED 重置）
+    wolf_kill_round: int = 1
+    # 之前各轮的提案快照（每轮为按座位升序的 (seat, target) 元组）
+    wolf_proposal_history: tuple[tuple[tuple[int, int | None], ...], ...] = ()
     acted_seats: frozenset[int] = frozenset()  # 本夜已提交夜间行动的座位（含狼）
     night_deaths: tuple[int, ...] = ()  # 本夜结算出的死者（供公布/遗言）
     resolved_first_night: bool = False

@@ -36,6 +36,7 @@ class EventType(StrEnum):
     GUARD_PROTECTED = "GUARD_PROTECTED"
     WOLF_KILL_PROPOSED = "WOLF_KILL_PROPOSED"
     WOLF_KILL_DECIDED = "WOLF_KILL_DECIDED"
+    WOLF_KILL_REVOTE = "WOLF_KILL_REVOTE"
     WITCH_SAVED = "WITCH_SAVED"
     WITCH_POISONED = "WITCH_POISONED"
     SEER_CHECKED = "SEER_CHECKED"
@@ -110,6 +111,13 @@ class WolfKillProposedPayload(EventPayload):
 
 class WolfKillDecidedPayload(EventPayload):
     target: int | None  # None=空刀（含意见不统一）
+
+
+class WolfKillRevotePayload(EventPayload):
+    """狼队本轮意见不一致、再开一轮（issue #46）。快照随事件入流，回放不必重建。"""
+
+    round_no: int  # 刚结束的那一轮（从 1 起）
+    proposals: tuple[tuple[int, int | None], ...]  # 该轮提案快照，按座位升序
 
 
 class WitchActedPayload(EventPayload):
@@ -243,6 +251,7 @@ EVENT_PAYLOAD_TYPES: dict[EventType, type[EventPayload]] = {
     EventType.GUARD_PROTECTED: GuardProtectedPayload,
     EventType.WOLF_KILL_PROPOSED: WolfKillProposedPayload,
     EventType.WOLF_KILL_DECIDED: WolfKillDecidedPayload,
+    EventType.WOLF_KILL_REVOTE: WolfKillRevotePayload,
     EventType.WITCH_SAVED: WitchActedPayload,
     EventType.WITCH_POISONED: WitchActedPayload,
     EventType.WITCH_POTION_CONSUMED: WitchPotionConsumedPayload,
@@ -339,6 +348,8 @@ def _reduce_dispatch(state: GameState, event: Event) -> dict[str, object]:
             "round": p.round,
             "pending_night": NightActions(),
             "wolf_proposals": {},
+            "wolf_kill_round": 1,
+            "wolf_proposal_history": (),
             "acted_seats": frozenset(),
             "night_deaths": (),
             "votes": {},
@@ -375,6 +386,13 @@ def _reduce_dispatch(state: GameState, event: Event) -> dict[str, object]:
 
     if t == EventType.WOLF_KILL_DECIDED and isinstance(p, WolfKillDecidedPayload):
         return {"pending_night": state.pending_night.model_copy(update={"wolf_target": p.target})}
+
+    if t == EventType.WOLF_KILL_REVOTE and isinstance(p, WolfKillRevotePayload):
+        return {
+            "wolf_proposals": {},
+            "wolf_kill_round": state.wolf_kill_round + 1,
+            "wolf_proposal_history": (*state.wolf_proposal_history, p.proposals),
+        }
 
     if t == EventType.WITCH_SAVED and isinstance(p, WitchActedPayload):
         return {
