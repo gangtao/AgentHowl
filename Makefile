@@ -17,6 +17,8 @@ AI_MODEL        ?=     # 设置后由 LLM Agent 自对局（如 ollama/qwen2.5-c
 AI_MODEL_SPEECH ?=     # 发言层单独模型（分层路由；缺省=同 AI_MODEL）
 REFLECTION_MODEL ?=    # 每轮反思单独模型（通常更便宜；缺省=同 AI_MODEL）
 THINKING        ?=     # 非空则开启推理模型思考（更强推理但慢；仅推理模型需要）
+WOLF_RULE       ?=     # 狼刀裁决规则 unanimous|majority|random（缺省=预设默认 unanimous）
+WOLF_ROUNDS     ?=     # 狼队提案最多几轮，不一致则重提（缺省 2）
 ARGS            ?=
 
 # 由 AI_MODEL / *_MODEL / THINKING 组装的 LLM 相关命令行片段
@@ -24,6 +26,10 @@ _AIFLAGS := $(if $(AI_MODEL),--ai-model $(AI_MODEL),) \
 	$(if $(AI_MODEL_SPEECH),--ai-model-speech $(AI_MODEL_SPEECH),) \
 	$(if $(REFLECTION_MODEL),--reflection-model $(REFLECTION_MODEL),) \
 	$(if $(THINKING),--thinking,)
+
+# 由 WOLF_RULE / WOLF_ROUNDS 组装的狼刀规则旋钮
+_WOLFFLAGS := $(if $(WOLF_RULE),--wolf-rule $(WOLF_RULE),) \
+	$(if $(WOLF_ROUNDS),--wolf-rounds $(WOLF_ROUNDS),)
 
 .DEFAULT_GOAL := help
 
@@ -77,13 +83,13 @@ serve: ## 启动 API 服务（uvicorn，热重载，http://localhost:8000）
 	cd $(BACKEND) && $(UV) uvicorn app.main:app --reload
 
 .PHONY: watch
-watch: ## 终端看局（可选 SEED= VIEW=gm|spectator|seat:N AI_MODEL= THINKING=1 ARGS=）
-	cd $(BACKEND) && $(UV) python -m app.cli.play --seed $(SEED) --view $(VIEW) $(_AIFLAGS) $(ARGS)
+watch: ## 终端看局（可选 SEED= VIEW=gm|spectator|seat:N AI_MODEL= THINKING=1 WOLF_RULE= WOLF_ROUNDS= ARGS=）
+	cd $(BACKEND) && $(UV) python -m app.cli.play --seed $(SEED) --view $(VIEW) $(_AIFLAGS) $(_WOLFFLAGS) $(ARGS)
 
 .PHONY: play
 play: ## 终端玩局，你扮演 SEAT 座位（例：make play SEAT=2 AI_MODEL=ollama/qwen2.5-coder:7b）
-	@test -n "$(SEAT)" || { echo "用法：make play SEAT=<座位号>  [AI_MODEL= THINKING=1 ARGS=]"; exit 2; }
-	cd $(BACKEND) && $(UV) python -m app.cli.play --seat $(SEAT) $(_AIFLAGS) $(ARGS)
+	@test -n "$(SEAT)" || { echo "用法：make play SEAT=<座位号>  [AI_MODEL= THINKING=1 WOLF_RULE= WOLF_ROUNDS= ARGS=]"; exit 2; }
+	cd $(BACKEND) && $(UV) python -m app.cli.play --seat $(SEAT) $(_AIFLAGS) $(_WOLFFLAGS) $(ARGS)
 
 .PHONY: sim
 sim: ## 纯引擎随机自对局胜负统计（例：make sim GAMES=100）

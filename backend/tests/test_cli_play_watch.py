@@ -67,3 +67,17 @@ def test_wire_game_threads_speech_and_reflection_models() -> None:
     assert p._cfg.model == "ollama/a"
     assert p._cfg.model_speech == "ollama/b"
     assert p._cfg.reflection_model == "ollama/c"
+
+
+def test_apply_wolf_knobs() -> None:
+    from app.cli.play import _apply_wolf_knobs
+    from app.engine.config import WolfKillRule, build_preset
+
+    base = build_preset("std_9_kill_side")
+    assert _apply_wolf_knobs(base, None, None) == base
+    cfg = _apply_wolf_knobs(base, "majority", 3)
+    assert cfg.wolf_kill_rule == WolfKillRule.MAJORITY and cfg.wolf_consensus_rounds == 3
+    random_cfg = _apply_wolf_knobs(base, "random", None)
+    assert random_cfg.wolf_kill_rule == WolfKillRule.RANDOM_PROPOSAL
+    unanimous_cfg = _apply_wolf_knobs(base, "unanimous", 1)
+    assert unanimous_cfg.wolf_kill_rule == WolfKillRule.UNANIMOUS_OR_NO_KILL

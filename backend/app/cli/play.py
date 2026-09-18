@@ -10,7 +10,7 @@ import asyncio
 from collections.abc import Awaitable, Callable
 
 from app.cli.render import render_event
-from app.engine.config import GameConfig, build_preset
+from app.engine.config import GameConfig, WolfKillRule, build_preset
 from app.engine.engine import RosterEntry
 from app.engine.events import Event
 from app.engine.observation import Viewer
@@ -46,6 +46,25 @@ def _parse_view(view: str) -> Viewer:
     if view.startswith("seat:"):
         return int(view.split(":", 1)[1])
     raise ValueError(f"未知视角：{view}（用 gm|spectator|seat:N）")
+
+
+_WOLF_RULES = {
+    "unanimous": WolfKillRule.UNANIMOUS_OR_NO_KILL,
+    "majority": WolfKillRule.MAJORITY,
+    "random": WolfKillRule.RANDOM_PROPOSAL,
+}
+
+
+def _apply_wolf_knobs(
+    config: GameConfig, wolf_rule: str | None, wolf_rounds: int | None
+) -> GameConfig:
+    """狼刀规则旋钮（issue #46）：只覆盖显式给出的项。"""
+    update: dict[str, object] = {}
+    if wolf_rule is not None:
+        update["wolf_kill_rule"] = _WOLF_RULES[wolf_rule]
+    if wolf_rounds is not None:
+        update["wolf_consensus_rounds"] = wolf_rounds
+    return config.model_copy(update=update) if update else config
 
 
 def _wire_game(
@@ -168,9 +187,19 @@ def main(argv: list[str] | None = None) -> None:
         help="开启推理模型思考（更强推理，但单次决策可达数分钟）",
     )
     parser.add_argument("--no-color", action="store_true")
+    parser.add_argument(
+        "--wolf-rule",
+        choices=sorted(_WOLF_RULES),
+        default=None,
+        help="狼刀裁决规则：unanimous（全员一致，默认）|majority（相对多数）|random（加权随机）",
+    )
+    parser.add_argument(
+        "--wolf-rounds", type=int, default=None, help="狼队提案最多几轮，不一致则重提（默认 2）"
+    )
     args = parser.parse_args(argv)
 
     config = build_preset(args.preset).model_copy(update={"seed": args.seed})
+    config = _apply_wolf_knobs(config, args.wolf_rule, args.wolf_rounds)
     if args.no_color:
         import os
 

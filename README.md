@@ -89,7 +89,7 @@ uv run python -m app.cli.simulate --preset std_12_yn_hunter_idiot --seed 1 --gam
 | `std_9_kill_side` | 9 人屠边局 | 3狼3民 + 预女猎 |
 | `std_9_kill_all` | 9 人屠城局 | 同上，胜负条件 KILL_ALL |
 
-所有规则均为 `GameConfig` 开关：胜负条件、夜间行动顺序、发言方向（警长决定/固定）、平票规则（PK 后无放逐/PK 后随机）、狼刀决策（全员一致/相对多数/加权随机）、女巫同夜双药与自救、守卫同守/奶穿、警长竞选（上警发言及其顺序、退水、警徽流、1.5 票权、自爆吞警徽）、遗言规则、狼人自刀/空刀等。
+所有规则均为 `GameConfig` 开关：胜负条件、夜间行动顺序、发言方向（警长决定/固定）、平票规则（PK 后无放逐/PK 后随机）、狼刀决策（全员一致/相对多数/加权随机；意见不一致时可再开 `wolf_consensus_rounds` 轮统一意见）、女巫同夜双药与自救、守卫同守/奶穿、警长竞选（上警发言及其顺序、退水、警徽流、1.5 票权、自爆吞警徽）、遗言规则、狼人自刀/空刀等。
 
 ## 开发
 
@@ -206,6 +206,8 @@ make watch VIEW=spectator                      # 只看公开信息（拟真观�
 make watch SEED=3 ARGS=--step                  # 指定 seed + 回车逐步推进
 make play SEAT=2                               # 亲自玩 2 号座位，其余内置 bot
 make watch AI_MODEL=ollama/qwen2.5-coder:7b    # LLM 自对局（需 Ollama）
+make watch AI_MODEL=ollama/qwen2.5-coder:7b WOLF_RULE=majority   # 狼刀相对多数即可
+make watch WOLF_ROUNDS=3                                        # 狼队最多三轮统一意见
 make sim GAMES=100                             # 纯引擎胜负统计（无叙述、极快）
 ```
 
