@@ -212,6 +212,6 @@ def build_wolf_night_prompt(
         f"== 你的记忆 ==\n{memory_context or '（暂无）'}\n\n"
         f"== 狼队私有 ==\n你的队友座位：{teammates}。\n{_wolf_consensus_section(obs)}\n"
         f"{night_private_context or '（无历史私谋）'}\n\n"
-        f"== 本次决策 ==\n分析局势（analysis）并给出今晚击杀目标 proposed_target。"
+        f"== 本次决策 ==\n分析局势（analysis）并提议今晚击杀目标 proposed_target。"
         f"候选座位（顺序无含义）：{cands}。{_SELF_CHECK}"
     )

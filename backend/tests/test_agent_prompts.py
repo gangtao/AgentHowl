@@ -156,4 +156,4 @@ def test_wolf_prompt_revote_round_shows_disagreement() -> None:
 
 def test_wolf_prompt_tolerates_missing_new_fields() -> None:
     up = build_wolf_night_prompt(_obs("NIGHT_WEREWOLF"), "", "", agent_seed=1)
-    assert "队友" in up and "提议" not in up
+    assert "队友" in up and "本轮队友已提案" not in up and "上一轮" not in up
