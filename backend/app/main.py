@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -9,6 +10,7 @@ from typing import TYPE_CHECKING
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
+from app.agent.skills import BUILTIN_SKILLS_DIR, SkillLibrary
 from app.api import rest, ws
 from app.api.deps import TokenRegistry
 from app.runtime.game_runner import LobbyError, RunnerTimeouts
@@ -27,12 +29,20 @@ def create_app(
     timeouts: RunnerTimeouts | None = None,
     data_dir: Path | None = None,
     agent_port_factory: Callable[[int, GameHandle], PlayerPort] | None = None,
+    skills_dir: Path | None = None,
 ) -> FastAPI:
     app = FastAPI(title="AgentHowl API", version="0.1.0")
+    dirs = [BUILTIN_SKILLS_DIR] + ([skills_dir] if skills_dir is not None else [])
+    skill_library = (
+        SkillLibrary.load([d for d in dirs if d.is_dir()])
+        if any(d.is_dir() for d in dirs)
+        else SkillLibrary.empty()
+    )
     app.state.games = GameRegistry(
         store=store or JsonFileEventStore(data_dir or Path("data/games")),
         timeouts=timeouts,
         agent_port_factory=agent_port_factory,
+        skill_library=skill_library,
     )
     app.state.tokens = TokenRegistry()
     app.include_router(rest.router, prefix="/api/v1")
@@ -55,4 +65,5 @@ def create_app(
     return app
 
 
-app = create_app()
+_env_skills = os.environ.get("AGENTHOWL_SKILLS_DIR")
+app = create_app(skills_dir=Path(_env_skills) if _env_skills else None)

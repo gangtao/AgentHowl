@@ -157,3 +157,60 @@ def test_create_agents_errors(client: TestClient) -> None:
         json={"preset": "std_9_kill_side", "agents": {"0": {"model": "y", "modle_speech": "z"}}},
     )
     assert r.status_code == 422
+
+
+def test_create_agents_with_skills_echo_and_unknown_400(
+    client: TestClient,
+) -> None:
+    r = client.post(
+        "/api/v1/games",
+        json={
+            "preset": "std_9_kill_side",
+            "agents": {
+                "*": {
+                    "model": "m",
+                    "skills": ["vote-discipline", "logic-chain"],
+                }
+            },
+        },
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["agents"]["*"]["skills"] == ["vote-discipline", "logic-chain"]
+    r = client.post(
+        "/api/v1/games",
+        json={
+            "preset": "std_9_kill_side",
+            "agents": {"*": {"model": "m", "skills": ["nope"]}},
+        },
+    )
+    assert r.status_code == 400 and "nope" in r.json()["detail"]
+
+
+def test_create_app_with_external_skills_dir(tmp_path) -> None:
+    from app.main import create_app
+    from app.runtime.game_runner import RunnerTimeouts
+    from app.store.event_store import InMemoryEventStore
+
+    d = tmp_path / "house-rule"
+    d.mkdir()
+    text = "---\nname: house-rule\ndescription: d\n---\n正文\n"
+    (d / "SKILL.md").write_text(text, encoding="utf-8")
+    app = create_app(
+        store=InMemoryEventStore(),
+        timeouts=RunnerTimeouts(speech_sec=5.0, action_sec=5.0),
+        skills_dir=tmp_path,
+    )
+    with TestClient(app) as c:
+        r = c.post(
+            "/api/v1/games",
+            json={
+                "preset": "std_9_kill_side",
+                "agents": {
+                    "*": {
+                        "model": "m",
+                        "skills": ["house-rule", "vote-discipline"],
+                    }
+                },
+            },
+        )
+        assert r.status_code == 200, r.text  # 外部 + 内置都可用

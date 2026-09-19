@@ -18,6 +18,7 @@ from app.agent.profile import (
     profile_for,
     validate_profiles,
 )
+from app.agent.skills import SkillLibrary, default_library
 from app.engine.config import GameConfig
 from app.engine.state import GameState
 from app.runtime.connection import ConnectionManager
@@ -81,11 +82,17 @@ class GameRegistry:
         store: EventStore,
         timeouts: RunnerTimeouts | None = None,
         agent_port_factory: Callable[[int, GameHandle], PlayerPort] | None = None,
+        skill_library: SkillLibrary | None = None,
     ) -> None:
         self._store = store
         self._timeouts = timeouts
         self._games: dict[str, GameHandle] = {}
         self._agent_port_factory = agent_port_factory
+        self._skill_library = skill_library
+
+    @property
+    def skill_library(self) -> SkillLibrary:
+        return self._skill_library if self._skill_library is not None else default_library()
 
     def create(
         self,
@@ -99,7 +106,7 @@ class GameRegistry:
     ) -> GameHandle:
         # 旧入口 ai_model 折叠为 "*" 默认档案；与显式 agents["*"] 冲突、座位键非法 → ValueError
         resolved = merge_profiles(agents, legacy_to_profiles(ai_model, ai_model_speech))
-        validate_profiles(resolved, config.num_players)
+        validate_profiles(resolved, config.num_players, self.skill_library)
         game_id = f"g_{secrets.token_hex(4)}"
         handle = GameHandle(
             game_id,
@@ -184,4 +191,4 @@ class GameRegistry:
 
         profile = handle.profile_for(seat)
         assert profile is not None
-        return build_agent_port(seat, handle.config, profile)
+        return build_agent_port(seat, handle.config, profile, self.skill_library)
