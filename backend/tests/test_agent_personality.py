@@ -43,6 +43,8 @@ def test_spec_guardrails(phrase: str) -> None:
         PersonalitySpec(description=f"我{phrase}啦")
     with pytest.raises(ValidationError, match="越权"):
         PersonalitySpec(style_notes=f"口头禅：{phrase}")
+    with pytest.raises(ValidationError, match="越权"):
+        PersonalitySpec(traits={f"x{phrase}": 0.5})
 
 
 def test_preset_validation() -> None:
@@ -52,15 +54,20 @@ def test_preset_validation() -> None:
         with pytest.raises(ValidationError):
             PersonalityPreset(system="MBTI", value=bad)
     PersonalityPreset(system="MBTI", value={"E": 0.8, "N": 0.3})
+    assert PersonalityPreset(system="MBTI", value={"e": 0.8}).value == {"E": 0.8}
     with pytest.raises(ValidationError):
         PersonalityPreset(system="MBTI", value={"X": 0.5})
     with pytest.raises(ValidationError):
         PersonalityPreset(system="MBTI", value={"E": 0.5, "I": 0.5})  # 同轴两字母
+    with pytest.raises(ValidationError):
+        PersonalityPreset(system="MBTI", value={})  # 空映射拒绝
     PersonalityPreset(system="BIG_FIVE", value={"O": 0.7, "N": 0.2})
     with pytest.raises(ValidationError):
         PersonalityPreset(system="BIG_FIVE", value="OCEAN")
     with pytest.raises(ValidationError):
         PersonalityPreset(system="BIG_FIVE", value={"Z": 0.5})
+    with pytest.raises(ValidationError):
+        PersonalityPreset(system="BIG_FIVE", value={})  # 空映射拒绝
 
 
 def test_render_order_and_bands() -> None:
@@ -97,8 +104,8 @@ def test_render_mbti_defaults_and_dict() -> None:
     text = render_personality(
         PersonalitySpec(preset=PersonalityPreset(system="MBTI", value="ISTJ"))
     )
-    assert "你比较" in text and "少说多听" in text  # I 轴 0.7 → 比较
-    assert "略微" in text and "只认已发生" in text  # S 轴 0.6 → 略微（信号弱）
+    assert "你比较" in text and "少说多听" in text  # I 轴默认 0.5 → 比较
+    assert "略微" in text and "只认已发生" in text  # S 轴默认 0.3 → 略微（信号弱）
     assert "用逻辑找狼" in text and "早定论" in text
     d = render_personality(
         PersonalitySpec(preset=PersonalityPreset(system="MBTI", value={"E": 0.9, "P": 0.2}))

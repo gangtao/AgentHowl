@@ -271,15 +271,17 @@ make watch AGENTS=agents.yaml
 - `traits`：自定义特质词表，`词 → 0–1 强度`（<0.34 略微、<0.67 比较、≥0.67 非常）；内置
   狼人杀语境词表 15 个——多疑、冲动、谨慎、从众、好胜、冷静、健谈、沉默、固执、圆滑、直率、
   乐观、悲观、逻辑、感性；词表外的词按形容词原样纳入。
-- `preset`：现成体系预设，`{system: MBTI, value: ENFP}`（四字母代码）或
-  `{system: MBTI, value: {E: 0.8, N: 0.6, F: 0.5, P: 0.5}}`（逐轴强度）；Big Five 同理，
-  `{system: BIG_FIVE, value: {O: 0.7, C: 0.3, E: 0.6, A: 0.5, N: 0.4}}`（键取 O/C/E/A/N）。
+- `preset`：现成体系预设之一（MBTI 与 Big Five 地位相同），`{system: MBTI, value: ENFP}`
+  （四字母代码）或 `{system: MBTI, value: {E: 0.8, N: 0.6, F: 0.5, P: 0.5}}`（逐轴强度）；
+  Big Five 同理，`{system: BIG_FIVE, value: {O: 0.7, C: 0.3, E: 0.6, A: 0.5, N: 0.4}}`
+  （键取 O/C/E/A/N）。
+- `style_notes`：口头禅/语气，≤100 字，渲染为「说话风格：…」，与 description 同受护栏。
 
 三层同时给出时按出现顺序即优先级（描述 > 特质 > 预设），相互冲突以先出现的描述为准；预设
 展开用隐式写法，不会在 prompt 里出现「MBTI」「Big Five」等体系名。护栏：`description` /
-`style_notes` 含越权或改规则短语（如「你知道谁是狼」「上帝视角」）建局即拒绝（CLI 参数错误 /
-API 422）。人设只影响 Agent 的说话风格与判断偏好，不改变游戏规则，也不出现在夜间私聊或反思
-prompt 里——只在系统 prompt 的静态段生效。
+`traits` 键 / `style_notes` 含越权或改规则短语（如「你知道谁是狼」「上帝视角」）建局即拒绝
+（CLI 参数错误 / API 422）。人设只影响 Agent 的说话风格与判断偏好，不改变游戏规则，也不出现
+在夜间私聊或反思 prompt 里——只在系统 prompt 的静态段生效。
 
 ```yaml
 seats:

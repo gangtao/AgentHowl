@@ -34,7 +34,7 @@ class PersonalitySpec(BaseModel):            # frozen, extra="forbid"
     preset: PersonalityPreset | None = None
     style_notes: str | None = None           # ≤ 100 字
     # 校验：四者不能全空（"personality: {}" 拒绝）；description / style_notes 含 FORBIDDEN_PHRASES 拒绝；
-    # traits 值越界拒绝；MBTI 字母/Big Five 键非法拒绝
+    # traits 值越界拒绝；MBTI 字母/Big Five 键非法拒绝；traits 键同受护栏（实现期附注）
 ```
 
 - 校验失败抛 pydantic `ValidationError`：API 请求体 422；CLI `load_agent_profiles` 已把 `ValidationError` 转成参数错误（含文件名与座位键）。

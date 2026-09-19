@@ -106,8 +106,12 @@ class PersonalityPreset(BaseModel):
                     raise ValueError(f"MBTI 代码非法：{self.value!r}（须如 INTJ，每轴取一字母）")
                 object.__setattr__(self, "value", code)
             else:
+                if not self.value:
+                    raise ValueError(f"{self.system} 预设 value 不能为空映射")
+                # 大小写不敏感（同 str 分支），归一存大写，与 4 字母写法行为一致
+                code_map = {k.strip().upper(): v for k, v in self.value.items()}
                 seen_axes: set[str] = set()
-                for k, v in self.value.items():
+                for k, v in code_map.items():
                     axis = next((a for a in MBTI_AXES if k in a), None)
                     if axis is None or len(k) != 1:
                         raise ValueError(f"MBTI 字母非法：{k!r}")
@@ -116,9 +120,12 @@ class PersonalityPreset(BaseModel):
                     seen_axes.add(axis)
                     if not 0.0 <= v <= 1.0:
                         raise ValueError(f"MBTI 强度须在 0–1：{k}={v}")
+                object.__setattr__(self, "value", code_map)
         else:
             if not isinstance(self.value, dict):
                 raise ValueError("BIG_FIVE 的 value 须为 {O/C/E/A/N: 0–1} 映射")
+            if not self.value:
+                raise ValueError(f"{self.system} 预设 value 不能为空映射")
             for k, v in self.value.items():
                 if k not in BIG_FIVE_KEYS:
                     raise ValueError(f"Big Five 键非法：{k!r}（可用 O/C/E/A/N）")
@@ -169,6 +176,7 @@ class PersonalitySpec(BaseModel):
             key = k.strip()
             if not key or len(key) > _MAX_TRAIT_LEN:
                 raise ValueError(f"特质词非法：{k!r}（须非空且 ≤ {_MAX_TRAIT_LEN} 字）")
+            _check_guardrail(key, "traits")
             if not 0.0 <= s <= 1.0:
                 raise ValueError(f"特质强度须在 0–1：{key}={s}")
             out[key] = s
@@ -201,6 +209,8 @@ def _preset_lines(preset: PersonalityPreset) -> list[str]:
                     f"你{_band(_MBTI_DEFAULT_STRENGTH[MBTI_AXES[i]])}倾向于{_MBTI_TEXT[letter]}。"
                 )
         else:
+            # dict 形式按输入插入序出句——插入序即用户优先级，与末句「以先出现的描述为准」
+            # 一致；不按轴序重排
             for letter, strength in preset.value.items():
                 lines.append(f"你{_band(strength)}倾向于{_MBTI_TEXT[letter]}。")
     else:

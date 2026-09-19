@@ -33,7 +33,8 @@ class AgentProfile(BaseModel):
     reflection_model: str | None = None
     thinking: bool = False
     temperature: float = Field(default=0.3, ge=0.0, le=2.0)
-    skills: tuple[str, ...] = ()  # 技能名或 "*"（issue #58）；元组以保持 frozen 模型可哈希
+    skills: tuple[str, ...] = ()  # 技能名或 "*"（issue #58）；元组（有序、不可变）
+    # 注意：配置了 personality 的档案不可哈希，勿以档案对象为键（见 #57 规格 §2）
     personality: PersonalitySpec | None = None  # 任意性格特点（issue #57）
 
     @field_validator("name", mode="before")
