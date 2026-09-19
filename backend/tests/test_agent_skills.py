@@ -47,6 +47,17 @@ def test_parse_minimal_and_metadata(tmp_path: Path) -> None:
     assert s2.roles == frozenset() and s2.phases == frozenset() and s2.priority == 0
 
 
+def test_parse_crlf_file(tmp_path: Path) -> None:
+    """终审 F7：CRLF 换行的 SKILL.md（如 Windows 编辑器保存）也应能正常解析。"""
+    d = tmp_path / "crlf-skill"
+    d.mkdir()
+    p = d / "SKILL.md"
+    text = "---\r\nname: crlf-skill\r\ndescription: 描述\r\n---\r\n正文内容\r\n"
+    p.write_bytes(text.encode("utf-8"))
+    s = parse_skill_md(p)
+    assert s.name == "crlf-skill" and s.body == "正文内容"
+
+
 @pytest.mark.parametrize(
     ("dirname", "text", "match"),
     [

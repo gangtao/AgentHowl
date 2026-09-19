@@ -191,4 +191,4 @@ class GameRegistry:
 
         profile = handle.profile_for(seat)
         assert profile is not None
-        return build_agent_port(seat, handle.config, profile, self.skill_library)
+        return build_agent_port(seat, handle.config, profile, library=self.skill_library)

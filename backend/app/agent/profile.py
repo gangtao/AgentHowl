@@ -1,8 +1,8 @@
 """AgentProfile（issue #56）：每座位独立的内置 Agent 配置。
 
 registry / api / cli 三个入口都只经本模块解析档案：查找（座位优先于 "*"）、
-键校验、旧字段（ai_model 等）折叠、到 AgentConfig 的映射。本期只有模型路由一组字段；
-人格 / 技能 / 记忆标识由各自 issue 增量添加，extra="forbid" 保证在此之前被拒绝而非静默忽略。
+键校验、旧字段（ai_model 等）折叠、到 AgentConfig 的映射。字段随各 issue 增量添加
+（#56 模型路由、#58 skills）；extra="forbid" 保证未实现的键被拒绝而非静默忽略。
 """
 
 from __future__ import annotations
@@ -32,7 +32,7 @@ class AgentProfile(BaseModel):
     reflection_model: str | None = None
     thinking: bool = False
     temperature: float = Field(default=0.3, ge=0.0, le=2.0)
-    skills: list[str] = Field(default_factory=list)  # 技能名或 "*"（issue #58）
+    skills: tuple[str, ...] = ()  # 技能名或 "*"（issue #58）；元组以保持 frozen 模型可哈希
 
     @field_validator("name", mode="before")
     @classmethod

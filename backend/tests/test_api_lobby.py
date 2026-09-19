@@ -214,3 +214,18 @@ def test_create_app_with_external_skills_dir(tmp_path) -> None:
             },
         )
         assert r.status_code == 200, r.text  # 外部 + 内置都可用
+
+
+def test_create_app_with_missing_skills_dir_fails_loud(tmp_path) -> None:
+    """终审 F3：显式给出的 skills_dir 不存在时不再静默过滤，应在启动时 fail-loud。"""
+    from app.agent.skills import SkillError
+    from app.main import create_app
+    from app.runtime.game_runner import RunnerTimeouts
+    from app.store.event_store import InMemoryEventStore
+
+    with pytest.raises(SkillError, match="目录"):
+        create_app(
+            store=InMemoryEventStore(),
+            timeouts=RunnerTimeouts(speech_sec=5.0, action_sec=5.0),
+            skills_dir=tmp_path / "nope",
+        )

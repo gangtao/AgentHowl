@@ -102,7 +102,7 @@ def test_importing_registry_does_not_load_litellm() -> None:
 def test_profile_skills_field_and_validation_against_library(tmp_path) -> None:
     from app.agent.skills import SkillLibrary
 
-    assert AgentProfile(model="m").skills == []
+    assert AgentProfile(model="m").skills == ()
     p = AgentProfile(model="m", skills=["a", "*"])
     d = tmp_path / "a"
     d.mkdir()

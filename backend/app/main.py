@@ -32,12 +32,12 @@ def create_app(
     skills_dir: Path | None = None,
 ) -> FastAPI:
     app = FastAPI(title="AgentHowl API", version="0.1.0")
-    dirs = [BUILTIN_SKILLS_DIR] + ([skills_dir] if skills_dir is not None else [])
-    skill_library = (
-        SkillLibrary.load([d for d in dirs if d.is_dir()])
-        if any(d.is_dir() for d in dirs)
-        else SkillLibrary.empty()
-    )
+    # 内置目录允许缺失（打包场景，容忍过滤）；显式指定的外部目录原样传给 load，
+    # 不存在则 fail-loud（终审 F3：此前 is_dir() 过滤会静默吞掉打错的路径）。
+    dirs: list[Path] = [BUILTIN_SKILLS_DIR] if BUILTIN_SKILLS_DIR.is_dir() else []
+    if skills_dir is not None:
+        dirs.append(skills_dir)  # 显式指定的外部目录不存在 → SkillLibrary.load 报错（fail-loud）
+    skill_library = SkillLibrary.load(dirs) if dirs else SkillLibrary.empty()
     app.state.games = GameRegistry(
         store=store or JsonFileEventStore(data_dir or Path("data/games")),
         timeouts=timeouts,

@@ -46,7 +46,9 @@ def _split_words(raw: str) -> list[str]:
 
 def parse_skill_md(path: Path) -> Skill:
     """解析并校验一个 SKILL.md；name 须与父目录名一致。"""
-    text = path.read_text(encoding="utf-8")
+    # replace 只是防御性保底：Path.read_text 默认按 universal newlines 已将 CRLF 归一为 LF，
+    # 但显式保留可避免依赖该隐式行为（终审 F7）。
+    text = path.read_text(encoding="utf-8").replace("\r\n", "\n")
     m = _FRONTMATTER_RE.match(text)
     if m is None:
         raise SkillError(f"{path}: 缺少 YAML frontmatter（--- ... ---）")

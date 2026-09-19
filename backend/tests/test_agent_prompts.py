@@ -224,12 +224,13 @@ def test_skills_text_inserted_before_decision_and_absent_when_empty() -> None:
     with_sk = build_prompt(
         DecisionKind.SPEECH, obs, "M", agent_seed=1, skills_text="【技能：x】\n做法"
     )
-    assert "== 技能提示 ==\n【技能：x】\n做法" in with_sk
+    preamble = "== 技能提示 ==\n以下为备选策略，按各篇「触发条件」选用其一为主，不必全部执行。\n"
+    assert f"{preamble}【技能：x】\n做法" in with_sk
     assert with_sk.index("== 技能提示 ==") < with_sk.index("== 本次决策 ==")
 
     wolf_obs = _obs("NIGHT_WEREWOLF")
     w0 = build_wolf_night_prompt(wolf_obs, "M", "P", agent_seed=1)
     assert w0 == build_wolf_night_prompt(wolf_obs, "M", "P", agent_seed=1, skills_text="")
     w1 = build_wolf_night_prompt(wolf_obs, "M", "P", agent_seed=1, skills_text="【技能：k】\n刀法")
-    assert "== 技能提示 ==\n【技能：k】\n刀法" in w1
+    assert f"{preamble}【技能：k】\n刀法" in w1
     assert w1.index("== 技能提示 ==") < w1.index("== 本次决策 ==")

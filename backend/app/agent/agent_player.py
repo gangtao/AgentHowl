@@ -156,6 +156,7 @@ def build_agent_port(
     seat: int,
     game_config: GameConfig,
     profile: AgentProfile,
+    *,
     library: SkillLibrary | None = None,
 ) -> AgentPlayerPort:
     """registry / CLI 默认工厂：真实 LiteLLM 客户端 + 档案映射的 AgentConfig（issue #56/#58）。"""

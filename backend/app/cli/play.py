@@ -140,7 +140,7 @@ def _wire_game(
         elif profile is not None:
             from app.agent.agent_player import build_agent_port
 
-            ports[seat] = build_agent_port(seat, config, profile, library)
+            ports[seat] = build_agent_port(seat, config, profile, library=library)
             used_profiles.append(profile)
         else:
             ports[seat] = BotPlayerPort(state_provider=state_of)

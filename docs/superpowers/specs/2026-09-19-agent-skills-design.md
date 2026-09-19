@@ -96,7 +96,7 @@ def default_library() -> SkillLibrary                            # 进程内缓�
 
 | name | roles | phases | 要点 |
 |---|---|---|---|
-| `seer-badge-flow` | SEER | SHERIFF_ELECTION SHERIFF_PK DAY_SPEECH | 上警报查验、金水/查杀口径、警徽流两夜顺序、何时留验 |
+| `seer-badge-flow` | SEER | NIGHT_SEER SHERIFF_ELECTION SHERIFF_PK DAY_SPEECH | 上警报查验、金水/查杀口径、警徽流两夜顺序、何时留验 |
 | `seer-vs-claim-jump` | SEER | SHERIFF_ELECTION SHERIFF_PK DAY_SPEECH VOTE | 对跳时的逻辑：查杀优先、点出对方漏洞、归票节奏 |
 | `wolf-claim-jump` | WEREWOLF | SHERIFF_ELECTION SHERIFF_PK DAY_SPEECH | 悍跳预言家：何时值得跳、编查验的原则、与队友配合 |
 | `wolf-counter-hook` | WEREWOLF | DAY_SPEECH VOTE | 倒钩：站真预言家、卖队友换信任、后期反水时机 |

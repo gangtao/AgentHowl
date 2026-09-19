@@ -164,7 +164,12 @@ def build_prompt(
         seat=obs.my_seat,
         state_version=obs.state_version,
     )
-    skills_block = f"== 技能提示 ==\n{skills_text}\n\n" if skills_text else ""
+    skills_block = (
+        f"== 技能提示 ==\n以下为备选策略，按各篇「触发条件」选用其一为主，不必全部执行。\n"
+        f"{skills_text}\n\n"
+        if skills_text
+        else ""
+    )
     return (
         f"== 局势 ==\n{_render_observation(obs)}\n\n"
         f"== 你的记忆 ==\n{memory_context or '（暂无）'}\n\n"
@@ -248,7 +253,12 @@ def build_wolf_night_prompt(
         seat=obs.my_seat,
         state_version=obs.state_version,
     )
-    skills_block = f"== 技能提示 ==\n{skills_text}\n\n" if skills_text else ""
+    skills_block = (
+        f"== 技能提示 ==\n以下为备选策略，按各篇「触发条件」选用其一为主，不必全部执行。\n"
+        f"{skills_text}\n\n"
+        if skills_text
+        else ""
+    )
     return (
         f"== 局势 ==\n{_render_observation(obs)}\n\n"
         f"== 你的记忆 ==\n{memory_context or '（暂无）'}\n\n"
