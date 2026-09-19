@@ -24,7 +24,7 @@ FORBIDDEN_PHRASES = ("你知道", "上帝视角", "无视规则", "绕过", "作
 class PersonalityPreset(BaseModel):          # frozen, extra="forbid"
     system: Literal["MBTI", "BIG_FIVE"]
     value: str | dict[str, float]
-    # MBTI：str 如 "INTJ"（四轴各一字母；默认强度 E/I、T/F、J/P=0.7，S/N=0.6），或 dict {"E":0.8,"N":0.3,"T":0.9,"J":0.6}
+    # MBTI：str 如 "INTJ"（四轴各一字母；默认强度 E/I、T/F、J/P=0.5（「比较」档），S/N=0.3（「略微」档；信号弱）），或 dict {"E":0.8,"N":0.3,"T":0.9,"J":0.6}
     #   —— dict 键为该轴取的字母，值 0–1 为该字母倾向强度；缺省轴不出句
     # BIG_FIVE：dict {"O":0.7,"C":0.4,"E":0.9,"A":0.2,"N":0.5}，值 0–1；str 不接受
 
