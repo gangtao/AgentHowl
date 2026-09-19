@@ -76,6 +76,8 @@ def test_parse_minimal_and_metadata(tmp_path: Path) -> None:
             "字符串",
         ),
         ("empty-body", "---\nname: empty-body\ndescription: d\n---\n\n", "正文"),
+        ("meta-list", "---\nname: meta-list\ndescription: d\nmetadata: []\n---\nb\n", "metadata"),
+        ("meta-str", '---\nname: meta-str\ndescription: d\nmetadata: ""\n---\nb\n', "metadata"),
     ],
 )
 def test_parse_errors(tmp_path: Path, dirname: str, text: str, match: str) -> None:

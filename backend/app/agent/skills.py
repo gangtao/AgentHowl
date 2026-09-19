@@ -66,7 +66,9 @@ def parse_skill_md(path: Path) -> Skill:
     desc = front.get("description")
     if not isinstance(desc, str) or not (1 <= len(desc.strip()) <= 1024):
         raise SkillError(f"{path}: description 须为 1-1024 字符的非空字符串")
-    meta = front.get("metadata") or {}
+    meta = front.get("metadata")
+    if meta is None:
+        meta = {}
     if not isinstance(meta, dict) or any(not isinstance(v, str) for v in meta.values()):
         raise SkillError(f"{path}: metadata 须为字符串到字符串的映射")
     try:
