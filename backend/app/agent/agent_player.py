@@ -24,6 +24,7 @@ from app.agent.decisions import (
 )
 from app.agent.llm_client import DEFAULT_MODEL, LLMClient
 from app.agent.memory import AgentMemory
+from app.agent.personality import PersonalitySpec, render_personality
 from app.agent.prompts import build_prompt, build_wolf_night_prompt, static_system_prompt
 from app.agent.skills import (
     DEFAULT_SKILL_BUDGET_CHARS,
@@ -66,6 +67,7 @@ class AgentPlayerPort:
         client: LLMClient,
         memory: AgentMemory | None = None,
         skills: Sequence[Skill] = (),
+        personality: PersonalitySpec | None = None,
     ) -> None:
         self._seat = seat
         self._game_config = game_config
@@ -74,6 +76,7 @@ class AgentPlayerPort:
         self.memory = memory if memory is not None else AgentMemory(seat)
         self._system_prompt: str | None = None  # 静态段按首个 observation 的角色惰性生成
         self._skills = tuple(skills)
+        self._personality = personality
         self.last_skills_used: tuple[str, ...] = ()
 
     async def on_events(self, events: list[Event]) -> None:
@@ -81,7 +84,10 @@ class AgentPlayerPort:
 
     def _system_for(self, obs: PlayerObservation) -> str:
         if self._system_prompt is None:
-            static = static_system_prompt(self._game_config, self._seat, obs.my_role)
+            personality_text = render_personality(self._personality) if self._personality else ""
+            static = static_system_prompt(
+                self._game_config, self._seat, obs.my_role, personality_text=personality_text
+            )
             if self._skills:
                 static += "\n== 你的技能 ==\n" + skills_index_text(self._skills)
             self._system_prompt = static
@@ -177,4 +183,5 @@ def build_agent_port(
         agent_config=to_agent_config(profile, game_config),
         client=LiteLLMInstructorClient(),
         skills=skills,
+        personality=profile.personality,
     )

@@ -113,3 +113,19 @@ def test_profile_skills_field_and_validation_against_library(tmp_path) -> None:
     validate_profiles(bad, num_players=9)  # 无库不校验技能
     with pytest.raises(ValueError, match="zzz"):
         validate_profiles(bad, num_players=9, library=lib)
+
+
+def test_profile_personality_field() -> None:
+    from app.agent.personality import PersonalitySpec
+
+    assert AgentProfile(model="m").personality is None
+    p = AgentProfile.model_validate(
+        {"model": "m", "personality": {"description": "老油条", "traits": {"多疑": 0.9}}}
+    )
+    assert isinstance(p.personality, PersonalitySpec) and p.personality.traits == {"多疑": 0.9}
+    with pytest.raises(ValidationError):
+        AgentProfile.model_validate(
+            {"model": "m", "personality": {"description": "我你知道谁是狼"}}
+        )
+    with pytest.raises(ValidationError):
+        AgentProfile.model_validate({"model": "m", "personality": {}})

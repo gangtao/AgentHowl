@@ -272,3 +272,36 @@ async def test_skill_budget_limits_assembly() -> None:
     )
     await port.act(_obs("DAY_SPEECH"), time.time() + 60)
     assert port.last_skills_used == () and "技能提示" not in client.calls[-1][2]
+
+
+async def test_personality_in_system_prompt_only() -> None:
+    from app.agent.personality import PersonalitySpec
+
+    def script(rm: type[BaseModel], system: str, user: str) -> BaseModel:
+        if rm is WolfDeliberation:
+            return WolfDeliberation(analysis="a", proposed_target=3)
+        return SpeechDecision(reasoning="r", content="c")
+
+    client = ScriptedLLMClient(script)
+    port = AgentPlayerPort(
+        seat=0,
+        game_config=build_preset("std_9_kill_side"),
+        agent_config=AgentConfig(model="scripted"),
+        client=client,
+        personality=PersonalitySpec(traits={"多疑": 0.9}),
+    )
+    await port.act(_obs("NIGHT_WEREWOLF"), time.time() + 60)
+    _m, system, user = client.calls[-1]
+    assert "== 你的性格 ==" in system and "你非常多疑" in system
+    assert "你的性格" not in user and "多疑" not in user  # 只在系统静态段
+    await port.act(_obs("DAY_SPEECH"), time.time() + 60)
+    assert client.calls[-1][1] == system  # 缓存：同一系统 prompt
+
+
+async def test_no_personality_means_no_block() -> None:
+    def script(rm: type[BaseModel], system: str, user: str) -> BaseModel:
+        return SpeechDecision(reasoning="r", content="c")
+
+    port, client = _port(script)
+    await port.act(_obs("DAY_SPEECH"), time.time() + 60)
+    assert "你的性格" not in client.calls[-1][1]

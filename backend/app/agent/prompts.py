@@ -58,14 +58,19 @@ def shuffle_candidates(
     return out
 
 
-def static_system_prompt(config: GameConfig, seat: int, role: RoleType) -> str:
+def static_system_prompt(
+    config: GameConfig, seat: int, role: RoleType, personality_text: str = ""
+) -> str:
     roles_desc = "、".join(f"{slot.role.value}x{slot.count}" for slot in config.roles)
     win = _WIN_TEXT.get(config.win_condition, str(config.win_condition))
     sheriff = "启用警长（1.5 票与发言顺序权）" if config.sheriff.enabled else "无警长"
+    # 人设段（issue #57）：只在静态段，位于角色行之后、通用约束句之前；为空时输出逐字不变
+    personality_block = f"== 你的性格 ==\n{personality_text}\n" if personality_text else ""
     return (
         "你在玩狼人杀。服务器是唯一裁决者，你只提交意图。\n"
         f"本局配置：{config.num_players} 人（{roles_desc}）；胜利条件：{win}；{sheriff}。\n"
         f"你是 {seat} 号，角色：{role.value}。{ROLE_BRIEFS[role]}\n"
+        f"{personality_block}"
         "发言用中文，符合角色立场；狼人白天绝不能泄露夜间的私下谋划。"
     )
 

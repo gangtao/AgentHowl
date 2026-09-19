@@ -181,3 +181,19 @@ def test_render_agent_roster() -> None:
     assert "技能 logic-chain,vote-discipline" in with_skills
     no_skills = render_agent_roster({"0": AgentProfile(model="m")}, num_players=1, human_seat=None)
     assert "技能" not in no_skills
+
+    from app.agent.personality import PersonalityPreset, PersonalitySpec
+
+    with_p = render_agent_roster(
+        {
+            "0": AgentProfile(
+                model="m",
+                personality=PersonalitySpec(preset=PersonalityPreset(system="MBTI", value="enfp")),
+            )
+        },
+        num_players=1,
+        human_seat=None,
+    )
+    assert "性格 ENFP" in with_p
+    no_p = render_agent_roster({"0": AgentProfile(model="m")}, num_players=1, human_seat=None)
+    assert "性格" not in no_p
