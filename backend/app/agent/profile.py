@@ -1,8 +1,8 @@
 """AgentProfile（issue #56）：每座位独立的内置 Agent 配置。
 
 registry / api / cli 三个入口都只经本模块解析档案：查找（座位优先于 "*"）、
-键校验、旧字段（ai_model 等）折叠、到 AgentConfig 的映射。本期只有模型路由一组字段；
-人格 / 技能 / 记忆标识由各自 issue 增量添加，extra="forbid" 保证在此之前被拒绝而非静默忽略。
+键校验、旧字段（ai_model 等）折叠、到 AgentConfig 的映射。字段随各 issue 增量添加
+（#56 模型路由、#58 skills）；extra="forbid" 保证未实现的键被拒绝而非静默忽略。
 """
 
 from __future__ import annotations
@@ -11,12 +11,14 @@ from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.agent.skills import SkillError
 from app.engine.config import GameConfig
 
 if TYPE_CHECKING:
     # 仅类型标注用；运行期改在 to_agent_config 内局部 import，
     # 避免 registry 等模块导入本档案模块时连带加载 agent_player → litellm（惰性加载设计）。
     from app.agent.agent_player import AgentConfig
+    from app.agent.skills import SkillLibrary
 
 STAR = "*"  # 默认档案键：未单独配置的空位
 
@@ -30,6 +32,7 @@ class AgentProfile(BaseModel):
     reflection_model: str | None = None
     thinking: bool = False
     temperature: float = Field(default=0.3, ge=0.0, le=2.0)
+    skills: tuple[str, ...] = ()  # 技能名或 "*"（issue #58）；元组以保持 frozen 模型可哈希
 
     @field_validator("name", mode="before")
     @classmethod
@@ -54,13 +57,21 @@ def profile_for(agents: AgentProfiles, seat: int) -> AgentProfile | None:
     return p if p is not None else agents.get(STAR)
 
 
-def validate_profiles(agents: AgentProfiles, num_players: int) -> None:
-    """键只能是 "*" 或 0..num_players-1 的十进制座位号。"""
+def validate_profiles(
+    agents: AgentProfiles, num_players: int, library: SkillLibrary | None = None
+) -> None:
+    """键只能是 "*" 或 0..num_players-1 的十进制座位号；给了 library 时连带校验技能名。"""
     for key in agents:
         if key == STAR:
             continue
         if not key.isdecimal() or str(int(key)) != key or not 0 <= int(key) < num_players:
             raise ValueError(f"agents 键 {key!r} 非法：须为 '*' 或 0..{num_players - 1} 的座位号")
+    if library is not None:
+        for profile in agents.values():
+            try:
+                library.resolve(profile.skills)
+            except SkillError as exc:
+                raise ValueError(str(exc)) from exc
 
 
 def legacy_to_profiles(

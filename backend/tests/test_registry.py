@@ -177,3 +177,46 @@ async def test_human_joined_seat_ignores_profile() -> None:
     assert handle.lobby.roster()[0].display_name == "Alice"
     assert handle.task is not None
     handle.task.cancel()
+
+
+def test_create_validates_skills_against_library(tmp_path) -> None:
+    from app.agent.profile import AgentProfile
+    from app.agent.skills import SkillLibrary
+    from app.store.event_store import InMemoryEventStore
+
+    d = tmp_path / "custom-skill"
+    d.mkdir()
+    text = "---\nname: custom-skill\ndescription: d\n---\n正文\n"
+    (d / "SKILL.md").write_text(text, encoding="utf-8")
+    reg = GameRegistry(store=InMemoryEventStore(), skill_library=SkillLibrary.load([tmp_path]))
+    cfg = build_preset("std_9_kill_side").model_copy(update={"seed": 5})
+    handle = reg.create(
+        cfg,
+        allow_spectators=False,
+        agents={"*": AgentProfile(model="m", skills=["custom-skill"])},
+    )
+    assert handle.profile_for(0) is not None
+    with pytest.raises(ValueError, match="nope"):
+        reg.create(
+            cfg,
+            allow_spectators=False,
+            agents={"*": AgentProfile(model="m", skills=["nope"])},
+        )
+
+
+def test_create_without_library_uses_builtin(tmp_path) -> None:
+    from app.agent.profile import AgentProfile
+
+    reg = _registry()
+    cfg = build_preset("std_9_kill_side").model_copy(update={"seed": 5})
+    reg.create(
+        cfg,
+        allow_spectators=False,
+        agents={"*": AgentProfile(model="m", skills=["vote-discipline"])},
+    )
+    with pytest.raises(ValueError, match="no-such-skill"):
+        reg.create(
+            cfg,
+            allow_spectators=False,
+            agents={"*": AgentProfile(model="m", skills=["no-such-skill"])},
+        )

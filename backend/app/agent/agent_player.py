@@ -8,7 +8,9 @@ LLM 任何失败一律上抛。狼夜私有推理是独立调用，产出只进 
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
+from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
 from pydantic import BaseModel
@@ -23,6 +25,13 @@ from app.agent.decisions import (
 from app.agent.llm_client import DEFAULT_MODEL, LLMClient
 from app.agent.memory import AgentMemory
 from app.agent.prompts import build_prompt, build_wolf_night_prompt, static_system_prompt
+from app.agent.skills import (
+    DEFAULT_SKILL_BUDGET_CHARS,
+    Skill,
+    assemble_skills,
+    select_skills,
+    skills_index_text,
+)
 from app.engine.actions import Action
 from app.engine.config import GameConfig
 from app.engine.events import Event
@@ -30,6 +39,9 @@ from app.engine.observation import PlayerObservation
 
 if TYPE_CHECKING:
     from app.agent.profile import AgentProfile
+    from app.agent.skills import SkillLibrary
+
+logger = logging.getLogger(__name__)
 
 
 class AgentConfig(BaseModel):
@@ -41,6 +53,8 @@ class AgentConfig(BaseModel):
     deadline_margin_s: float = 2.0  # 剩余时间低于此不再发起 LLM 调用
     reflection_min_remaining_s: float = 10.0  # 剩余时间高于此才做惰性反思
     thinking: bool = False  # 开启推理模型思考（软 JSON 解析；更强推理但明显更慢）
+    # 每次决策装配技能正文的字符预算（issue #58）
+    skill_budget_chars: int = DEFAULT_SKILL_BUDGET_CHARS
 
 
 class AgentPlayerPort:
@@ -51,6 +65,7 @@ class AgentPlayerPort:
         agent_config: AgentConfig,
         client: LLMClient,
         memory: AgentMemory | None = None,
+        skills: Sequence[Skill] = (),
     ) -> None:
         self._seat = seat
         self._game_config = game_config
@@ -58,13 +73,18 @@ class AgentPlayerPort:
         self._client = client
         self.memory = memory if memory is not None else AgentMemory(seat)
         self._system_prompt: str | None = None  # 静态段按首个 observation 的角色惰性生成
+        self._skills = tuple(skills)
+        self.last_skills_used: tuple[str, ...] = ()
 
     async def on_events(self, events: list[Event]) -> None:
         await self.memory.on_events(events)
 
     def _system_for(self, obs: PlayerObservation) -> str:
         if self._system_prompt is None:
-            self._system_prompt = static_system_prompt(self._game_config, self._seat, obs.my_role)
+            static = static_system_prompt(self._game_config, self._seat, obs.my_role)
+            if self._skills:
+                static += "\n== 你的技能 ==\n" + skills_index_text(self._skills)
+            self._system_prompt = static
         return self._system_prompt
 
     def _model_for(self, kind: DecisionKind) -> str:
@@ -88,6 +108,12 @@ class AgentPlayerPort:
                 self._cfg.temperature,
             )
 
+        selected = select_skills(self._skills, observation.my_role, observation.phase)
+        skills_text, used = assemble_skills(selected, self._cfg.skill_budget_chars)
+        self.last_skills_used = used
+        if used:
+            logger.info("seat=%d phase=%s skills=%s", self._seat, observation.phase, ",".join(used))
+
         kind = decision_kind_for(observation)
         if kind is DecisionKind.WOLF_NIGHT:
             user_prompt = build_wolf_night_prompt(
@@ -95,6 +121,7 @@ class AgentPlayerPort:
                 self.memory.build_context(),
                 self.memory.night_private_context(),
                 agent_seed=self._cfg.agent_seed,
+                skills_text=skills_text,
             )
         else:
             # 注意：这条路径拿不到 night_private —— 公私分离
@@ -103,6 +130,7 @@ class AgentPlayerPort:
                 observation,
                 self.memory.build_context(),
                 agent_seed=self._cfg.agent_seed,
+                skills_text=skills_text,
             )
 
         budget = deadline_ts - time.time() - self._cfg.deadline_margin_s
@@ -124,14 +152,29 @@ class AgentPlayerPort:
         return to_action(kind, decision, observation.my_seat)
 
 
-def build_agent_port(seat: int, game_config: GameConfig, profile: AgentProfile) -> AgentPlayerPort:
-    """registry / CLI 默认工厂：真实 LiteLLM 客户端 + 档案映射的 AgentConfig（issue #56）。"""
+def build_agent_port(
+    seat: int,
+    game_config: GameConfig,
+    profile: AgentProfile,
+    *,
+    library: SkillLibrary | None = None,
+) -> AgentPlayerPort:
+    """registry / CLI 默认工厂：真实 LiteLLM 客户端 + 档案映射的 AgentConfig（issue #56/#58）。"""
     from app.agent.llm_client import LiteLLMInstructorClient
     from app.agent.profile import to_agent_config
+
+    skills: Sequence[Skill] = ()
+    if profile.skills:
+        if library is None:
+            from app.agent.skills import default_library
+
+            library = default_library()
+        skills = library.resolve(profile.skills)
 
     return AgentPlayerPort(
         seat=seat,
         game_config=game_config,
         agent_config=to_agent_config(profile, game_config),
         client=LiteLLMInstructorClient(),
+        skills=skills,
     )

@@ -89,3 +89,36 @@ async def test_single_game_token_bench() -> None:
     )
     assert meter.calls > 0, "未捕获任何 LLM 调用——检查 litellm.callbacks 钩子"
     assert total > 0, "token 累计为 0——检查 usage 上报"
+
+
+@pytest.mark.smoke
+async def test_wolf_team_kill_skill_ab_smoke() -> None:
+    """A/B 冒烟：wolf-team-kill 开/关各一局，打印狼队空刀率（不断言方向）。"""
+    if not SMOKE_MODEL:
+        pytest.skip("AGENTHOWL_SMOKE_MODEL 未设置")
+    from app.agent.profile import AgentProfile
+    from app.engine.events import EventType, WolfKillDecidedPayload
+
+    rates: dict[str, float] = {}
+    for label, skills in (("off", []), ("on", ["wolf-team-kill"])):
+        registry = GameRegistry(
+            InMemoryEventStore(), RunnerTimeouts(speech_sec=120.0, action_sec=120.0)
+        )
+        config = build_preset("std_9_kill_side").model_copy(update={"seed": 11})
+        handle = registry.create(
+            config,
+            allow_spectators=False,
+            agents={"*": AgentProfile(model=SMOKE_MODEL, skills=skills)},
+        )
+        registry.start(handle, fill_with_bots=True)
+        assert handle.task is not None
+        await asyncio.wait_for(handle.task, timeout=1800)
+        events = registry.store.load_events(handle.game_id)
+        decided = [e for e in events if e.type == EventType.WOLF_KILL_DECIDED]
+        empties = sum(
+            1
+            for e in decided
+            if isinstance(e.payload, WolfKillDecidedPayload) and e.payload.target is None
+        )
+        rates[label] = empties / max(1, len(decided))
+    print(f"wolf-team-kill A/B 空刀率: {rates}")

@@ -8,6 +8,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 from collections.abc import Awaitable, Callable
+from pathlib import Path
 
 import yaml
 from pydantic import ValidationError
@@ -20,6 +21,7 @@ from app.agent.profile import (
     profile_for,
     validate_profiles,
 )
+from app.agent.skills import BUILTIN_SKILLS_DIR, SkillError, SkillLibrary, default_library
 from app.cli.render import render_agent_roster, render_event
 from app.engine.config import GameConfig, WolfKillRule, build_preset
 from app.engine.engine import RosterEntry
@@ -116,6 +118,7 @@ def _wire_game(
     *,
     human_seat: int | None = None,
     agents: AgentProfiles | None = None,
+    library: SkillLibrary | None = None,
 ) -> tuple[GameRunner, ConnectionManager, dict[int, PlayerPort]]:
     """装配 store/roster/ports/conns/runner（不订阅、不 run）。agents 缺省=全随机 bot。"""
     from app.store.event_store import InMemoryEventStore
@@ -137,7 +140,7 @@ def _wire_game(
         elif profile is not None:
             from app.agent.agent_player import build_agent_port
 
-            ports[seat] = build_agent_port(seat, config, profile)
+            ports[seat] = build_agent_port(seat, config, profile, library=library)
             used_profiles.append(profile)
         else:
             ports[seat] = BotPlayerPort(state_provider=state_of)
@@ -170,13 +173,14 @@ async def run_watch(
     delay: float,
     step: bool,
     agents: AgentProfiles | None = None,
+    library: SkillLibrary | None = None,
     read_line: ReadLine = default_read_line,
 ) -> GameState:
     """看局：打印型订阅者按 view 叙述，delay/step 限速，跑到 GAME_OVER。
 
     agents 按座位配置 LLM Agent（座位号字符串或 "*"）；未匹配的座位为内置随机 bot。
     """
-    runner, conns, _ = _wire_game(config, agents=agents)
+    runner, conns, _ = _wire_game(config, agents=agents, library=library)
     print(render_agent_roster(agents or {}, config.num_players, None))
 
     async def on_events(events: list[Event]) -> None:
@@ -236,6 +240,9 @@ def main(argv: list[str] | None = None) -> None:
         default=None,
         help="狼队提案最多几轮，不一致则重提（默认 2）",
     )
+    parser.add_argument(
+        "--skills-dir", default=None, help="外部技能目录（SKILL.md 子目录；同名覆盖内置）"
+    )
     args = parser.parse_args(argv)
 
     config = build_preset(args.preset).model_copy(update={"seed": args.seed})
@@ -258,9 +265,14 @@ def main(argv: list[str] | None = None) -> None:
         thinking=args.thinking,
     )
     try:
+        library = (
+            SkillLibrary.load([BUILTIN_SKILLS_DIR, Path(args.skills_dir)])
+            if args.skills_dir
+            else default_library()
+        )
         agents = merge_profiles(args.agents, legacy)
-        validate_profiles(agents, config.num_players)
-    except ValueError as exc:
+        validate_profiles(agents, config.num_players, library)
+    except (ValueError, SkillError) as exc:  # SkillError 是 ValueError 子类，列出以示意图
         parser.error(str(exc))
 
     if args.seat is None:
@@ -271,6 +283,7 @@ def main(argv: list[str] | None = None) -> None:
                 delay=args.delay,
                 step=args.step,
                 agents=agents,
+                library=library,
             )
         )
     else:
@@ -281,6 +294,7 @@ def main(argv: list[str] | None = None) -> None:
                 config,
                 seat=args.seat,
                 agents=agents,
+                library=library,
             )
         )
 

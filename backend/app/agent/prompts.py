@@ -155,6 +155,7 @@ def build_prompt(
     memory_context: str,
     *,
     agent_seed: int,
+    skills_text: str = "",
 ) -> str:
     """昼间与非狼夜间决策的 user prompt。注意：本函数拿不到 night_private 分区。"""
     cands = shuffle_candidates(
@@ -163,10 +164,16 @@ def build_prompt(
         seat=obs.my_seat,
         state_version=obs.state_version,
     )
+    skills_block = (
+        f"== 技能提示 ==\n以下为备选策略，按各篇「触发条件」选用其一为主，不必全部执行。\n"
+        f"{skills_text}\n\n"
+        if skills_text
+        else ""
+    )
     return (
         f"== 局势 ==\n{_render_observation(obs)}\n\n"
         f"== 你的记忆 ==\n{memory_context or '（暂无）'}\n\n"
-        f"== 本次决策 ==\n{_instruction_for(kind, obs, cands)}"
+        f"{skills_block}== 本次决策 ==\n{_instruction_for(kind, obs, cands)}"
     )
 
 
@@ -236,6 +243,7 @@ def build_wolf_night_prompt(
     night_private_context: str,
     *,
     agent_seed: int,
+    skills_text: str = "",
 ) -> str:
     """狼人夜间私有推理调用的 user prompt —— 唯一能接收私有分区的装配函数。"""
     teammates: Any = obs.private.get("teammates", [])
@@ -245,11 +253,17 @@ def build_wolf_night_prompt(
         seat=obs.my_seat,
         state_version=obs.state_version,
     )
+    skills_block = (
+        f"== 技能提示 ==\n以下为备选策略，按各篇「触发条件」选用其一为主，不必全部执行。\n"
+        f"{skills_text}\n\n"
+        if skills_text
+        else ""
+    )
     return (
         f"== 局势 ==\n{_render_observation(obs)}\n\n"
         f"== 你的记忆 ==\n{memory_context or '（暂无）'}\n\n"
         f"== 狼队私有 ==\n你的队友座位：{teammates}。\n{_wolf_consensus_section(obs)}\n"
         f"{night_private_context or '（无历史私谋）'}\n\n"
-        f"== 本次决策 ==\n分析局势（analysis）并提议今晚击杀目标 proposed_target。"
+        f"{skills_block}== 本次决策 ==\n分析局势（analysis）并提议今晚击杀目标 proposed_target。"
         f"候选座位（顺序无含义）：{cands}。{_SELF_CHECK}"
     )

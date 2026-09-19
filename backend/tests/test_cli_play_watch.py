@@ -178,3 +178,39 @@ def test_apply_wolf_knobs() -> None:
     assert random_cfg.wolf_kill_rule == WolfKillRule.RANDOM_PROPOSAL
     unanimous_cfg = _apply_wolf_knobs(base, "unanimous", 1)
     assert unanimous_cfg.wolf_kill_rule == WolfKillRule.UNANIMOUS_OR_NO_KILL
+
+
+def test_wire_game_passes_skills_to_agent_ports(tmp_path) -> None:
+    from app.agent.agent_player import AgentPlayerPort
+    from app.agent.profile import AgentProfile
+    from app.agent.skills import SkillLibrary
+
+    d = tmp_path / "ext-skill"
+    d.mkdir()
+    (d / "SKILL.md").write_text(
+        "---\nname: ext-skill\ndescription: d\n---\n外部正文\n", encoding="utf-8"
+    )
+    lib = SkillLibrary.load([tmp_path])
+    config = build_preset("std_9_kill_side").model_copy(update={"seed": 3})
+    _r, _c, ports = _wire_game(
+        config, agents={"*": AgentProfile(model="m", skills=["ext-skill"])}, library=lib
+    )
+    p = ports[0]
+    assert isinstance(p, AgentPlayerPort) and [s.name for s in p._skills] == ["ext-skill"]
+
+
+def test_main_rejects_unknown_skill_and_accepts_skills_dir(tmp_path, capsys) -> None:
+    from app.cli.play import main
+
+    d = tmp_path / "skills" / "house"
+    d.mkdir(parents=True)
+    (d / "SKILL.md").write_text("---\nname: house\ndescription: d\n---\n正文\n", encoding="utf-8")
+    agents = tmp_path / "agents.yaml"
+    agents.write_text('seats:\n  "*": {model: ollama/a, skills: [house]}\n', encoding="utf-8")
+    with pytest.raises(SystemExit) as e:  # 未指定 --skills-dir → house 未知
+        main(["--agents", str(agents)])
+    assert e.value.code == 2 and "house" in capsys.readouterr().err
+    missing = tmp_path / "nope"
+    with pytest.raises(SystemExit) as e:
+        main(["--agents", str(agents), "--skills-dir", str(missing)])
+    assert e.value.code == 2 and "目录" in capsys.readouterr().err

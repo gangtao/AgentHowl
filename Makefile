@@ -20,6 +20,7 @@ THINKING        ?=     # 非空则开启推理模型思考（更强推理但慢�
 WOLF_RULE       ?=     # 狼刀裁决规则 unanimous|majority|random（缺省=预设默认 unanimous）
 WOLF_ROUNDS     ?=     # 狼队提案最多几轮，不一致则重提（缺省 2）
 AGENTS          ?=     # 每座位 Agent 档案 YAML（seats: {座位号|'*': {model,...}}）
+SKILLS_DIR      ?=     # 外部技能目录（SKILL.md 子目录；同名覆盖内置）
 ARGS            ?=
 
 # 由 AI_MODEL / *_MODEL / THINKING 组装的 LLM 相关命令行片段
@@ -27,7 +28,8 @@ _AIFLAGS := $(if $(AI_MODEL),--ai-model $(AI_MODEL),) \
 	$(if $(AI_MODEL_SPEECH),--ai-model-speech $(AI_MODEL_SPEECH),) \
 	$(if $(REFLECTION_MODEL),--reflection-model $(REFLECTION_MODEL),) \
 	$(if $(THINKING),--thinking,) \
-	$(if $(AGENTS),--agents $(AGENTS),)
+	$(if $(AGENTS),--agents $(AGENTS),) \
+	$(if $(SKILLS_DIR),--skills-dir $(SKILLS_DIR),)
 
 # 由 WOLF_RULE / WOLF_ROUNDS 组装的狼刀规则旋钮
 _WOLFFLAGS := $(if $(WOLF_RULE),--wolf-rule $(WOLF_RULE),) \
@@ -85,12 +87,12 @@ serve: ## 启动 API 服务（uvicorn，热重载，http://localhost:8000）
 	cd $(BACKEND) && $(UV) uvicorn app.main:app --reload
 
 .PHONY: watch
-watch: ## 终端看局（可选 SEED= VIEW=gm|spectator|seat:N AI_MODEL= THINKING=1 WOLF_RULE= WOLF_ROUNDS= AGENTS= ARGS=）
+watch: ## 终端看局（可选 SEED= VIEW=gm|spectator|seat:N AI_MODEL= THINKING=1 WOLF_RULE= WOLF_ROUNDS= AGENTS= SKILLS_DIR= ARGS=）
 	cd $(BACKEND) && $(UV) python -m app.cli.play --seed $(SEED) --view $(VIEW) $(_AIFLAGS) $(_WOLFFLAGS) $(ARGS)
 
 .PHONY: play
 play: ## 终端玩局，你扮演 SEAT 座位（例：make play SEAT=2 AI_MODEL=ollama/qwen2.5-coder:7b）
-	@test -n "$(SEAT)" || { echo "用法：make play SEAT=<座位号>  [AI_MODEL= THINKING=1 WOLF_RULE= WOLF_ROUNDS= AGENTS= ARGS=]"; exit 2; }
+	@test -n "$(SEAT)" || { echo "用法：make play SEAT=<座位号>  [AI_MODEL= THINKING=1 WOLF_RULE= WOLF_ROUNDS= AGENTS= SKILLS_DIR= ARGS=]"; exit 2; }
 	cd $(BACKEND) && $(UV) python -m app.cli.play --seat $(SEAT) $(_AIFLAGS) $(_WOLFFLAGS) $(ARGS)
 
 .PHONY: sim
