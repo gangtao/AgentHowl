@@ -8,6 +8,7 @@ from __future__ import annotations
 import os
 import sys
 
+from app.agent.personality import personality_summary
 from app.agent.profile import AgentProfiles, profile_for
 from app.engine.config import Faction, RoleType
 from app.engine.events import (
@@ -217,5 +218,7 @@ def render_agent_roster(agents: AgentProfiles, num_players: int, human_seat: int
         parts.append(f"T={p.temperature}")
         if p.skills:
             parts.append("技能 " + ",".join(p.skills))
+        if p.personality is not None:
+            parts.append(f"性格 {personality_summary(p.personality)}")
         lines.append(f"{seat}号 " + " · ".join(parts))
     return "\n".join(lines)

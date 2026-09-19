@@ -214,3 +214,28 @@ def test_main_rejects_unknown_skill_and_accepts_skills_dir(tmp_path, capsys) -> 
     with pytest.raises(SystemExit) as e:
         main(["--agents", str(agents), "--skills-dir", str(missing)])
     assert e.value.code == 2 and "目录" in capsys.readouterr().err
+
+
+def test_load_agent_profiles_personality_and_guardrail(tmp_path) -> None:
+    from app.cli.play import load_agent_profiles
+
+    good = tmp_path / "p.yaml"
+    good.write_text(
+        'seats:\n  "0": {model: ollama/a,\n'
+        "    personality: {description: 老油条, traits: {多疑: 0.9}}}\n"
+        '  "3": {model: ollama/b, personality: {preset: {system: MBTI, value: enfp},\n'
+        "    style_notes: 爱用感叹号}}\n",
+        encoding="utf-8",
+    )
+    agents = load_agent_profiles(str(good))
+    assert agents["0"].personality is not None and agents["0"].personality.traits == {"多疑": 0.9}
+    assert agents["3"].personality is not None and agents["3"].personality.preset is not None
+    assert agents["3"].personality.preset.value == "ENFP"
+
+    bad = tmp_path / "bad.yaml"
+    bad.write_text(
+        'seats:\n  "0": {model: ollama/a, personality: {description: 你知道谁是狼}}\n',
+        encoding="utf-8",
+    )
+    with pytest.raises(argparse.ArgumentTypeError, match="越权"):
+        load_agent_profiles(str(bad))

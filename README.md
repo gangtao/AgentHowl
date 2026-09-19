@@ -251,13 +251,40 @@ uv run python -m app.cli.simulate --games 100                 # 纯引擎胜负�
 ```yaml
 # agents.yaml
 seats:
-  "0": { name: 老张, model: ollama/qwen2.5-coder:7b, thinking: false, skills: [seer-badge-flow, logic-chain] }
-  "3": { model: ollama/qwen3:8b, thinking: true, temperature: 0.7 }
+  "0": { name: 老张, model: ollama/qwen2.5-coder:7b, thinking: false, skills: [seer-badge-flow, logic-chain],
+         personality: {description: 老油条，话不多但每句都带钩子, traits: {多疑: 0.9, 冷静: 0.8}} }
+  "3": { model: ollama/qwen3:8b, thinking: true, temperature: 0.7,
+         personality: {preset: {system: MBTI, value: ENFP}, style_notes: 爱用感叹号} }
   "*": { model: ollama/qwen2.5-coder:7b }   # 其余座位的默认档案
 ```
 
 ```bash
 make watch AGENTS=agents.yaml
+```
+
+### 人格 / Personality
+
+每座位档案的 `personality` 字段（issue #57）给该座位的 Agent 配置任意性格特点，三层输入可任意
+组合，翻译成系统 prompt 静态段的一句「你的性格：…」加若干行行为倾向句：
+
+- `description`：自由文本描述，≤300 字，如「老油条，话不多但每句都带钩子」。
+- `traits`：自定义特质词表，`词 → 0–1 强度`（<0.34 略微、<0.67 比较、≥0.67 非常）；内置
+  狼人杀语境词表 15 个——多疑、冲动、谨慎、从众、好胜、冷静、健谈、沉默、固执、圆滑、直率、
+  乐观、悲观、逻辑、感性；词表外的词按形容词原样纳入。
+- `preset`：现成体系预设，`{system: MBTI, value: ENFP}`（四字母代码）或
+  `{system: MBTI, value: {E: 0.8, N: 0.6, F: 0.5, P: 0.5}}`（逐轴强度）；Big Five 同理，
+  `{system: BIG_FIVE, value: {O: 0.7, C: 0.3, E: 0.6, A: 0.5, N: 0.4}}`（键取 O/C/E/A/N）。
+
+三层同时给出时按出现顺序即优先级（描述 > 特质 > 预设），相互冲突以先出现的描述为准；预设
+展开用隐式写法，不会在 prompt 里出现「MBTI」「Big Five」等体系名。护栏：`description` /
+`style_notes` 含越权或改规则短语（如「你知道谁是狼」「上帝视角」）建局即拒绝（CLI 参数错误 /
+API 422）。人设只影响 Agent 的说话风格与判断偏好，不改变游戏规则，也不出现在夜间私聊或反思
+prompt 里——只在系统 prompt 的静态段生效。
+
+```yaml
+seats:
+  "0": { model: ollama/qwen2.5-coder:7b, personality: {description: 老油条，话不多但每句都带钩子, traits: {多疑: 0.9}} }
+  "3": { model: ollama/qwen3:8b, personality: {preset: {system: MBTI, value: ENFP}, style_notes: 爱用感叹号} }
 ```
 
 ### 技能包 / Skill packs
