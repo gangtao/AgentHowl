@@ -82,13 +82,13 @@ def default_library() -> SkillLibrary                            # 进程内缓�
   - `_system_for`：技能非空时在静态段末尾追加 `"\n== 你的技能 ==\n" + skills_index_text(skills)`。
   - `act`：`selected = select_skills(self._skills, obs.my_role, obs.phase)`；`text, used = assemble_skills(selected, self._cfg.skill_budget_chars)`；`self.last_skills_used = used`；`logger.info("seat=%d phase=%s skills=%s", …)`；`text` 经新增的 `skills_text: str = ""` 关键字参数传入 `build_prompt` / `build_wolf_night_prompt`。
   - `AgentConfig.skill_budget_chars: int = DEFAULT_SKILL_BUDGET_CHARS`。
-- `prompts.py`：两个装配函数新增 `skills_text: str = ""`；非空时在「== 本次决策 ==」之前插入 `"== 技能提示 ==\n{skills_text}\n\n"`；为空时输出与现状逐字相同。
+- `prompts.py`：两个装配函数新增 `skills_text: str = ""`；非空时在「== 本次决策 ==」之前插入 `"== 技能提示 ==\n以下为备选策略，按各篇「触发条件」选用其一为主，不必全部执行。\n{skills_text}\n\n"`（**终审补记**：前言一句，因 `"*"` 下狼昼会同时拿到悍跳/倒钩/冲锋/划水四篇互斥策略）；为空时输出与现状逐字相同。
 - 公私分离：技能正文是通用策略、不含本局私有信息；装配按调用进行，狼夜私有调用与昼间公开调用各取各的阶段。狼人的昼间技能（悍跳/倒钩）进入公开发言 prompt 是**预期**——它们是公开发言的策略。
 
 ## 5. 入口
 
 - **registry**：`GameRegistry(store, timeouts, agent_port_factory, skill_library=None)`；`create()` 用 `self._skill_library or default_library()` 做 `validate_profiles`；`_build_agent_port` 传库给 `build_agent_port`。`agent_port_factory` 签名不变。
-- **API**：`create_app(..., skills_dir: Path | None = None)`：`SkillLibrary.load([BUILTIN_SKILLS_DIR] + ([skills_dir] if skills_dir else []))` 注入 registry；环境变量 `AGENTHOWL_SKILLS_DIR` 作为 `main.py` 默认（`app/main.py` 里读取，仅此一处）。`CreateGameRequest.agents[*].skills` 随 `AgentProfile` 自动生效；回显同。
+- **API**：`create_app(..., skills_dir: Path | None = None)`：内置目录缺失可容忍（打包场景），**显式给出的 `skills_dir` 不存在则启动即 `SkillError`**（终审补记：计划初稿把它静默过滤了，已纠正）；环境变量 `AGENTHOWL_SKILLS_DIR` 作为 `main.py` 默认（`app/main.py` 里读取，仅此一处）。`CreateGameRequest.agents[*].skills` 随 `AgentProfile` 自动生效；回显同。
 - **CLI**：`--skills-dir PATH`（单个目录）；`_wire_game(config, *, human_seat, agents, library)`；`main` 构建 `library`，`validate_profiles(agents, n, library)`；`render_agent_roster` 每座位追加 `技能 a,b`（无技能不显示）。
 - **Makefile**：`SKILLS_DIR ?=` 并入命令片段。
 
@@ -111,7 +111,7 @@ def default_library() -> SkillLibrary                            # 进程内缓�
 | `side-taking` | 全部 | DAY_SPEECH VOTE SHERIFF_ELECTION | 对跳时如何站边、警徽流验证、改站边的代价 |
 | `strategy-adaptation` | 全部 | DAY_SPEECH VOTE | 论文方法：对每人估计身份概率；被怀疑时 Support、锁定目标时 Attack |
 
-写作约束：只给策略；不诱导非法行动（自爆/投票/用药均由引擎裁决合法性）；不含「你知道谁是狼」等越权信息；狼人技能不得指示在公开发言里泄露夜间私谋。
+写作约束（**终审补记**：正文不得写死可配置规则——如刀口裁决规则、同守同救——须用「按本局规则 / 默认规则下」措辞；`badge_flow` 字段只在上警/PK 发言可提交，涉及警徽流的技能须注明；狼人昼间技能须含「全队最多一人悍跳」类协调提示）：只给策略；不诱导非法行动（自爆/投票/用药均由引擎裁决合法性）；不含「你知道谁是狼」等越权信息；狼人技能不得指示在公开发言里泄露夜间私谋。
 
 ## 7. 测试（零 IO 零 mock；技能目录用 `tmp_path`）
 
