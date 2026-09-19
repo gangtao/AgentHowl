@@ -184,3 +184,91 @@ async def test_lazy_reflection_runs_before_decision_when_time_allows() -> None:
     await port.act(_obs("DAY_SPEECH", round=2), time.time() + 60)
     assert len(client.calls) == 2  # 反思 + 决策
     assert "首轮总结" in client.calls[1][2]  # 反思摘要进了决策 prompt 的记忆段
+
+
+def _skill(name: str, roles: set[RoleType], phases: set[str], body: str):
+    from pathlib import Path
+
+    from app.agent.skills import Skill
+
+    return Skill(
+        name=name,
+        description=f"描述 {name}",
+        roles=frozenset(roles),
+        phases=frozenset(phases),
+        priority=0,
+        body=body,
+        source=Path(f"/x/{name}/SKILL.md"),
+    )
+
+
+_SKILLS = [
+    _skill("seer-badge-flow", {RoleType.SEER}, {"DAY_SPEECH"}, "报警徽流。"),
+    _skill("wolf-claim-jump", {RoleType.WEREWOLF}, {"DAY_SPEECH"}, "悍跳要自洽。"),
+    _skill("wolf-team-kill", {RoleType.WEREWOLF}, {"NIGHT_WEREWOLF"}, "优先刀预言家。"),
+]
+
+
+def _skilled_port(script, *, seat: int = 0) -> tuple[AgentPlayerPort, ScriptedLLMClient]:
+    client = ScriptedLLMClient(script)
+    port = AgentPlayerPort(
+        seat=seat,
+        game_config=build_preset("std_9_kill_side"),
+        agent_config=AgentConfig(model="scripted"),
+        client=client,
+        skills=_SKILLS,
+    )
+    return port, client
+
+
+async def test_skills_index_in_system_and_bodies_assembled_by_role_phase() -> None:
+    def script(rm: type[BaseModel], system: str, user: str) -> BaseModel:
+        if rm is WolfDeliberation:
+            return WolfDeliberation(analysis="a", proposed_target=3)
+        return SpeechDecision(reasoning="r", content="c")
+
+    # 狼：夜间私有调用只装 NIGHT_WEREWOLF 技能
+    port, client = _skilled_port(script)
+    await port.act(_obs("NIGHT_WEREWOLF"), time.time() + 60)
+    _m, system, user = client.calls[-1]
+    assert "== 你的技能 ==" in system and "- wolf-team-kill：描述 wolf-team-kill" in system
+    assert "优先刀预言家" in user and "悍跳要自洽" not in user and "报警徽流" not in user
+    assert port.last_skills_used == ("wolf-team-kill",)
+    # 狼：白天公开调用只装白天狼技能
+    await port.act(_obs("DAY_SPEECH"), time.time() + 60)
+    _m, _s, user = client.calls[-1]
+    assert "悍跳要自洽" in user and "优先刀预言家" not in user
+    assert port.last_skills_used == ("wolf-claim-jump",)
+    # 预言家：白天只装 seer 技能
+    port2, client2 = _skilled_port(script)
+    await port2.act(_obs("DAY_SPEECH", role=RoleType.SEER, private={}), time.time() + 60)
+    _m, _s, user2 = client2.calls[-1]
+    assert "报警徽流" in user2 and "悍跳" not in user2
+    assert port2.last_skills_used == ("seer-badge-flow",)
+
+
+async def test_no_skills_means_no_skill_sections() -> None:
+    def script(rm: type[BaseModel], system: str, user: str) -> BaseModel:
+        return SpeechDecision(reasoning="r", content="c")
+
+    port, client = _port(script)
+    await port.act(_obs("DAY_SPEECH"), time.time() + 60)
+    _m, system, user = client.calls[-1]
+    assert "你的技能" not in system and "技能提示" not in user and port.last_skills_used == ()
+
+
+async def test_skill_budget_limits_assembly() -> None:
+    def script(rm: type[BaseModel], system: str, user: str) -> BaseModel:
+        return SpeechDecision(reasoning="r", content="c")
+
+    big = _skill("big", {RoleType.WEREWOLF}, {"DAY_SPEECH"}, "字" * 500)
+    client = ScriptedLLMClient(script)
+    port = AgentPlayerPort(
+        seat=0,
+        game_config=build_preset("std_9_kill_side"),
+        agent_config=AgentConfig(model="scripted", skill_budget_chars=100),
+        client=client,
+        skills=[big],
+    )
+    await port.act(_obs("DAY_SPEECH"), time.time() + 60)
+    assert port.last_skills_used == () and "技能提示" not in client.calls[-1][2]

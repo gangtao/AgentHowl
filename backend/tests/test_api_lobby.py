@@ -132,6 +132,7 @@ def test_create_legacy_ai_model_echoes_star(client: TestClient) -> None:
             "reflection_model": None,
             "thinking": False,
             "temperature": 0.3,
+            "skills": [],
         }
     }
     r2 = client.post("/api/v1/games", json={"preset": "std_9_kill_side"})

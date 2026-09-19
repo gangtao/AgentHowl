@@ -97,3 +97,19 @@ def test_importing_registry_does_not_load_litellm() -> None:
         cwd=Path(__file__).resolve().parents[1],
     ).stdout.strip()
     assert out == "False"
+
+
+def test_profile_skills_field_and_validation_against_library(tmp_path) -> None:
+    from app.agent.skills import SkillLibrary
+
+    assert AgentProfile(model="m").skills == []
+    p = AgentProfile(model="m", skills=["a", "*"])
+    d = tmp_path / "a"
+    d.mkdir()
+    (d / "SKILL.md").write_text("---\nname: a\ndescription: d\n---\n正文\n", encoding="utf-8")
+    lib = SkillLibrary.load([tmp_path])
+    validate_profiles({"0": p}, num_players=9, library=lib)  # 通过
+    bad = {"0": AgentProfile(model="m", skills=["zzz"])}
+    validate_profiles(bad, num_players=9)  # 无库不校验技能
+    with pytest.raises(ValueError, match="zzz"):
+        validate_profiles(bad, num_players=9, library=lib)
