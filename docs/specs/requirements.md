@@ -503,6 +503,8 @@ class PlayerObservation(BaseModel):
 
 **技能包**（issue #58）：`AgentProfile.skills` 指定的 `SKILL.md` 技巧按 `(角色, 阶段)` 装配到指令段之前（`== 技能提示 ==`），系统 prompt 只列名称与描述；格式兼容 Agent Skills 规范，自定义字段在 `metadata`。
 
+**人格**：`AgentProfile.personality`（自由描述 / 特质词表 / MBTI、Big Five 预设）翻译为狼人杀语境行为倾向，作为静态段的『== 你的性格 ==』小节；预设展开用隐式写法；越权短语建局即拒（issue #57）。
+
 #### 4.4.3 model-agnostic LLM 调用层（方案对比与推荐）
 
 调研对比五个候选：
@@ -581,10 +583,12 @@ POST /api/v1/games
 
 `agents: {"<seat>"|"*": AgentProfile}`（issue #56）：每座位内置 Agent 档案，字段
 `model` / `model_speech` / `reflection_model` / `thinking` / `temperature` / `name` /
-`skills`（issue #58；技能名列表，`"*"` = 全部）。查找按座位号优先于 `"*"`；未匹配座位
+`skills`（issue #58；技能名列表，`"*"` = 全部）/ `personality`（issue #57；自由描述 /
+特质词表 / MBTI、Big Five 预设，见 §4.4.2）。查找按座位号优先于 `"*"`；未匹配座位
 用内置随机 bot。`ai_model` / `ai_model_speech` 等价于 `agents["*"]`；两者同时给出
-（`agents` 含 `"*"` 且又给了 `ai_model`）→ 400；`skills` 含未知技能名同样 → 400。
-响应体 `agents` 字段回显解析后的最终映射（含旧字段折叠结果）。
+（`agents` 含 `"*"` 且又给了 `ai_model`）→ 400；`skills` 含未知技能名同样 → 400；
+`personality` 含越权或改规则短语 → 422（pydantic 校验失败）。响应体 `agents` 字段
+回显解析后的最终映射（含旧字段折叠结果）。
 
 **加入对局**：
 ```json

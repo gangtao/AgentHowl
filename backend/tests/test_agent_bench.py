@@ -122,3 +122,48 @@ async def test_wolf_team_kill_skill_ab_smoke() -> None:
         )
         rates[label] = empties / max(1, len(decided))
     print(f"wolf-team-kill A/B 空刀率: {rates}")
+
+
+async def test_personality_contrast_smoke() -> None:
+    """一致性冒烟：同一 observation 下「多疑」vs「从众」两种人格各发言一次。
+
+    打印长度与关键词，不断言方向。
+    """
+    import time
+
+    from app.agent.agent_player import AgentConfig, AgentPlayerPort
+    from app.agent.llm_client import LiteLLMInstructorClient
+    from app.agent.personality import PersonalitySpec
+    from app.engine.config import RoleType
+    from app.engine.observation import PlayerObservation
+
+    assert SMOKE_MODEL is not None
+    obs = PlayerObservation(
+        game_id="bench",
+        state_version=3,
+        my_seat=2,
+        my_role=RoleType.VILLAGER,
+        my_status="ALIVE",
+        phase="DAY_SPEECH",
+        round=1,
+        seats=[{"seat": i, "alive": True, "is_sheriff": False} for i in range(9)],
+        sheriff_seat=None,
+        badge_flow_claims={0: (3, 5)},
+        private={},
+        available_actions=[2],
+    )
+    out: dict[str, str] = {}
+    for label, traits in (("多疑", {"多疑": 0.9}), ("从众", {"从众": 0.9})):
+        port = AgentPlayerPort(
+            seat=2,
+            game_config=build_preset("std_9_kill_side"),
+            agent_config=AgentConfig(model=SMOKE_MODEL),
+            client=LiteLLMInstructorClient(),
+            personality=PersonalitySpec(traits=traits),
+        )
+        action = await port.act(obs, time.time() + 120)
+        out[label] = getattr(action, "content", "")
+    for label, text in out.items():
+        has_gold = "金水" in text
+        has_suspect = "怀疑" in text
+        print(f"[{label}] len={len(text)} 含'金水'={has_gold} 含'怀疑'={has_suspect}: {text[:80]}")

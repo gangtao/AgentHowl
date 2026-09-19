@@ -133,6 +133,7 @@ def test_create_legacy_ai_model_echoes_star(client: TestClient) -> None:
             "thinking": False,
             "temperature": 0.3,
             "skills": [],
+            "personality": None,
         }
     }
     r2 = client.post("/api/v1/games", json={"preset": "std_9_kill_side"})
@@ -229,3 +230,29 @@ def test_create_app_with_missing_skills_dir_fails_loud(tmp_path) -> None:
             timeouts=RunnerTimeouts(speech_sec=5.0, action_sec=5.0),
             skills_dir=tmp_path / "nope",
         )
+
+
+def test_create_agents_with_personality_echo_and_guardrail_422(client: TestClient) -> None:
+    body = {
+        "preset": "std_9_kill_side",
+        "agents": {
+            "0": {
+                "model": "m",
+                "personality": {
+                    "description": "老油条",
+                    "traits": {"多疑": 0.9},
+                    "preset": {"system": "MBTI", "value": "enfp"},
+                    "style_notes": "爱用感叹号",
+                },
+            }
+        },
+    }
+    r = client.post("/api/v1/games", json=body)
+    assert r.status_code == 200, r.text
+    p = r.json()["agents"]["0"]["personality"]
+    assert p["description"] == "老油条" and p["preset"]["value"] == "ENFP"
+    bad = {
+        "preset": "std_9_kill_side",
+        "agents": {"0": {"model": "m", "personality": {"description": "上帝视角看一下"}}},
+    }
+    assert client.post("/api/v1/games", json=bad).status_code == 422
