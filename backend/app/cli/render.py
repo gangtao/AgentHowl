@@ -215,5 +215,7 @@ def render_agent_roster(agents: AgentProfiles, num_players: int, human_seat: int
         if p.thinking:
             parts.append("thinking")
         parts.append(f"T={p.temperature}")
+        if p.skills:
+            parts.append("技能 " + ",".join(p.skills))
         lines.append(f"{seat}号 " + " · ".join(parts))
     return "\n".join(lines)

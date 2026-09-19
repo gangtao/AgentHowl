@@ -251,7 +251,7 @@ uv run python -m app.cli.simulate --games 100                 # 纯引擎胜负�
 ```yaml
 # agents.yaml
 seats:
-  "0": { name: 老张, model: ollama/qwen2.5-coder:7b, thinking: false }
+  "0": { name: 老张, model: ollama/qwen2.5-coder:7b, thinking: false, skills: [seer-badge-flow, logic-chain] }
   "3": { model: ollama/qwen3:8b, thinking: true, temperature: 0.7 }
   "*": { model: ollama/qwen2.5-coder:7b }   # 其余座位的默认档案
 ```
@@ -259,6 +259,57 @@ seats:
 ```bash
 make watch AGENTS=agents.yaml
 ```
+
+### 技能包 / Skill packs
+
+每座位档案的 `skills: list[str]` 字段（`"*"` = 全部内置/外部技能）给该座位的 Agent
+挂载打包好的策略说明（`SKILL.md`）；未配 `skills` 的档案行为不变（现状零改动）。
+
+内置库在 `backend/skills/<name>/SKILL.md`，文件格式兼容
+[Agent Skills Specification](https://agentskills.io/specification)：
+
+```yaml
+---
+name: seer-badge-flow          # 须与目录名一致，[a-z0-9-]
+description: 预言家上警时如何报查验结果与警徽流…   # 系统 prompt 只列这一行
+metadata:                      # 自定义扩展字段，规范要求全为字符串
+  roles: "SEER"                # 空格分隔 RoleType；缺省 = 全部角色
+  phases: "SHERIFF_ELECTION SHERIFF_PK DAY_SPEECH"  # 空格分隔 Phase；缺省 = 全部阶段
+  priority: "10"                # 整数；同阶段多技能按此降序装配
+---
+正文：中文策略说明（触发条件 → 做法 → 反例/风险）。
+```
+
+装配是渐进式的两层披露：系统 prompt 只列已配技能的 `name: description`；每次决策再按
+`(我的角色, 当前阶段)` 过滤、按 `priority` 降序排序、按字符预算（`AgentConfig.skill_budget_chars`，
+默认 1800 字）整篇取舍后把正文装进指令段。狼人的夜间私有调用与白天公开发言调用各取各阶段
+的技能，公私分离不变。
+
+外部技能目录（同名覆盖内置）：
+
+- CLI：`--skills-dir PATH`（或 `make watch SKILLS_DIR=path/to/dir`、`make play SKILLS_DIR=...`）
+- API 服务：环境变量 `AGENTHOWL_SKILLS_DIR`
+
+未知技能名建局即错（CLI 参数错误 / API 400），`--skills-dir` 指向不存在的目录同样是参数错误。
+
+首批内置 14 篇：
+
+| 技能 | 一句话 |
+|---|---|
+| `seer-badge-flow` | 预言家上警时如何报查验结果与警徽流，让警徽在死后仍能传递验人信息 |
+| `seer-vs-claim-jump` | 真预言家遭遇悍跳对跳时，如何用查验与警徽流逻辑压制对方并归票 |
+| `wolf-claim-jump` | 狼人悍跳预言家的时机、编造可信查验的原则与队友配合边界 |
+| `wolf-counter-hook` | 狼人倒钩站真预言家、卖队友换信任的时机与后期反水节奏 |
+| `wolf-charge` | 狼人冲锋为悍跳队友背书、带节奏归票好人的配合打法 |
+| `wolf-lay-low` | 狼人划水降低存在感、跟票不出逻辑漏洞的保守打法 |
+| `wolf-team-kill` | 狼人夜晚提议刀口目标的优先级与队伍一致行动原则 |
+| `witch-potion-timing` | 女巫首夜救人、毒药留用与白天是否报银水的决策原则 |
+| `hunter-shot-target` | 猎人开枪目标优先级，以及是否提前跳猎人身份的取舍 |
+| `sheriff-herding` | 竞选警长的理由陈述、发言方向选择、归票与警徽移交策略 |
+| `vote-discipline` | 白天投票与平票 PK 阶段的跟票、弃票与平票选择纪律 |
+| `logic-chain` | 用发言前后矛盾、票型与金水查杀链交叉验证找出可疑玩家 |
+| `side-taking` | 预言家对跳时如何比较可验证性、选边并处理改站边的代价 |
+| `strategy-adaptation` | 按身份可能性动态切换防守（Support）与进攻（Attack）发言策略 |
 
 ## LLM 提供方配置 / LLM Providers
 

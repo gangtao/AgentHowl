@@ -501,6 +501,8 @@ class PlayerObservation(BaseModel):
 - **随机化选项顺序**：投票与夜间行动的候选名单**打乱顺序**呈现，以对抗 LLM"倾向选列表首/尾项"的位置偏置（Werewolf Arena 明确采用此技巧，用以对抗 Xu et al. 报告的早期"选首/尾项"倾向）。
 - **公私分离**：狼队夜间私聊与白天公开发言用**不同的 LLM 调用**产出，避免把私有推理泄进公开发言。
 
+**技能包**（issue #58）：`AgentProfile.skills` 指定的 `SKILL.md` 技巧按 `(角色, 阶段)` 装配到指令段之前（`== 技能提示 ==`），系统 prompt 只列名称与描述；格式兼容 Agent Skills 规范，自定义字段在 `metadata`。
+
 #### 4.4.3 model-agnostic LLM 调用层（方案对比与推荐）
 
 调研对比五个候选：
@@ -578,9 +580,10 @@ POST /api/v1/games
 ```
 
 `agents: {"<seat>"|"*": AgentProfile}`（issue #56）：每座位内置 Agent 档案，字段
-`model` / `model_speech` / `reflection_model` / `thinking` / `temperature` / `name`。
-查找按座位号优先于 `"*"`；未匹配座位用内置随机 bot。`ai_model` / `ai_model_speech`
-等价于 `agents["*"]`；两者同时给出（`agents` 含 `"*"` 且又给了 `ai_model`）→ 400。
+`model` / `model_speech` / `reflection_model` / `thinking` / `temperature` / `name` /
+`skills`（issue #58；技能名列表，`"*"` = 全部）。查找按座位号优先于 `"*"`；未匹配座位
+用内置随机 bot。`ai_model` / `ai_model_speech` 等价于 `agents["*"]`；两者同时给出
+（`agents` 含 `"*"` 且又给了 `ai_model`）→ 400；`skills` 含未知技能名同样 → 400。
 响应体 `agents` 字段回显解析后的最终映射（含旧字段折叠结果）。
 
 **加入对局**：

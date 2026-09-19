@@ -10,6 +10,7 @@ import contextlib
 from collections.abc import Callable
 
 from app.agent.profile import AgentProfiles
+from app.agent.skills import SkillLibrary
 from app.cli.play import ReadLine, _wire_game, default_read_line
 from app.cli.render import (
     color,
@@ -86,11 +87,12 @@ async def run_play(
     *,
     seat: int,
     agents: AgentProfiles | None = None,
+    library: SkillLibrary | None = None,
     read_line: ReadLine = default_read_line,
     on_wired: Callable[[GameRunner], None] | None = None,
 ) -> GameState:
     """真人座玩局：并发 runner + turn-loop，跑到 GAME_OVER。"""
-    runner, conns, ports = _wire_game(config, human_seat=seat, agents=agents)
+    runner, conns, ports = _wire_game(config, human_seat=seat, agents=agents, library=library)
     port = ports[seat]
     assert isinstance(port, HumanPlayerPort)
     if on_wired is not None:

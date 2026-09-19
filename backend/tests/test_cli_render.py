@@ -172,3 +172,12 @@ def test_render_agent_roster() -> None:
     assert "2号" in lines[2] and "真人" in lines[2]
     bots = render_agent_roster({}, num_players=2, human_seat=None)
     assert "随机" in bots and bots.count("\n") == 1
+
+    with_skills = render_agent_roster(
+        {"0": AgentProfile(model="m", skills=["logic-chain", "vote-discipline"])},
+        num_players=1,
+        human_seat=None,
+    )
+    assert "技能 logic-chain,vote-discipline" in with_skills
+    no_skills = render_agent_roster({"0": AgentProfile(model="m")}, num_players=1, human_seat=None)
+    assert "技能" not in no_skills
