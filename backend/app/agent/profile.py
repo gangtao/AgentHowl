@@ -2,7 +2,7 @@
 
 registry / api / cli 三个入口都只经本模块解析档案：查找（座位优先于 "*"）、
 键校验、旧字段（ai_model 等）折叠、到 AgentConfig 的映射。字段随各 issue 增量添加
-（#56 模型路由、#58 skills）；extra="forbid" 保证未实现的键被拒绝而非静默忽略。
+（#56 模型路由、#58 skills、#57 personality）；extra="forbid" 保证未实现的键被拒绝而非静默忽略。
 """
 
 from __future__ import annotations
@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.agent.personality import PersonalitySpec
 from app.agent.skills import SkillError
 from app.engine.config import GameConfig
 
@@ -33,6 +34,7 @@ class AgentProfile(BaseModel):
     thinking: bool = False
     temperature: float = Field(default=0.3, ge=0.0, le=2.0)
     skills: tuple[str, ...] = ()  # 技能名或 "*"（issue #58）；元组以保持 frozen 模型可哈希
+    personality: PersonalitySpec | None = None  # 任意性格特点（issue #57）
 
     @field_validator("name", mode="before")
     @classmethod

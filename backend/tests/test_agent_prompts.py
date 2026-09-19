@@ -234,3 +234,15 @@ def test_skills_text_inserted_before_decision_and_absent_when_empty() -> None:
     w1 = build_wolf_night_prompt(wolf_obs, "M", "P", agent_seed=1, skills_text="【技能：k】\n刀法")
     assert f"{preamble}【技能：k】\n刀法" in w1
     assert w1.index("== 技能提示 ==") < w1.index("== 本次决策 ==")
+
+
+def test_static_prompt_personality_block_position_and_identity_when_empty() -> None:
+    config = build_preset("std_9_kill_side")
+    base = static_system_prompt(config, seat=2, role=RoleType.SEER)
+    assert base == static_system_prompt(config, seat=2, role=RoleType.SEER, personality_text="")
+    assert "== 你的性格 ==" not in base
+    sp = static_system_prompt(
+        config, seat=2, role=RoleType.SEER, personality_text="你非常多疑：不轻信任何人。"
+    )
+    assert "== 你的性格 ==\n你非常多疑：不轻信任何人。" in sp
+    assert sp.index("角色：SEER") < sp.index("== 你的性格 ==") < sp.index("发言用中文")
