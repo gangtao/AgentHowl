@@ -246,3 +246,19 @@ def test_static_prompt_personality_block_position_and_identity_when_empty() -> N
     )
     assert "== 你的性格 ==\n你非常多疑：不轻信任何人。" in sp
     assert sp.index("角色：SEER") < sp.index("== 你的性格 ==") < sp.index("发言用中文")
+
+
+def test_static_prompt_experience_block_after_personality_and_identity_when_empty() -> None:
+    config = build_preset("std_9_kill_side")
+    base = static_system_prompt(config, seat=2, role=RoleType.SEER)
+    assert base == static_system_prompt(config, seat=2, role=RoleType.SEER, experience_text="")
+    assert "== 跨局经验 ==" not in base
+    sp = static_system_prompt(
+        config,
+        seat=2,
+        role=RoleType.SEER,
+        personality_text="P",
+        experience_text="你此前打过 2 局。",
+    )
+    assert "== 跨局经验 ==\n你此前打过 2 局。" in sp
+    assert sp.index("== 你的性格 ==") < sp.index("== 跨局经验 ==") < sp.index("发言用中文")

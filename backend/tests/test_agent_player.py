@@ -1,6 +1,7 @@
 """AgentPlayerPort（issue #31 Task 6）：决策流、狼夜两段隔离、超时边际、模型路由。零网络。"""
 
 import time
+from typing import TYPE_CHECKING
 
 import pytest
 from pydantic import BaseModel
@@ -16,6 +17,9 @@ from app.engine.actions import NightAction, NightActionType, Speak
 from app.engine.config import RoleType, build_preset
 from app.engine.observation import PlayerObservation
 from tests.llm_helpers import ScriptedLLMClient
+
+if TYPE_CHECKING:
+    from app.agent.experience import AgentExperience
 
 SECRET = "夜间私谋：今晚刀3号，明天悍跳"
 
@@ -305,3 +309,98 @@ async def test_no_personality_means_no_block() -> None:
     port, client = _port(script)
     await port.act(_obs("DAY_SPEECH"), time.time() + 60)
     assert "你的性格" not in client.calls[-1][1]
+
+
+def _experience() -> "AgentExperience":
+    from app.agent.experience import AgentExperience, GameReflection
+
+    exp = AgentExperience(memory_id="me")
+    exp.record_game(
+        game_id="g0",
+        role=RoleType.WEREWOLF,
+        won=False,
+        reflection=GameReflection(
+            lessons=["(往局教训) 当被查杀时，应先对跳"], opponent_notes={5: ["爱跟票"]}
+        ),
+        seat_to_memory_id={0: "me", 5: "bob"},
+        my_seat=0,
+        ts="t",
+    )
+    return exp
+
+
+async def test_experience_in_system_prompt_only_and_mapped_opponent() -> None:
+    def script(rm: type[BaseModel], system: str, user: str) -> BaseModel:
+        if rm is WolfDeliberation:
+            return WolfDeliberation(analysis="a", proposed_target=3)
+        return SpeechDecision(reasoning="r", content="c")
+
+    client = ScriptedLLMClient(script)
+    port = AgentPlayerPort(
+        seat=0,
+        game_config=build_preset("std_9_kill_side"),
+        agent_config=AgentConfig(model="scripted"),
+        client=client,
+        experience=_experience(),
+        opponents={"bob": 7},
+    )
+    await port.act(_obs("NIGHT_WEREWOLF"), time.time() + 60)
+    _m, system, user = client.calls[-1]
+    assert "== 跨局经验 ==" in system and "(往局教训)" in system and "7号：爱跟票" in system
+    assert "往局教训" not in user and "跨局经验" not in user
+    await port.act(_obs("DAY_SPEECH"), time.time() + 60)
+    assert client.calls[-1][1] == system  # 缓存：同一系统 prompt
+
+
+async def test_no_experience_means_no_block() -> None:
+    def script(rm: type[BaseModel], system: str, user: str) -> BaseModel:
+        return SpeechDecision(reasoning="r", content="c")
+
+    port, client = _port(script)
+    await port.act(_obs("DAY_SPEECH"), time.time() + 60)
+    assert "跨局经验" not in client.calls[-1][1]
+
+
+async def test_reflect_on_game_uses_own_memory_and_reveal() -> None:
+    from app.agent.experience import GameReflection, build_reveal
+    from app.cli.bot import run_game
+
+    state, _ = run_game(build_preset("std_9_kill_side").model_copy(update={"seed": 3}), "g1")
+    wolf_seat = next(p.seat for p in state.players if p.role == RoleType.WEREWOLF)
+
+    def script(rm: type[BaseModel], system: str, user: str) -> BaseModel:
+        if rm is WolfDeliberation:
+            return WolfDeliberation(analysis="私谋X", proposed_target=3)
+        if rm is GameReflection:
+            return GameReflection(lessons=["L"], opponent_notes={})
+        return SpeechDecision(reasoning="r", content="c")
+
+    client = ScriptedLLMClient(script)
+    port = AgentPlayerPort(
+        seat=wolf_seat,
+        game_config=state.config,
+        agent_config=AgentConfig(model="scripted", reflection_model="cheap"),
+        client=client,
+    )
+    await port.act(_obs("NIGHT_WEREWOLF", seat=wolf_seat), time.time() + 60)
+    reveal = build_reveal(state, wolf_seat, notable_seats=[3])
+    out = await port.reflect_on_game(reveal)
+    assert out is not None and out.lessons == ["L"]
+    model, system, user = client.calls[-1]
+    assert model == "cheap" and "整局复盘" in system
+    assert "== 终局揭示 ==" in user and "== 狼队私谋 ==\n[第1夜私谋] 私谋X" in user
+    with pytest.raises(ValueError, match="座位"):
+        await port.reflect_on_game(build_reveal(state, (wolf_seat + 1) % 9, notable_seats=[]))
+
+
+async def test_reflect_on_game_failure_returns_none() -> None:
+    from app.agent.experience import build_reveal
+    from app.cli.bot import run_game
+
+    state, _ = run_game(build_preset("std_9_kill_side").model_copy(update={"seed": 3}), "g1")
+
+    def boom(rm: type[BaseModel], system: str, user: str) -> BaseModel:
+        raise RuntimeError("LLM 故障")
+
+    port, _client = _port(boom)
+    assert await port.reflect_on_game(build_reveal(state, 0, notable_seats=[])) is None
