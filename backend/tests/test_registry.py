@@ -7,7 +7,7 @@ import pytest
 
 from app.api.deps import TokenInfo, TokenRegistry
 from app.cli.bot import RandomBot
-from app.engine.config import build_preset
+from app.engine.config import RoleType, build_preset
 from app.engine.phases import Phase
 from app.runtime.game_runner import LobbyError, RunnerTimeouts
 from app.runtime.player_port import PlayerPort
@@ -219,4 +219,118 @@ def test_create_without_library_uses_builtin(tmp_path) -> None:
             cfg,
             allow_spectators=False,
             agents={"*": AgentProfile(model="m", skills=["no-such-skill"])},
+        )
+
+
+async def test_memory_id_loads_experience_wires_opponents_and_runs_postgame() -> None:
+    from pydantic import BaseModel
+
+    from app.agent.agent_player import AgentConfig, AgentPlayerPort
+    from app.agent.experience import AgentExperience, GameReflection
+    from app.agent.memory import ReflectionResult
+    from app.agent.profile import AgentProfile
+    from app.runtime.experience_store import InMemoryExperienceStore
+    from app.runtime.postgame import opponents_for
+    from tests.llm_helpers import ScriptedLLMClient, action_to_decision
+
+    store = InMemoryExperienceStore()
+    seeded = AgentExperience(memory_id="alice")
+    seeded.record_game(
+        game_id="g0",
+        role=RoleType.VILLAGER,
+        won=True,
+        reflection=GameReflection(lessons=["(seeded) 慎投"], opponent_notes={1: ["跟票"]}),
+        seat_to_memory_id={0: "alice", 1: "bob"},
+        my_seat=0,
+        ts="t",
+    )
+    store.save(seeded)
+    seen: dict[int, tuple[object, dict[str, int]]] = {}
+
+    def factory(seat: int, handle: GameHandle) -> PlayerPort:
+        seen[seat] = (handle.experiences.get(seat), opponents_for(seat, handle.seat_memory_ids))
+
+        def script(rm: type[BaseModel], system: str, user: str) -> BaseModel:
+            if rm is ReflectionResult:
+                return ReflectionResult(summary="(r)", qa=[])
+            if rm is GameReflection:
+                return GameReflection(lessons=[f"(lesson of {seat})"], opponent_notes={})
+            assert handle.runner is not None
+            return action_to_decision(RandomBot.choose_action(handle.runner.state, seat), rm)
+
+        return AgentPlayerPort(
+            seat=seat,
+            game_config=handle.config,
+            agent_config=AgentConfig(model="scripted", agent_seed=1),
+            client=ScriptedLLMClient(script),
+            experience=handle.experiences.get(seat),
+            opponents=opponents_for(seat, handle.seat_memory_ids),
+        )
+
+    reg = GameRegistry(
+        InMemoryEventStore(),
+        RunnerTimeouts(speech_sec=30.0, action_sec=30.0),
+        agent_port_factory=factory,
+        experience_store=store,
+    )
+    agents = {
+        "0": AgentProfile(model="m", memory_id="alice"),
+        "1": AgentProfile(model="m", memory_id="bob"),
+        "*": AgentProfile(model="m"),
+    }
+    config = build_preset("std_9_kill_side").model_copy(update={"seed": 3})
+    handle = reg.create(config, allow_spectators=False, agents=agents)
+    reg.start(handle)
+    assert handle.seat_memory_ids == {0: "alice", 1: "bob"}
+    exp0, opp0 = seen[0]
+    assert isinstance(exp0, AgentExperience) and exp0.games_played == 1 and opp0 == {"bob": 1}
+    assert seen[1][1] == {"alice": 0} and seen[2] == (None, {"alice": 0, "bob": 1})
+    assert store.saves == 1  # 只有测试自己的 seed；对局中不写
+    assert handle.task is not None
+    await asyncio.wait_for(handle.task, timeout=120)
+    assert store.saves == 1  # 终局瞬间仍未写：写入只在 postgame 任务里
+    updated = await asyncio.wait_for(await _postgame_of(handle), timeout=60)
+    assert set(updated) == {"alice", "bob"} and store.saves == 3
+    alice = store.load("alice")
+    assert alice.games_played == 2 and alice.lessons[-1].text == "(lesson of 0)"
+    assert store.load("bob").lessons[-1].text == "(lesson of 1)"
+
+
+async def _postgame_of(handle: GameHandle) -> "asyncio.Task[object]":
+    """done-callback 与 await 的唤醒同在下一轮事件循环；让出几步再取 postgame_task。"""
+    for _ in range(10):
+        if handle.postgame_task is not None:
+            return handle.postgame_task  # type: ignore[return-value]
+        await asyncio.sleep(0)
+    raise AssertionError("postgame_task 未被调度")
+
+
+async def test_no_memory_id_means_no_postgame_task() -> None:
+    reg = _registry()  # 文件已有的辅助工厂；若无则用 GameRegistry(InMemoryEventStore(), TIMEOUTS)
+    config = build_preset("std_9_kill_side").model_copy(update={"seed": 3})
+    handle = reg.create(config, allow_spectators=False, ai_model=None)
+    reg.start(handle)
+    assert handle.task is not None
+    await asyncio.wait_for(handle.task, timeout=60)
+    await asyncio.sleep(0)
+    assert handle.postgame_task is None and handle.seat_memory_ids == {}
+
+
+def test_create_rejects_duplicate_and_star_memory_id() -> None:
+    from app.agent.profile import AgentProfile
+
+    reg = GameRegistry(InMemoryEventStore())
+    config = build_preset("std_9_kill_side")
+    with pytest.raises(ValueError, match="重复"):
+        reg.create(
+            config,
+            allow_spectators=False,
+            agents={
+                "0": AgentProfile(model="m", memory_id="a"),
+                "1": AgentProfile(model="m", memory_id="a"),
+            },
+        )
+    with pytest.raises(ValueError, match="'\\*'"):
+        reg.create(
+            config, allow_spectators=False, agents={"*": AgentProfile(model="m", memory_id="a")}
         )

@@ -11,7 +11,13 @@ from collections.abc import Callable
 
 from app.agent.profile import AgentProfiles
 from app.agent.skills import SkillLibrary
-from app.cli.play import ReadLine, _wire_game, default_read_line
+from app.cli.play import (
+    ReadLine,
+    _postgame_report,
+    _wire_game,
+    default_read_line,
+    load_experiences,
+)
 from app.cli.render import (
     color,
     render_agent_roster,
@@ -23,6 +29,7 @@ from app.engine.config import GameConfig
 from app.engine.events import Event
 from app.engine.observation import PlayerObservation
 from app.engine.state import GameState
+from app.runtime.experience_store import ExperienceStore, InMemoryExperienceStore
 from app.runtime.game_runner import GameRunner
 from app.runtime.player_port import HumanPlayerPort, NotYourTurnError
 from app.schemas.actions import ToolCall, ToolCallError, available_tools_for, parse_tool_call
@@ -90,15 +97,20 @@ async def run_play(
     library: SkillLibrary | None = None,
     read_line: ReadLine = default_read_line,
     on_wired: Callable[[GameRunner], None] | None = None,
+    experience_store: ExperienceStore | None = None,
 ) -> GameState:
     """真人座玩局：并发 runner + turn-loop，跑到 GAME_OVER。"""
-    runner, conns, ports = _wire_game(config, human_seat=seat, agents=agents, library=library)
+    store = experience_store if experience_store is not None else InMemoryExperienceStore()
+    experiences = load_experiences(agents or {}, config.num_players, store)
+    runner, conns, ports = _wire_game(
+        config, human_seat=seat, agents=agents, library=library, experiences=experiences
+    )
     port = ports[seat]
     assert isinstance(port, HumanPlayerPort)
     if on_wired is not None:
         on_wired(runner)
 
-    print(render_agent_roster(agents or {}, config.num_players, seat))
+    print(render_agent_roster(agents or {}, config.num_players, seat, experiences=experiences))
 
     async def narrate(events: list[Event]) -> None:
         for e in events:
@@ -158,6 +170,8 @@ async def run_play(
         loop_task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await loop_task
+
+    await _postgame_report(state, agents or {}, ports, store, f"cli-{config.seed}")
 
     winner = {"GOOD": "好人胜", "WOLF": "狼人胜"}.get(state.winner or "", "平局")
     print(color(f"\n═══════ 游戏结束：{winner} ═══════", "bold"))

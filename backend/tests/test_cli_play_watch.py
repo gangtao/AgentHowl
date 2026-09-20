@@ -239,3 +239,116 @@ def test_load_agent_profiles_personality_and_guardrail(tmp_path) -> None:
     )
     with pytest.raises(argparse.ArgumentTypeError, match="越权"):
         load_agent_profiles(str(bad))
+
+
+def test_load_agent_profiles_memory_id_and_wire_passes_experience(tmp_path) -> None:
+    from app.agent.agent_player import AgentPlayerPort
+    from app.agent.experience import AgentExperience
+    from app.cli.play import load_agent_profiles, load_experiences
+    from app.runtime.experience_store import InMemoryExperienceStore
+
+    y = tmp_path / "p.yaml"
+    y.write_text(
+        'seats:\n  "0": {model: ollama/a, memory_id: alice}\n'
+        '  "3": {model: ollama/b, memory_id: bob}\n',
+        encoding="utf-8",
+    )
+    agents = load_agent_profiles(str(y))
+    assert agents["0"].memory_id == "alice" and agents["3"].memory_id == "bob"
+    store = InMemoryExperienceStore()
+    store.save(AgentExperience(memory_id="alice", games_played=2))
+    exps = load_experiences(agents, 9, store)
+    assert exps["alice"].games_played == 2 and exps["bob"].games_played == 0
+    config = build_preset("std_9_kill_side").model_copy(update={"seed": 3})
+    _r, _c, ports = _wire_game(config, agents=agents, experiences=exps)
+    p0, p3 = ports[0], ports[3]
+    assert isinstance(p0, AgentPlayerPort) and isinstance(p3, AgentPlayerPort)
+    assert p0._experience is exps["alice"] and p0._opponents == {"bob": 3}
+    assert p3._opponents == {"alice": 0}
+
+
+def test_main_memory_dir_default_and_duplicate_memory_id(tmp_path, capsys) -> None:
+    from app.cli.play import main
+
+    y = tmp_path / "dup.yaml"
+    y.write_text(
+        'seats:\n  "0": {model: ollama/a, memory_id: a}\n  "1": {model: ollama/b, memory_id: a}\n',
+        encoding="utf-8",
+    )
+    with pytest.raises(SystemExit):
+        main(["--agents", str(y)])
+    assert "重复" in capsys.readouterr().err
+
+
+def test_watch_game_with_memory_runs_postgame_and_persists(tmp_path, capsys, monkeypatch) -> None:
+    """随机 bot 局 + 一个脚本化 Agent 座位配 memory_id：结束后复盘落盘并打印摘要。"""
+    from pydantic import BaseModel
+
+    import app.cli.play as play_mod
+    from app.agent.agent_player import AgentConfig, AgentPlayerPort
+    from app.agent.experience import GameReflection
+    from app.agent.memory import ReflectionResult
+    from app.agent.profile import AgentProfile
+    from app.cli.bot import RandomBot
+    from app.runtime.experience_store import JsonFileExperienceStore
+    from tests.llm_helpers import ScriptedLLMClient, action_to_decision
+
+    holder: dict[str, object] = {}
+
+    def fake_build_agent_port(
+        seat, game_config, profile, *, library=None, experience=None, opponents=None
+    ):
+        def script(rm: type[BaseModel], system: str, user: str) -> BaseModel:
+            if rm is ReflectionResult:
+                return ReflectionResult(summary="(r)", qa=[])
+            if rm is GameReflection:
+                return GameReflection(lessons=["(cli lesson)"], opponent_notes={})
+            runner = holder["runner"]
+            return action_to_decision(RandomBot.choose_action(runner.state, seat), rm)  # type: ignore[attr-defined]
+
+        return AgentPlayerPort(
+            seat=seat,
+            game_config=game_config,
+            agent_config=AgentConfig(model="scripted"),
+            client=ScriptedLLMClient(script),
+            experience=experience,
+            opponents=opponents,
+        )
+
+    import app.agent.agent_player as ap
+
+    monkeypatch.setattr(ap, "build_agent_port", fake_build_agent_port)
+    config = build_preset("std_9_kill_side").model_copy(update={"seed": 3})
+    mem = tmp_path / "mem"
+    store = JsonFileExperienceStore(mem)
+    agents = {"0": AgentProfile(model="m", memory_id="alice")}
+
+    async def _no_read(prompt: str) -> str:
+        raise AssertionError("看局非 step 模式不应读输入")
+
+    orig_wire = play_mod._wire_game
+
+    def wire(config, **kw):
+        out = orig_wire(config, **kw)
+        holder["runner"] = out[0]
+        return out
+
+    monkeypatch.setattr(play_mod, "_wire_game", wire)
+    state = asyncio.run(
+        run_watch(
+            config,
+            view="GM",
+            delay=0.0,
+            step=False,
+            agents=agents,
+            experience_store=store,
+            read_line=_no_read,
+        )
+    )
+    from app.engine.phases import Phase
+
+    assert state.phase == Phase.GAME_OVER
+    out = capsys.readouterr().out
+    assert "记忆 alice" in out.splitlines()[0]  # 档案表列
+    assert "复盘中" in out and "记忆 alice：1 局，教训 1" in out
+    assert store.load("alice").lessons[0].text == "(cli lesson)"

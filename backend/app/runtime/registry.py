@@ -10,6 +10,7 @@ import secrets
 from collections.abc import Callable
 from typing import Literal
 
+from app.agent.experience import AgentExperience
 from app.agent.profile import (
     AgentProfile,
     AgentProfiles,
@@ -22,6 +23,7 @@ from app.agent.skills import SkillLibrary, default_library
 from app.engine.config import GameConfig
 from app.engine.state import GameState
 from app.runtime.connection import ConnectionManager
+from app.runtime.experience_store import ExperienceStore, InMemoryExperienceStore
 from app.runtime.game_runner import GameLobby, GameRunner, LobbyError, RunnerTimeouts
 from app.runtime.player_port import (
     BotPlayerPort,
@@ -29,6 +31,7 @@ from app.runtime.player_port import (
     PlayerPort,
     SupportsEventIngest,
 )
+from app.runtime.postgame import opponents_for, run_postgame, seat_memory_ids
 from app.store.event_store import EventStore
 
 
@@ -55,6 +58,10 @@ class GameHandle:
         self.connections: ConnectionManager | None = None
         self.runner: GameRunner | None = None
         self.task: asyncio.Task[GameState] | None = None
+        # 跨局记忆（issue #59）：start 时装配；task 正常结束后由 registry 调度 postgame
+        self.seat_memory_ids: dict[int, str] = {}
+        self.experiences: dict[int, AgentExperience] = {}
+        self.postgame_task: asyncio.Task[dict[str, AgentExperience]] | None = None
 
     @property
     def started(self) -> bool:
@@ -83,16 +90,24 @@ class GameRegistry:
         timeouts: RunnerTimeouts | None = None,
         agent_port_factory: Callable[[int, GameHandle], PlayerPort] | None = None,
         skill_library: SkillLibrary | None = None,
+        experience_store: ExperienceStore | None = None,
     ) -> None:
         self._store = store
         self._timeouts = timeouts
         self._games: dict[str, GameHandle] = {}
         self._agent_port_factory = agent_port_factory
         self._skill_library = skill_library
+        self._experience_store: ExperienceStore = (
+            experience_store if experience_store is not None else InMemoryExperienceStore()
+        )
 
     @property
     def skill_library(self) -> SkillLibrary:
         return self._skill_library if self._skill_library is not None else default_library()
+
+    @property
+    def experience_store(self) -> ExperienceStore:
+        return self._experience_store
 
     def create(
         self,
@@ -161,6 +176,12 @@ class GameRegistry:
             assert handle.runner is not None
             return handle.runner.state
 
+        # 跨局记忆装配：只对没被真人占的、配了 memory_id 的座位 load（坏文件在此 fail-loud）
+        handle.seat_memory_ids = seat_memory_ids(handle.agents, handle.config.num_players)
+        for seat, mid in handle.seat_memory_ids.items():
+            if seat not in handle.ports:
+                handle.experiences[seat] = self._experience_store.load(mid)
+
         handle.connections = ConnectionManager(state_provider=_state_of)
         for seat in range(handle.config.num_players):
             if seat not in handle.ports:
@@ -183,6 +204,22 @@ class GameRegistry:
             if isinstance(port, SupportsEventIngest):
                 handle.connections.subscribe(seat, port.on_events)
         handle.task = asyncio.create_task(runner.run())
+        if handle.seat_memory_ids:
+            handle.task.add_done_callback(lambda t: self._schedule_postgame(handle, t))
+
+    def _schedule_postgame(self, handle: GameHandle, task: asyncio.Task[GameState]) -> None:
+        """runner 正常终局后异步复盘；崩溃/取消不复盘。任务对象挂在 handle 上供测试 await。"""
+        if task.cancelled() or task.exception() is not None:
+            return
+        handle.postgame_task = asyncio.create_task(
+            run_postgame(
+                game_id=handle.game_id,
+                final_state=task.result(),
+                profiles=handle.agents,
+                ports=handle.ports,
+                store=self._experience_store,
+            )
+        )
 
     def _build_agent_port(self, seat: int, handle: GameHandle) -> PlayerPort:
         if self._agent_port_factory is not None:
@@ -191,4 +228,11 @@ class GameRegistry:
 
         profile = handle.profile_for(seat)
         assert profile is not None
-        return build_agent_port(seat, handle.config, profile, library=self.skill_library)
+        return build_agent_port(
+            seat,
+            handle.config,
+            profile,
+            library=self.skill_library,
+            experience=handle.experiences.get(seat),
+            opponents=opponents_for(seat, handle.seat_memory_ids),
+        )

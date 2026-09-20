@@ -197,3 +197,11 @@ def test_render_agent_roster() -> None:
     assert "性格 ENFP" in with_p
     no_p = render_agent_roster({"0": AgentProfile(model="m")}, num_players=1, human_seat=None)
     assert "性格" not in no_p
+
+    from app.agent.experience import AgentExperience
+
+    with_mid = {"0": AgentProfile(model="m", memory_id="alice")}
+    assert "记忆 alice" in render_agent_roster(with_mid, num_players=1, human_seat=None)
+    exp = AgentExperience(memory_id="alice", games_played=4)
+    out = render_agent_roster(with_mid, num_players=1, human_seat=None, experiences={"alice": exp})
+    assert "记忆 alice（4 局）" in out

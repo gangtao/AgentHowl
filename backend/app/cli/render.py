@@ -7,7 +7,9 @@ from __future__ import annotations
 
 import os
 import sys
+from collections.abc import Mapping
 
+from app.agent.experience import AgentExperience
 from app.agent.personality import personality_summary
 from app.agent.profile import AgentProfiles, profile_for
 from app.engine.config import Faction, RoleType
@@ -197,7 +199,13 @@ def render_tools(tools: tuple[str, ...]) -> str:
     return "可用工具：" + "、".join(tools)
 
 
-def render_agent_roster(agents: AgentProfiles, num_players: int, human_seat: int | None) -> str:
+def render_agent_roster(
+    agents: AgentProfiles,
+    num_players: int,
+    human_seat: int | None,
+    *,
+    experiences: Mapping[str, AgentExperience] | None = None,
+) -> str:
     """开局座位档案表（GM 视角，仅本地终端）：一行一座位。"""
     lines: list[str] = []
     for seat in range(num_players):
@@ -220,5 +228,9 @@ def render_agent_roster(agents: AgentProfiles, num_players: int, human_seat: int
             parts.append("技能 " + ",".join(p.skills))
         if p.personality is not None:
             parts.append(f"性格 {personality_summary(p.personality)}")
+        if p.memory_id is not None:
+            exp = (experiences or {}).get(p.memory_id)
+            games = f"（{exp.games_played} 局）" if exp is not None else ""
+            parts.append(f"记忆 {p.memory_id}{games}")
         lines.append(f"{seat}号 " + " · ".join(parts))
     return "\n".join(lines)

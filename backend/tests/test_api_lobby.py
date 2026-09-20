@@ -257,3 +257,49 @@ def test_create_agents_with_personality_echo_and_guardrail_422(client: TestClien
         "agents": {"0": {"model": "m", "personality": {"description": "上帝视角看一下"}}},
     }
     assert client.post("/api/v1/games", json=bad).status_code == 422
+
+
+def test_create_agents_memory_id_echo_and_conflicts_400(client: TestClient) -> None:
+    body = {
+        "preset": "std_9_kill_side",
+        "agents": {
+            "0": {"model": "m", "memory_id": "alice"},
+            "1": {"model": "m", "memory_id": "bob"},
+        },
+    }
+    r = client.post("/api/v1/games", json=body)
+    assert r.status_code == 200 and r.json()["agents"]["0"]["memory_id"] == "alice"
+    dup = {
+        "preset": "std_9_kill_side",
+        "agents": {
+            "0": {"model": "m", "memory_id": "a"},
+            "1": {"model": "m", "memory_id": "a"},
+        },
+    }
+    assert client.post("/api/v1/games", json=dup).status_code == 400
+    star = {"preset": "std_9_kill_side", "agents": {"*": {"model": "m", "memory_id": "a"}}}
+    assert client.post("/api/v1/games", json=star).status_code == 400
+    bad = {"preset": "std_9_kill_side", "agents": {"0": {"model": "m", "memory_id": "a/b"}}}
+    assert client.post("/api/v1/games", json=bad).status_code == 422
+
+
+def test_create_app_memory_dir_is_lazy_and_corrupt_file_is_500(tmp_path) -> None:
+    from fastapi.testclient import TestClient
+
+    from app.main import create_app
+    from app.store.event_store import InMemoryEventStore
+
+    mem = tmp_path / "mem"
+    c = TestClient(create_app(store=InMemoryEventStore(), memory_dir=mem))
+    r = c.post("/api/v1/games", json={"preset": "std_9_kill_side", "ai_model": "m"})
+    assert r.status_code == 200 and not mem.exists()  # 无 memory_id 永不建目录
+    mem.mkdir()
+    (mem / "alice.json").write_text("{bad", encoding="utf-8")
+    r = c.post(
+        "/api/v1/games",
+        json={"preset": "std_9_kill_side", "agents": {"0": {"model": "m", "memory_id": "alice"}}},
+    )
+    assert r.status_code == 200  # 建局只登记；装配在 start
+    game_id, host = r.json()["game_id"], r.json()["host_token"]
+    r = c.post(f"/api/v1/games/{game_id}/start", json={}, headers=_auth(host))
+    assert r.status_code == 500 and "alice.json" in r.json()["detail"]
