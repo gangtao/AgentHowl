@@ -489,6 +489,11 @@ class PlayerObservation(BaseModel):
 
 > **实现建议**：初版可不引入 Sentence-BERT 向量检索（增加依赖与延迟）。对 9–12 人局，一整局公开发言通常可控，先用"Freshness(K=15) + Informativeness(top-N 规则打分) + 每轮摘要"三件套；当上下文确实溢出时再加检索。这与论文消融一致：informative messages 与问答是"唯二会超出 context 的信息源"，去掉 informative messages 会让 Agent"以为死人还活着、忘记已揭示的角色"。
 
+**跨局经验（issue #59）**：`AgentProfile.memory_id` 标识的 Agent 在局后用 `reflection_model` 对
+『自身视角记忆 + 终局揭示』复盘，写入 `data/agent_memory/<memory_id>.json`（教训 ≤50、对手笔记
+按对手 `memory_id` 键 ≤10）；下一局装配为静态段『== 跨局经验 ==』（当前角色优先，字符预算）。
+对局中不写入；对手笔记只对有 `memory_id` 的对手记录。
+
 #### 4.4.2 Prompt 结构（三段式）
 
 参考 Werewolf-in-Unity（FDG 2025）与上述研究，每次调用 LLM 的 prompt 由三块组成：
@@ -584,10 +589,12 @@ POST /api/v1/games
 `agents: {"<seat>"|"*": AgentProfile}`（issue #56）：每座位内置 Agent 档案，字段
 `model` / `model_speech` / `reflection_model` / `thinking` / `temperature` / `name` /
 `skills`（issue #58；技能名列表，`"*"` = 全部）/ `personality`（issue #57；自由描述 /
-特质词表 / MBTI、Big Five 预设，见 §4.4.2）。查找按座位号优先于 `"*"`；未匹配座位
-用内置随机 bot。`ai_model` / `ai_model_speech` 等价于 `agents["*"]`；两者同时给出
-（`agents` 含 `"*"` 且又给了 `ai_model`）→ 400；`skills` 含未知技能名同样 → 400；
-`personality` 含越权或改规则短语 → 422（pydantic 校验失败）。响应体 `agents` 字段
+特质词表 / MBTI、Big Five 预设，见 §4.4.2）/ `memory_id`（issue #59；跨局经验标识，
+见 §4.4.1）。查找按座位号优先于 `"*"`；未匹配座位用内置随机 bot。`ai_model` /
+`ai_model_speech` 等价于 `agents["*"]`；两者同时给出（`agents` 含 `"*"` 且又给了
+`ai_model`）→ 400；`skills` 含未知技能名同样 → 400；`memory_id` 同局内被多个座位
+重复使用、或配在 `agents["*"]` → 400；`memory_id` 格式非法（非文件名安全字符）与
+`personality` 含越权或改规则短语同为 422（pydantic 校验失败）。响应体 `agents` 字段
 回显解析后的最终映射（含旧字段折叠结果）。
 
 **加入对局**：
