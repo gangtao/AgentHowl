@@ -37,7 +37,13 @@ from app.runtime.experience_store import (
 )
 from app.runtime.game_runner import GameRunner, RunnerTimeouts
 from app.runtime.player_port import BotPlayerPort, HumanPlayerPort, PlayerPort
-from app.runtime.postgame import opponents_for, run_postgame, seat_memory_ids
+from app.runtime.postgame import (
+    non_reflecting_seats,
+    opponents_for,
+    run_postgame,
+    seat_memory_ids,
+    utc_now_iso,
+)
 from app.store.event_store import StoreError
 
 ReadLine = Callable[[str], Awaitable[str]]
@@ -122,10 +128,19 @@ def load_agent_profiles(path: str) -> AgentProfiles:
 
 
 def load_experiences(
-    agents: AgentProfiles, num_players: int, store: ExperienceStore
+    agents: AgentProfiles,
+    num_players: int,
+    store: ExperienceStore,
+    *,
+    human_seat: int | None = None,
 ) -> dict[str, AgentExperience]:
-    """建局前装载所有配了 memory_id 座位的经验（坏文件在此 fail-loud）。"""
-    return {mid: store.load(mid) for mid in seat_memory_ids(agents, num_players).values()}
+    """建局前装载所有配了 memory_id 座位的经验（坏文件在此 fail-loud）。
+
+    human_seat：真人座位，其档案（含 memory_id）整体不生效，不读取其经验文件。
+    """
+    exclude = () if human_seat is None else (human_seat,)
+    seat_ids = seat_memory_ids(agents, num_players, exclude=exclude)
+    return {mid: store.load(mid) for mid in seat_ids.values()}
 
 
 async def _postgame_report(
@@ -136,7 +151,8 @@ async def _postgame_report(
     game_id: str,
 ) -> None:
     """终局后复盘并打印每个 memory_id 的累积摘要；无 memory_id 档案 → 静默。"""
-    if not seat_memory_ids(agents, len(state.players)):
+    seat_ids = seat_memory_ids(agents, len(state.players), exclude=non_reflecting_seats(ports))
+    if not seat_ids:
         return
     print("复盘中…")
     updated = await run_postgame(
@@ -160,7 +176,8 @@ def _wire_game(
 
     agents = agents or {}
     n = config.num_players
-    seat_ids = seat_memory_ids(agents, n)
+    exclude = () if human_seat is None else (human_seat,)
+    seat_ids = seat_memory_ids(agents, n, exclude=exclude)
     holder: dict[str, GameRunner] = {}
 
     def state_of() -> GameState:
@@ -244,7 +261,7 @@ async def run_watch(
 
     conns.subscribe(view, on_events)  # 必须先于 run
     state = await runner.run()
-    await _postgame_report(state, agents or {}, ports, store, f"cli-{config.seed}")
+    await _postgame_report(state, agents or {}, ports, store, f"cli-{config.seed}-{utc_now_iso()}")
     return state
 
 

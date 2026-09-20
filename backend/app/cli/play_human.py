@@ -32,6 +32,7 @@ from app.engine.state import GameState
 from app.runtime.experience_store import ExperienceStore, InMemoryExperienceStore
 from app.runtime.game_runner import GameRunner
 from app.runtime.player_port import HumanPlayerPort, NotYourTurnError
+from app.runtime.postgame import utc_now_iso
 from app.schemas.actions import ToolCall, ToolCallError, available_tools_for, parse_tool_call
 
 _HELP = (
@@ -101,7 +102,7 @@ async def run_play(
 ) -> GameState:
     """真人座玩局：并发 runner + turn-loop，跑到 GAME_OVER。"""
     store = experience_store if experience_store is not None else InMemoryExperienceStore()
-    experiences = load_experiences(agents or {}, config.num_players, store)
+    experiences = load_experiences(agents or {}, config.num_players, store, human_seat=seat)
     runner, conns, ports = _wire_game(
         config, human_seat=seat, agents=agents, library=library, experiences=experiences
     )
@@ -171,7 +172,7 @@ async def run_play(
         with contextlib.suppress(asyncio.CancelledError):
             await loop_task
 
-    await _postgame_report(state, agents or {}, ports, store, f"cli-{config.seed}")
+    await _postgame_report(state, agents or {}, ports, store, f"cli-{config.seed}-{utc_now_iso()}")
 
     winner = {"GOOD": "好人胜", "WOLF": "狼人胜"}.get(state.winner or "", "平局")
     print(color(f"\n═══════ 游戏结束：{winner} ═══════", "bold"))

@@ -113,6 +113,21 @@ def build_reveal(state: GameState, seat: int, *, notable_seats: Iterable[int]) -
 - `tests/test_registry.py` / `tests/test_api_lobby.py`：重复 `memory_id` 与 `"*"` 配 `memory_id` → 400；回显 `memory_id`；无 `memory_id` 时 `postgame_task is None`。
 - `tests/test_cli_play_watch.py` / `tests/test_cli_render.py`：YAML `memory_id` 解析、`--memory-dir`、档案表「记忆」列（有/无局数两种）。
 
-## 7. 明确不在范围
+## 8. 实现期附注（终审 F7，实现与本规格的措辞差异；均已裁决，仅记录不改代码）
+
+- **§2 `record_game` 空条处理顺序**：本节文字读起来是「取前 3 条…空条丢弃」（先截条数再丢空条）；
+  实现（及其测试「一二三」用例）是先丢空条再截条数——空条不占本局 3 条名额，是更合理的语义，
+  以实现为准。
+- **§4 渲染二级标题**：本节步骤 2/3 写的是「`== 教训 ==`」「`== 对手 ==`」；实现渲染成行首
+  「教训：」「对手：」——嵌套在「== 跨局经验 ==」段内的二级「==」标题会与一级段落标记混淆，
+  故改为更轻的行首标签，以实现为准。
+- **§3 复盘调用温度**：本节写死 `temperature=0.3`；实现用 `self._cfg.temperature`
+  （`agent_player.py`，取自档案 `AgentConfig.temperature`，默认仍是 0.3）——每座位可单独调，
+  比写死更好，以实现为准。
+- **§5 CLI 摘要行文案**：本节写「记忆 {id}：{games_played} 局，教训 {n}（+{k}）」；实现是
+  「记忆 {id}：{games_played} 局，教训 {len(lessons)}，对手笔记 {notes}」——`task-1-brief.md`
+  是这条的权威来源，以实现为准。
+
+## 9. 明确不在范围
 
 - 向量检索 / embedding；多 Agent 共享记忆；记忆可视化 UI；多局循环 CLI；读取/清空记忆的 API 端点（后续 issue）；复盘输入扩展到 GM 关键事件（后续增强）；并发写锁。

@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Collection, Mapping
 from datetime import UTC, datetime
 from typing import Protocol, runtime_checkable
 
@@ -28,14 +28,26 @@ class SupportsGameReflection(Protocol):
     async def reflect_on_game(self, reveal: GameReveal) -> GameReflection | None: ...
 
 
-def seat_memory_ids(profiles: AgentProfiles, num_players: int) -> dict[int, str]:
-    """座位 → memory_id（只含配置了 memory_id 的座位；"*" 档案已被 validate_profiles 拒绝）。"""
+def seat_memory_ids(
+    profiles: AgentProfiles, num_players: int, *, exclude: Collection[int] = ()
+) -> dict[int, str]:
+    """座位 → memory_id。exclude = 真人/外部端口占用的座位：其档案整体不生效（含 memory_id）。
+
+    "*" 档案已被 validate_profiles 拒绝配 memory_id。
+    """
     out: dict[int, str] = {}
     for seat in range(num_players):
+        if seat in exclude:
+            continue
         p = profile_for(profiles, seat)
         if p is not None and p.memory_id is not None:
             out[seat] = p.memory_id
     return out
+
+
+def non_reflecting_seats(ports: Mapping[int, PlayerPort]) -> set[int]:
+    """端口不支持局后复盘的座位（真人 / 外部端口 / 随机 bot）。"""
+    return {s for s, p in ports.items() if not isinstance(p, SupportsGameReflection)}
 
 
 def opponents_for(seat: int, seat_ids: Mapping[int, str]) -> dict[str, int]:
@@ -59,7 +71,9 @@ async def run_postgame(
     """对每个有 memory_id 的 Agent 座位：揭示 → 复盘 → load → record_game → save。返回本次更新。"""
     if final_state.phase != Phase.GAME_OVER:
         raise ValueError("局后复盘只能在 GAME_OVER 后运行")
-    seat_ids = seat_memory_ids(profiles, len(final_state.players))
+    seat_ids = seat_memory_ids(
+        profiles, len(final_state.players), exclude=non_reflecting_seats(ports)
+    )
     updated: dict[str, AgentExperience] = {}
     for seat, mid in seat_ids.items():
         port = ports.get(seat)

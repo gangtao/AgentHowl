@@ -267,6 +267,48 @@ def test_load_agent_profiles_memory_id_and_wire_passes_experience(tmp_path) -> N
     assert p3._opponents == {"alice": 0}
 
 
+def test_wire_game_human_seat_memory_id_is_inert(tmp_path) -> None:
+    """终审 F1：human_seat 的 memory_id 档案不生效，其他座位也不把它当有记忆的对手。"""
+    from app.agent.agent_player import AgentPlayerPort
+    from app.agent.experience import AgentExperience
+    from app.agent.profile import AgentProfile
+    from app.cli.play import load_experiences
+    from app.runtime.experience_store import InMemoryExperienceStore
+
+    store = InMemoryExperienceStore()
+    store.save(AgentExperience(memory_id="alice", games_played=5))
+    agents = {
+        "0": AgentProfile(model="ollama/a", memory_id="alice"),
+        "3": AgentProfile(model="ollama/b", memory_id="bob"),
+    }
+    exps = load_experiences(agents, 9, store, human_seat=0)
+    assert set(exps) == {"bob"}  # alice 的档案不生效，其经验文件不读
+    config = build_preset("std_9_kill_side").model_copy(update={"seed": 3})
+    _r, _c, ports = _wire_game(config, human_seat=0, agents=agents, experiences=exps)
+    p3 = ports[3]
+    assert isinstance(p3, AgentPlayerPort)
+    assert p3._opponents == {}  # 看不到 0 号（真人占座，不算有记忆的对手）
+
+
+def test_load_experiences_human_seat_skips_corrupt_file(tmp_path) -> None:
+    """终审 F1：真人座位的坏经验文件不应导致 load_experiences fail-loud（该文件根本不读）。"""
+    from app.cli.play import load_agent_profiles, load_experiences
+    from app.runtime.experience_store import JsonFileExperienceStore
+
+    y = tmp_path / "p.yaml"
+    y.write_text(
+        'seats:\n  "0": {model: ollama/a, memory_id: alice}\n'
+        '  "3": {model: ollama/b, memory_id: bob}\n',
+        encoding="utf-8",
+    )
+    agents = load_agent_profiles(str(y))
+    d = tmp_path / "mem"
+    d.mkdir()
+    (d / "alice.json").write_text("{bad", encoding="utf-8")
+    exps = load_experiences(agents, 9, JsonFileExperienceStore(d), human_seat=0)
+    assert set(exps) == {"bob"}
+
+
 def test_main_memory_dir_default_and_duplicate_memory_id(tmp_path, capsys) -> None:
     from app.cli.play import main
 
@@ -278,6 +320,20 @@ def test_main_memory_dir_default_and_duplicate_memory_id(tmp_path, capsys) -> No
     with pytest.raises(SystemExit):
         main(["--agents", str(y)])
     assert "重复" in capsys.readouterr().err
+
+
+def test_main_corrupt_memory_file_is_parser_error(tmp_path, capsys) -> None:
+    """终审 F6：坏的经验文件在 main() 里应是明确的参数错误（退出码 2），不是裸 traceback。"""
+    from app.cli.play import main
+
+    y = tmp_path / "p.yaml"
+    y.write_text('seats:\n  "0": {model: ollama/a, memory_id: alice}\n', encoding="utf-8")
+    mem = tmp_path / "mem"
+    mem.mkdir()
+    (mem / "alice.json").write_text("{bad", encoding="utf-8")
+    with pytest.raises(SystemExit):
+        main(["--agents", str(y), "--memory-dir", str(mem), "--delay", "0"])
+    assert "alice.json" in capsys.readouterr().err
 
 
 def test_watch_game_with_memory_runs_postgame_and_persists(tmp_path, capsys, monkeypatch) -> None:

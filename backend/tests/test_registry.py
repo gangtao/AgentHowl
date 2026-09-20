@@ -305,6 +305,66 @@ async def _postgame_of(handle: GameHandle) -> "asyncio.Task[object]":
     raise AssertionError("postgame_task 未被调度")
 
 
+async def test_human_joined_seat_memory_id_is_inert() -> None:
+    """终审 F1：真人占座的 memory_id 档案整体不生效——不读经验、不被当作有记忆的对手。"""
+    from pydantic import BaseModel
+
+    from app.agent.agent_player import AgentConfig, AgentPlayerPort
+    from app.agent.experience import AgentExperience, GameReflection
+    from app.agent.memory import ReflectionResult
+    from app.agent.profile import AgentProfile
+    from app.runtime.experience_store import InMemoryExperienceStore
+    from app.runtime.postgame import opponents_for
+    from tests.llm_helpers import ScriptedLLMClient, action_to_decision
+
+    store = InMemoryExperienceStore()
+    store.save(AgentExperience(memory_id="alice", games_played=9))  # 若被误读会被观察到
+    saves_before_start = store.saves
+    seen: dict[int, dict[str, int]] = {}
+
+    def factory(seat: int, handle: GameHandle) -> PlayerPort:
+        seen[seat] = opponents_for(seat, handle.seat_memory_ids)
+
+        def script(rm: type[BaseModel], system: str, user: str) -> BaseModel:
+            if rm is ReflectionResult:
+                return ReflectionResult(summary="(r)", qa=[])
+            if rm is GameReflection:
+                return GameReflection(lessons=[f"(lesson of {seat})"], opponent_notes={})
+            assert handle.runner is not None
+            return action_to_decision(RandomBot.choose_action(handle.runner.state, seat), rm)
+
+        return AgentPlayerPort(
+            seat=seat,
+            game_config=handle.config,
+            agent_config=AgentConfig(model="scripted", agent_seed=1),
+            client=ScriptedLLMClient(script),
+            experience=handle.experiences.get(seat),
+            opponents=opponents_for(seat, handle.seat_memory_ids),
+        )
+
+    reg = GameRegistry(
+        InMemoryEventStore(),
+        RunnerTimeouts(speech_sec=30.0, action_sec=30.0),
+        agent_port_factory=factory,
+        experience_store=store,
+    )
+    agents = {
+        "0": AgentProfile(model="m", memory_id="alice"),
+        "1": AgentProfile(model="m", memory_id="bob"),
+        "*": AgentProfile(model="m"),
+    }
+    config = build_preset("std_9_kill_side").model_copy(update={"seed": 3})
+    handle = reg.create(config, allow_spectators=False, agents=agents)
+    reg.join(handle, "Alice", "HUMAN")  # 占 0 号——档案（含 memory_id=alice）应整体不生效
+    reg.start(handle)
+    assert handle.seat_memory_ids == {1: "bob"}
+    assert 0 not in handle.experiences
+    assert seen[1] == {}  # 座位 1 看不到 alice（0 号是真人，不算有记忆的对手）
+    assert store.saves == saves_before_start  # 对局中不写；alice 从未被重新 load-save
+    assert handle.task is not None
+    handle.task.cancel()
+
+
 async def test_no_memory_id_means_no_postgame_task() -> None:
     reg = _registry()  # 文件已有的辅助工厂；若无则用 GameRegistry(InMemoryEventStore(), TIMEOUTS)
     config = build_preset("std_9_kill_side").model_copy(update={"seed": 3})

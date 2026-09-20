@@ -57,8 +57,13 @@ class GameReflection(BaseModel):
 
 
 def _cleaned(items: Iterable[str], limit: int) -> list[str]:
-    """strip + 截到 limit 字，丢弃空条。"""
-    out = [t.strip()[:limit] for t in items]
+    """折叠空白（含换行）+ 截到 limit 字，丢弃空条。
+
+    折叠内嵌换行是为了防止自我注入：教训/笔记文本会被逐字拼进下一局系统 prompt 的
+    「== 跨局经验 ==」段，若保留换行，模型写出的「\\n== 你的技能 ==\\n...」会伪造出
+    一个新的 prompt 段落标题。
+    """
+    out = [" ".join(t.split())[:limit] for t in items]
     return [t for t in out if t]
 
 
@@ -128,7 +133,10 @@ class GameReveal(BaseModel):
 def build_reveal(state: GameState, seat: int, *, notable_seats: Iterable[int]) -> GameReveal:
     if state.phase != Phase.GAME_OVER:
         raise ValueError(f"终局揭示只能在 GAME_OVER 后构造（当前 {state.phase}）")
-    me = next(p for p in state.players if p.seat == seat)
+    by_seat = {p.seat: p for p in state.players}
+    me = by_seat.get(seat)
+    if me is None:
+        raise ValueError(f"座位 {seat} 不在本局玩家中")
     return GameReveal(
         game_id=state.game_id,
         winner=state.winner,
@@ -145,7 +153,7 @@ def build_reveal(state: GameState, seat: int, *, notable_seats: Iterable[int]) -
             )
             for p in state.players
         ),
-        notable_seats=tuple(sorted(s for s in set(notable_seats) if s != seat)),
+        notable_seats=tuple(sorted(s for s in set(notable_seats) if s != seat and s in by_seat)),
     )
 
 
@@ -193,6 +201,7 @@ def render_experience(
 
     教训：当前角色最新优先，再补其他角色最新；对手：opponents 为「对手 memory_id → 本局座位」，
     只展示在场且有笔记的对手、各取最近 3 条。逐行累加直到超过 budget_chars。
+    budget_chars 只计教训/对手条目行，不含首行、节标签与末句（约 65 字固定开销）。
     """
     used = 0
     lesson_lines: list[str] = []

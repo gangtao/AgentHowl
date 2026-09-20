@@ -6,6 +6,7 @@ api 层唯一入口；本模块不做任何裁决，只做装配（lobby/ports/r
 from __future__ import annotations
 
 import asyncio
+import logging
 import secrets
 from collections.abc import Callable
 from typing import Literal
@@ -33,6 +34,8 @@ from app.runtime.player_port import (
 )
 from app.runtime.postgame import opponents_for, run_postgame, seat_memory_ids
 from app.store.event_store import EventStore
+
+logger = logging.getLogger(__name__)
 
 
 class GameHandle:
@@ -176,11 +179,13 @@ class GameRegistry:
             assert handle.runner is not None
             return handle.runner.state
 
-        # 跨局记忆装配：只对没被真人占的、配了 memory_id 的座位 load（坏文件在此 fail-loud）
-        handle.seat_memory_ids = seat_memory_ids(handle.agents, handle.config.num_players)
+        # 跨局记忆装配：真人/外部端口已占的座位（此时 handle.ports 只含 join 过的座位）
+        # 档案整体不生效，含 memory_id；坏文件在此 fail-loud
+        handle.seat_memory_ids = seat_memory_ids(
+            handle.agents, handle.config.num_players, exclude=handle.ports.keys()
+        )
         for seat, mid in handle.seat_memory_ids.items():
-            if seat not in handle.ports:
-                handle.experiences[seat] = self._experience_store.load(mid)
+            handle.experiences[seat] = self._experience_store.load(mid)
 
         handle.connections = ConnectionManager(state_provider=_state_of)
         for seat in range(handle.config.num_players):
@@ -220,6 +225,7 @@ class GameRegistry:
                 store=self._experience_store,
             )
         )
+        handle.postgame_task.add_done_callback(lambda t: _log_postgame(handle.game_id, t))
 
     def _build_agent_port(self, seat: int, handle: GameHandle) -> PlayerPort:
         if self._agent_port_factory is not None:
@@ -236,3 +242,11 @@ class GameRegistry:
             experience=handle.experiences.get(seat),
             opponents=opponents_for(seat, handle.seat_memory_ids),
         )
+
+
+def _log_postgame(game_id: str, task: asyncio.Task[dict[str, AgentExperience]]) -> None:
+    """复盘任务无人 await：取消/异常至少留日志（关停时优雅等待见后续 issue）。"""
+    if task.cancelled():
+        logger.warning("对局 %s 局后复盘被取消，本局经验未落盘", game_id)
+    elif (exc := task.exception()) is not None:
+        logger.error("对局 %s 局后复盘异常：%s", game_id, exc, exc_info=exc)
