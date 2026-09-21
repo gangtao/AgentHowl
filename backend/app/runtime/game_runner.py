@@ -189,7 +189,9 @@ class GameRunner:
                 rejections += 1  # 非法 intent：截止前重试（M2.3 真人重试路径）
                 continue
             self._state = res.state
-            await self._commit(res.events)
+            # 技能装配记录（issue #60）：端口若暴露 last_skills_used，写进本次提交的首条事件 meta
+            skills = tuple(getattr(self._ports[seat], "last_skills_used", ()))
+            await self._commit(res.events, skills=skills)
             port = self._ports[seat]
             if isinstance(port, SupportsResultFeedback):
                 event_id = f"evt_{res.events[0].seq:05d}" if res.events else None
@@ -203,21 +205,19 @@ class GameRunner:
         self._state = res.state
         await self._commit(res.events, timed_out=True)
 
-    async def _commit(self, events: list[Event], timed_out: bool = False) -> None:
+    async def _commit(
+        self, events: list[Event], timed_out: bool = False, skills: Sequence[str] = ()
+    ) -> None:
         """meta 充实 → 落库 → 广播，同序。runtime 对事件的唯一合法改写点。"""
         wall_ts = datetime.now(UTC).isoformat()
-        enriched = [
-            e.model_copy(
-                update={
-                    "meta": {
-                        **e.meta,
-                        "wall_ts": wall_ts,
-                        **({"timeout": "true"} if timed_out else {}),
-                    }
-                }
-            )
-            for e in events
-        ]
+        enriched: list[Event] = []
+        for i, e in enumerate(events):
+            meta = {**e.meta, "wall_ts": wall_ts}
+            if timed_out:
+                meta["timeout"] = "true"
+            if skills and i == 0:  # 只标首条：一次行动记一次装配（issue #60）
+                meta["skills"] = ",".join(skills)
+            enriched.append(e.model_copy(update={"meta": meta}))
         for e in enriched:
             self._store.append(self._game_id, e)
         if self.connections is not None:

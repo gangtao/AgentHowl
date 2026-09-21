@@ -297,3 +297,14 @@ def test_meta_agents_roundtrip_and_legacy_meta_loads_empty(tmp_path: Path) -> No
     legacy.write_text(json.dumps(head, ensure_ascii=False) + "\n", encoding="utf-8")
     assert JsonFileEventStore(tmp_path).load_meta("old").agents == {}
     assert GameMeta(game_id="x", config=meta.config, roster=meta.roster).agents == {}
+
+
+def test_event_meta_skills_roundtrips_jsonl(tmp_path: Path) -> None:
+    meta, _final, events = _run_fixture_game()
+    tagged = events[5].model_copy(update={"meta": {**events[5].meta, "skills": "a,b"}})
+    store = JsonFileEventStore(tmp_path)
+    store.create_game(meta)
+    for e in events[:5]:
+        store.append("g1", e)
+    store.append("g1", tagged)
+    assert JsonFileEventStore(tmp_path).load_events("g1")[5].meta["skills"] == "a,b"
