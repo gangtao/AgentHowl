@@ -14,6 +14,7 @@ from typing import Protocol
 
 from pydantic import BaseModel, ConfigDict, ValidationError
 
+from app.agent.profile import AgentProfile  # 只依赖 pydantic + engine，无 litellm
 from app.engine.config import Faction, GameConfig, RoleType
 from app.engine.events import EVENT_PAYLOAD_TYPES, Event, EventType, reduce_all
 from app.engine.phases import Phase
@@ -48,13 +49,18 @@ class SeatName(BaseModel):
 
 
 class GameMeta(BaseModel):
-    """JSONL 首行头记录：冷装载 reduce 所需的全部初始信息。"""
+    """JSONL 首行头记录：冷装载 reduce 所需的全部初始信息。
+
+    agents（issue #64）：实际建成 Agent 端口的座位 → 档案（键为座位号字符串；真人 / 随机 bot
+    不记；"*" 已展开）。只供回放 / 档案评估（#60）使用，不经 observation 暴露；缺省 {} 兼容旧文件。
+    """
 
     model_config = ConfigDict(frozen=True)
 
     game_id: str
     config: GameConfig
     roster: tuple[SeatName, ...]
+    agents: dict[str, AgentProfile] = {}
 
 
 def event_to_json(event: Event) -> dict[str, object]:

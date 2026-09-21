@@ -408,3 +408,16 @@ def test_watch_game_with_memory_runs_postgame_and_persists(tmp_path, capsys, mon
     assert "记忆 alice" in out.splitlines()[0]  # 档案表列
     assert "复盘中" in out and "记忆 alice：1 局，教训 1" in out
     assert store.load("alice").lessons[0].text == "(cli lesson)"
+
+
+def test_wire_game_records_effective_profiles_in_meta() -> None:
+    """issue #64：CLI 局的 meta.agents 同样只含实际建成 Agent 端口的座位（真人座位除外）。"""
+    from app.agent.profile import AgentProfile
+
+    config = build_preset("std_9_kill_side").model_copy(update={"seed": 3})
+    star, two = AgentProfile(model="ollama/z"), AgentProfile(model="ollama/two")
+    runner, _c, _ports = _wire_game(config, human_seat=4, agents={"*": star, "2": two})
+    expected = {str(s): (two if s == 2 else star) for s in range(9) if s != 4}
+    assert runner._agents == expected
+    bare, _c2, _p2 = _wire_game(config)
+    assert bare._agents == {}

@@ -185,7 +185,8 @@ def _wire_game(
 
     ports: dict[int, PlayerPort] = {}
     names: list[str] = []
-    used_profiles: list[AgentProfile] = []  # 只收实际建成 Agent 端口的座位（F5 终审修复）
+    # 只收实际建成 Agent 端口的座位（F5 终审修复）；同一份写进 meta（issue #64）
+    used_profiles: AgentProfiles = {}
     for seat in range(n):
         profile = None if seat == human_seat else profile_for(agents, seat)
         if seat == human_seat:
@@ -202,7 +203,7 @@ def _wire_game(
                 experience=exp,
                 opponents=opponents_for(seat, seat_ids),
             )
-            used_profiles.append(profile)
+            used_profiles[str(seat)] = profile
         else:
             ports[seat] = BotPlayerPort(state_provider=state_of)
         names.append(profile.name if profile is not None and profile.name else f"P{seat}")
@@ -211,7 +212,7 @@ def _wire_game(
         RosterEntry(display_name=names[i], player_type=("HUMAN" if i == human_seat else "AGENT"))
         for i in range(n)
     ]
-    any_thinking = any(p.thinking for p in used_profiles)
+    any_thinking = any(p.thinking for p in used_profiles.values())
     conns = ConnectionManager(state_provider=state_of)
     runner = GameRunner(
         store=InMemoryEventStore(),
@@ -222,6 +223,7 @@ def _wire_game(
         connections=conns,
         # 思考模式单次决策可达数分钟，放宽窗口避免被超时代打
         timeouts=_THINK_TIMEOUTS if any_thinking else _CLI_TIMEOUTS,
+        agents=used_profiles,
     )
     holder["r"] = runner
     return runner, conns, ports

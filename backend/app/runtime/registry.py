@@ -188,12 +188,15 @@ class GameRegistry:
             handle.experiences[seat] = self._experience_store.load(mid)
 
         handle.connections = ConnectionManager(state_provider=_state_of)
+        effective: AgentProfiles = {}  # 实际建成 Agent 端口的座位 → 档案，写进 meta（issue #64）
         for seat in range(handle.config.num_players):
             if seat not in handle.ports:
-                if handle.profile_for(seat) is None:
+                profile = handle.profile_for(seat)
+                if profile is None:
                     handle.ports[seat] = BotPlayerPort(state_provider=_state_of)
                 else:
                     handle.ports[seat] = self._build_agent_port(seat, handle)
+                    effective[str(seat)] = profile
         runner = GameRunner(
             store=self._store,
             config=handle.config,
@@ -202,6 +205,7 @@ class GameRegistry:
             ports=handle.ports,
             connections=handle.connections,
             timeouts=self._timeouts,
+            agents=effective,
         )
         handle.runner = runner
         # 订阅须在 create_task 之前完成，否则 GAME_CREATED/ROLES_ASSIGNED 首批事件漏投

@@ -303,3 +303,41 @@ def test_create_app_memory_dir_is_lazy_and_corrupt_file_is_500(tmp_path) -> None
     game_id, host = r.json()["game_id"], r.json()["host_token"]
     r = c.post(f"/api/v1/games/{game_id}/start", json={}, headers=_auth(host))
     assert r.status_code == 500 and "alice.json" in r.json()["detail"]
+
+
+def test_meta_endpoint_gated_until_game_over_and_echoes_effective_agents() -> None:
+    """issue #64：/meta 终局前 403；终局后返回 meta，agents 只含实际建成 Agent 端口的座位。"""
+    import time as _t
+
+    from app.runtime.player_port import BotPlayerPort
+
+    # 档案座位用随机 bot 端口顶替（不碰 litellm）；meta 记的是档案，不看端口类型
+    app = create_app(
+        store=InMemoryEventStore(),
+        timeouts=RunnerTimeouts(speech_sec=5.0, action_sec=5.0),
+        agent_port_factory=lambda seat, h: BotPlayerPort(state_provider=h.live_state),
+    )
+    client = TestClient(app)
+    body = {
+        "preset": "std_9_kill_side",
+        "config_override": {"seed": 11},
+        "agents": {"1": {"model": "m", "skills": ["logic-chain"], "memory_id": "alice"}},
+    }
+    created = client.post("/api/v1/games", json=body).json()
+    gid, host, spec = created["game_id"], created["host_token"], created["spectator_token"]
+    assert client.get(f"/api/v1/games/{gid}/meta", headers=_auth(spec)).status_code == 403
+    assert client.get(f"/api/v1/games/{gid}/meta").status_code in (401, 403)
+    assert (
+        client.post(f"/api/v1/games/{gid}/start", json={}, headers=_auth(host)).status_code == 200
+    )
+    handle = client.app.state.games.get(gid)  # type: ignore[attr-defined]
+    deadline = _t.time() + 30
+    while not (handle.task is not None and handle.task.done()) and _t.time() < deadline:
+        _t.sleep(0.05)
+    r = client.get(f"/api/v1/games/{gid}/meta", headers=_auth(spec))
+    assert r.status_code == 200
+    meta = r.json()
+    assert meta["game_id"] == gid and meta["config"]["seed"] == 11
+    assert len(meta["roster"]) == 9 and set(meta["agents"]) == {"1"}
+    one = meta["agents"]["1"]
+    assert one["skills"] == ["logic-chain"] and one["memory_id"] == "alice"

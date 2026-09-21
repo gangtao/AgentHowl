@@ -166,6 +166,9 @@ curl -s -X POST $BASE/games/$GID/actions -H "Authorization: Bearer $PLAYER_TOKEN
 
 # 6) 局终 GM 全量回放
 curl -s $BASE/games/$GID/replay -H "Authorization: Bearer $SPECTATOR_TOKEN"
+
+# 7) 局终对局头记录：配置 / 名单 / 各座位实际生效的 Agent 档案（回放与档案评估用）
+curl -s $BASE/games/$GID/meta -H "Authorization: Bearer $SPECTATOR_TOKEN"
 ```
 
 WebSocket（按视角推送过滤后事件流；断线可凭同 token + `from_seq` 重连补发）：

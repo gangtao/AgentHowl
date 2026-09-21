@@ -13,6 +13,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
+from app.agent.profile import AgentProfiles
 from app.engine.config import GameConfig
 from app.engine.engine import RosterEntry, create_game, step
 from app.engine.events import Event
@@ -75,13 +76,14 @@ class GameLobby:
             raise LobbyError(f"未满员：{len(self._entries)}/{self._config.num_players}")
         return tuple(self._entries)
 
-    def game_meta(self) -> GameMeta:
+    def game_meta(self, agents: AgentProfiles | None = None) -> GameMeta:
         return GameMeta(
             game_id=self._game_id,
             config=self._config,
             roster=tuple(
                 SeatName(seat=i, display_name=e.display_name) for i, e in enumerate(self.roster())
             ),
+            agents=dict(agents or {}),
         )
 
 
@@ -103,12 +105,15 @@ class GameRunner:
         ports: Mapping[int, PlayerPort],
         connections: ConnectionManager | None = None,
         timeouts: RunnerTimeouts | None = None,
+        agents: AgentProfiles | None = None,
     ) -> None:
         self._store = store
         self._config = config
         self._game_id = game_id
         self._roster = tuple(roster)
         self._ports = ports
+        # 实际建成 Agent 端口的座位 → 档案（issue #64）；只写进 meta，运行时不读
+        self._agents: AgentProfiles = dict(agents or {})
         self.connections = connections
         self._timeouts = timeouts or RunnerTimeouts.from_config(config)
         self._state: GameState | None = None
@@ -126,6 +131,7 @@ class GameRunner:
             roster=tuple(
                 SeatName(seat=i, display_name=e.display_name) for i, e in enumerate(self._roster)
             ),
+            agents=self._agents,
         )
         self._store.create_game(meta)
         res = create_game(self._config, self._game_id, roster=self._roster)
