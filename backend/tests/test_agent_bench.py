@@ -167,3 +167,23 @@ async def test_personality_contrast_smoke() -> None:
         has_gold = "金水" in text
         has_suspect = "怀疑" in text
         print(f"[{label}] len={len(text)} 含'金水'={has_gold} 含'怀疑'={has_suspect}: {text[:80]}")
+
+
+async def test_ab_bench_smoke(tmp_path) -> None:
+    """A（多疑 0.9）vs B（从众 0.9）各跑 1 局，打印指标表；不断言方向。"""
+    from app.agent.personality import PersonalitySpec
+    from app.agent.profile import AgentProfile
+    from app.agent.skills import default_library
+    from app.cli.bench import label_map, report, run_bench
+    from app.store.event_store import JsonFileEventStore
+
+    assert SMOKE_MODEL is not None
+    a = {"*": AgentProfile(model=SMOKE_MODEL, personality=PersonalitySpec(traits={"多疑": 0.9}))}
+    b = {"*": AgentProfile(model=SMOKE_MODEL, personality=PersonalitySpec(traits={"从众": 0.9}))}
+    store = JsonFileEventStore(tmp_path / "bench")
+    await run_bench(
+        preset="std_9_kill_side", seed=3, games=2, a=a, b=b, library=default_library(), store=store
+    )
+    table, _doc = report(store, label_map(a, b, "多疑", "从众"))
+    print("\n[ab-bench]\n" + table)
+    assert "Δ(多疑−从众)" in table

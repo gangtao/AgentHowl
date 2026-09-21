@@ -103,6 +103,7 @@ make lint         # ruff 静态检查
 make format       # ruff 自动格式化
 make serve        # 启动 API 服务（uvicorn 热重载）
 make smoke        # 真模型 smoke（需 AGENTHOWL_SMOKE_MODEL + Ollama）
+make bench        # 档案 A/B bench（不给 AGENTS 为零 LLM 随机 bot；见下「档案评估」）
 ```
 
 等价的原始命令（`cd backend` 后）：
@@ -347,6 +348,67 @@ seats:
 复盘中…
 记忆 laozhang：1 局，教训 2，对手笔记 1
 ```
+
+### 档案评估 / Bench
+
+回答「这份 Agent 档案配置有没有用」（issue #60）：离线分析器从**已落盘的事件日志**按档案
+统计多局胜率与行为指标，配一个 A/B bench 驱动器把两份档案交错跑进同一批对局。
+
+```bash
+make bench GAMES=20 AGENTS=a.yaml AGENTS_B=b.yaml        # A/B 交错跑 20 局并出报告
+make bench GAMES=20 AGENTS=a.yaml                        # 只给 A：A vs 随机 bot
+make bench GAMES=20                                       # 不给 AGENTS：零 LLM，全随机 bot 冒烟
+```
+
+等价的原始命令（`cd backend` 后）：
+
+```bash
+uv run python -m app.cli.bench --games 20 --agents a.yaml --agents-b b.yaml --seed 3
+uv run python -m app.cli.bench --report-only data/bench/<run>   # 只重新分析已有日志目录
+uv run python -m app.cli.bench --games 20 --agents a.yaml --agents-b b.yaml --json out.json
+```
+
+座位分配：交错 + 逐局轮转——座位 `s` 在第 `i` 局取档案 A（`(s + i) % 2 == 0` 或未给 B），否则取
+B；每局 `seed = --seed + i`，事件落到 `--out`（默认 `data/bench/<时间戳>`；已存在且非空会拒绝，
+避免与旧局混算）。聚合的「档案」身份是**内容指纹**（档案去 `name` / `memory_id` 后的规范化 JSON
+摘要）——同指纹即同一档案，`--agents` 与 `--agents-b` 给出内容相同的档案会建局即拒（A/B 无意义）；
+标签（`--label-a` / `--label-b`，默认 `A`/`B`）只是显示名。未配档案的座位归入「随机 bot」组。
+
+指标（逐座位每局计数，按指纹求和后取比率；分母为 0 显示 `N/A`）：
+
+| 列 | 口径 |
+|---|---|
+| 局数 | 该档案出场的局数 |
+| 胜率 / 狼胜 / 好人胜 | 本座位阵营 == 终局胜方；狼胜/好人胜分母各自限定角色阵营 |
+| 存活率 / 均存活轮 | 撑到终局的比例；平均存活到第几轮（夜杀/放逐/开枪/自爆记死亡轮） |
+| 放逐率 | 被投票放逐的比例 |
+| 发言均长 | 发言字符数 / 发言次数 |
+| 声称率 | 带 `claim_role` 的发言占比 |
+| 上警率 | 报名竞选警长的局占比（分母限 `sheriff.enabled` 的局） |
+| 改票率 | PK 轮里目标不同于首轮目标的比例 |
+| 空刀率 | 狼队夜间提议目标为空的比例 |
+| 重提率 | 出现 `WOLF_KILL_REVOTE`（团队未达成一致再议）的狼夜占比 |
+| 技能次数 | 事件 `meta["skills"]` 记到的技能装配次数总和 |
+
+技能次数统计不依赖 bench——技能装配次数来自 runtime 写入行动首条事件的 `meta["skills"]`，
+任何来源（API / CLI 看局或玩局 / bench）落盘的 JSONL 日志目录都能用 `--report-only` 统计。
+bench 跑局时不装配跨局记忆、不跑局后复盘（档案里的 `memory_id` 只被记进 `meta.agents`，
+不产生新经验）；也不做跨局记忆——每局都是独立冷启动。
+
+真机跑 `uv run python -m app.cli.bench --games 3 --seed 3 --out /tmp/agenthowl-bench-doc`
+（零 LLM，全随机 bot）的实际输出：
+
+```
+档案      局数  胜率   狼胜   好人胜  存活率  均存活轮  放逐率  发言均长  声称率  上警率  改票率  空刀率  重提率  技能次数
+随机 bot  27    44.4%  66.7%  33.3%   40.7%   2.7       25.9%   6.6       0.0%    70.4%   57.1%   0.0%    86.4%   0
+```
+
+（`--games 3` 是 bench 跑的局数；报告的「局数」列按**座位·局**计数——本例未给 `--agents`，
+每局 9 个座位都归入随机 bot 组，27 = 3 局 × 9 座位。给了 `--agents`/`--agents-b` 时，该档案
+覆盖到的座位数 × 局数才是对应组的「局数」。）
+
+带标签的 A/B 档案恰好两组时，报告末尾多一行 `Δ(A−B)`：比率列是 A 减 B 的百分点（`pp`），
+「发言均长」「均存活轮」是绝对差；「局数」「技能次数」是计数列，Δ 行显示 `—`。
 
 ### 技能包 / Skill packs
 
