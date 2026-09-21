@@ -7,6 +7,7 @@ import pytest
 from app.agent.profile import AgentProfile
 from app.cli.bench import assign_seats, label_map, main
 from app.eval.fingerprint import profile_fingerprint
+from app.eval.metrics import RANDOM_BOT_LABEL
 from app.store.event_store import JsonFileEventStore
 
 
@@ -67,7 +68,7 @@ def test_main_zero_llm_writes_logs_reports_and_report_only_matches(tmp_path, cap
     table = _table(out)
     assert "随机 bot" in table and "Δ(" not in table
     row = next(line for line in table.splitlines() if line.startswith("随机 bot"))
-    assert row.split()[1] == "18"  # 2 局 × 9 座位
+    assert row.removeprefix(RANDOM_BOT_LABEL).split()[0] == "18"  # 2 局 × 9 座位
     doc = json.loads(js.read_text(encoding="utf-8"))
     assert doc["profiles"][0]["label"] == "随机 bot" and doc["profiles"][0]["games"] == 18
     assert doc["diff"] is None
