@@ -1,6 +1,7 @@
 """REST 大厅端点：create/join/start 与鉴权（issue #30）。"""
 
 from collections.abc import Iterator
+from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
@@ -341,3 +342,54 @@ def test_meta_endpoint_gated_until_game_over_and_echoes_effective_agents() -> No
     assert len(meta["roster"]) == 9 and set(meta["agents"]) == {"1"}
     one = meta["agents"]["1"]
     assert one["skills"] == ["logic-chain"] and one["memory_id"] == "alice"
+
+
+def test_events_endpoint_filters_skills_meta_from_spectators_but_replay_not() -> None:
+    """issue #60：/events（观众）不外泄 skills meta；/replay（终局后）保留。"""
+    import time as _t
+
+    from app.runtime.player_port import BotPlayerPort
+
+    # 定制 bot 端口，模拟 AgentPlayerPort 的 last_skills_used 属性
+    class _SkilledBot(BotPlayerPort):
+        last_skills_used: tuple[str, ...] = ("wolf-claim-jump",)
+
+    app = create_app(
+        store=InMemoryEventStore(),
+        timeouts=RunnerTimeouts(speech_sec=5.0, action_sec=5.0),
+        agent_port_factory=lambda seat, h: _SkilledBot(state_provider=h.live_state),
+    )
+    client = TestClient(app)
+    # 所有座位都用 agent 端口（factory 会返回 _SkilledBot），确保事件有 skills meta
+    body = {
+        "preset": "std_9_kill_side",
+        "config_override": {"seed": 42},
+        "agents": {"*": {"model": "m"}},
+    }
+    created = client.post("/api/v1/games", json=body).json()
+    gid, host, spec = created["game_id"], created["host_token"], created["spectator_token"]
+    client.post(f"/api/v1/games/{gid}/start", json={}, headers=_auth(host))
+    handle = client.app.state.games.get(gid)  # type: ignore[attr-defined]
+    deadline = _t.time() + 30
+    while not (handle.task is not None and handle.task.done()) and _t.time() < deadline:
+        _t.sleep(0.05)
+
+    # 服务端真实：回放事件中应有 skills meta
+    replay = client.get(f"/api/v1/games/{gid}/replay", headers=_auth(spec)).json()
+    assert replay, "应有回放事件"
+    assert any(e["meta"].get("skills") == "wolf-claim-jump" for e in replay), "回放应记录技能装配"
+
+    # 观众视角的 /events：meta 只含公开键（wall_ts、timeout），不外泄 skills
+    events = client.get(f"/api/v1/games/{gid}/events", headers=_auth(spec)).json()
+    assert events and all("skills" not in e["meta"] for e in events), "观众不应看到 skills"
+    assert all("wall_ts" in e["meta"] for e in events), "所有事件应有 wall_ts"
+
+    # F2（终审）：WS 实时 + 补发共用的 _build_event_frames 同样不外泄 skills——
+    # 用 from_seq=0 全量补发路径覆盖（现有 WS 重连测试只比 seq，不比 event 体）
+    with client.websocket_connect(f"/api/v1/ws?token={spec}&from_seq=0") as ws:
+        frames: list[dict[str, Any]] = []
+        while len(frames) < len(events):
+            f = ws.receive_json()
+            if f["type"] == "game_event":
+                frames.append(f["event"])
+    assert all("skills" not in e["meta"] for e in frames)

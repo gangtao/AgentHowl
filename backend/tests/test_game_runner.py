@@ -23,8 +23,10 @@ from app.runtime.game_runner import (
 from app.runtime.player_port import BotPlayerPort, PlayerPort
 from app.store.event_store import (
     EventStore,
+    GameMeta,
     InMemoryEventStore,
     JsonFileEventStore,
+    SeatName,
     load_state,
 )
 
@@ -264,3 +266,57 @@ class TestTimeoutAndRetry:
         del ports[0]
         with pytest.raises(RuntimeError, match="未接入"):
             await runner.run()
+
+
+class _SkilledBot(BotPlayerPort):
+    """带 last_skills_used 的随机 bot：模拟 AgentPlayerPort 的技能装配属性。"""
+
+    last_skills_used: tuple[str, ...] = ("logic-chain", "side-taking")
+
+
+async def test_commit_writes_skills_meta_on_first_event_only() -> None:
+    """issue #60：一次提交的首条事件带 meta['skills']，同批后续事件不带；不传则不写。"""
+    store = InMemoryEventStore()
+    runner = _make_runner(store)
+    res = create_game(runner._config, "g1")
+    roster = tuple(SeatName(seat=p.seat, display_name=p.display_name) for p in res.state.players)
+    store.create_game(
+        GameMeta(
+            game_id="g1",
+            config=runner._config,
+            roster=roster,
+        )
+    )
+    runner._state = res.state
+    await runner._commit(list(res.events), skills=("logic-chain", "side-taking"))
+    events = store.load_events("g1")
+    assert len(events) >= 2
+    assert events[0].meta["skills"] == "logic-chain,side-taking"
+    assert all("skills" not in e.meta for e in events[1:])
+    assert all("wall_ts" in e.meta for e in events)
+
+
+async def test_full_game_skilled_ports_tag_first_event_per_action_and_not_timeouts() -> None:
+    store = InMemoryEventStore()
+    cfg = build_preset("std_9_kill_side").model_copy(update={"seed": 5})
+    lobby = GameLobby(cfg, game_id="g1")
+    lobby.fill_with_bots()
+    ports: dict[int, PlayerPort] = {}
+    runner = GameRunner(store=store, config=cfg, game_id="g1", roster=lobby.roster(), ports=ports)
+    for seat in range(cfg.num_players):
+        ports[seat] = _SkilledBot(state_provider=lambda: runner.state)
+    await runner.run()
+    events = store.load_events("g1")
+    tagged = [e for e in events if "skills" in e.meta]
+    assert tagged and all(e.meta["skills"] == "logic-chain,side-taking" for e in tagged)
+    assert all("timeout" not in e.meta for e in tagged)
+    # 同一次提交（同 wall_ts 的连续事件）只有首条带标记：不存在两个连续事件
+    # 同时带 skills 和相同 wall_ts
+    for prev, cur in zip(events, events[1:], strict=False):
+        assert not (
+            prev.meta.get("wall_ts") == cur.meta.get("wall_ts")
+            and "skills" in prev.meta
+            and "skills" in cur.meta
+        )
+    # 生命周期头（非行动产生）不带标记
+    assert all("skills" not in e.meta for e in events[:2])

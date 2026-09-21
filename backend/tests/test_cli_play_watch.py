@@ -421,3 +421,15 @@ def test_wire_game_records_effective_profiles_in_meta() -> None:
     assert runner._agents == expected
     bare, _c2, _p2 = _wire_game(config)
     assert bare._agents == {}
+
+
+def test_wire_game_accepts_store_and_game_id(tmp_path) -> None:
+    from app.store.event_store import JsonFileEventStore
+
+    config = build_preset("std_9_kill_side").model_copy(update={"seed": 3})
+    store = JsonFileEventStore(tmp_path)
+    runner, _c, _p = _wire_game(config, store=store, game_id="bench-3")
+    asyncio.run(runner.run())
+    assert store.list_games() == ["bench-3"]
+    default_runner, _c2, _p2 = _wire_game(config)
+    assert default_runner._game_id == "cli"

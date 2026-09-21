@@ -17,6 +17,7 @@ from app.api.deps import (
     require_kind,
     require_token,
 )
+from app.api.views import event_json_for_viewer
 from app.engine.config import build_preset
 from app.engine.events import Event, EventType, Visibility
 from app.engine.observation import build_observation, visible_events
@@ -221,7 +222,8 @@ def events_endpoint(
         return []
     viewer: Any = info.seat if info.kind == "PLAYER" else "SPECTATOR"
     events = games.store.load_events(game_id, from_seq=from_seq)
-    return [event_to_json(e) for e in visible_events(handle.live_state(), events, viewer)]
+    visible = visible_events(handle.live_state(), events, viewer)
+    return [event_json_for_viewer(e, viewer) for e in visible]
 
 
 @router.get("/{game_id}/replay")

@@ -549,6 +549,12 @@ class LLMClient(Protocol):
 ```
 默认实现 `LiteLLMInstructorClient` 用 `instructor.from_provider(model)` 包装，`complete_structured` 内做重试与 `rejected_reason` 回填。
 
+#### 4.4.4 档案评估（issue #60）
+
+离线分析器（`app/eval/`）从事件日志按档案内容指纹汇总胜率与行为指标（存活 / 放逐、发言长度与
+声称、上警、改票、狼队空刀与重提、技能装配次数）；`app/cli/bench.py` 交错分配两份档案跑 N 局
+并给出 Δ 列。行动首条事件 `meta.skills` 由 runtime 写入，引擎不感知。
+
 ---
 
 ## 5. 标准玩家 API（真人与 Agent 通用）
@@ -596,7 +602,7 @@ POST /api/v1/games
 `ai_model`）→ 400；`skills` 含未知技能名同样 → 400；`memory_id` 同局内被多个座位
 重复使用、或配在 `agents["*"]` → 400；`memory_id` 格式非法（非文件名安全字符）与
 `personality` 含越权或改规则短语同为 422（pydantic 校验失败）。响应体 `agents` 字段
-回显解析后的最终映射（含旧字段折叠结果）。开局时实际建成 Agent 端口的座位（真人占座与随机 bot 除外，`"*"` 展开为具体座位）→ 档案的映射写入事件日志首行 `GameMeta.agents`（issue #64），供回放与档案评估（#60）使用，经 `/meta` 端点在终局后读取；不经 observation 暴露。
+回显解析后的最终映射（含旧字段折叠结果）。开局时实际建成 Agent 端口的座位（真人占座与随机 bot 除外，`"*"` 展开为具体座位）→ 档案的映射写入事件日志首行 `GameMeta.agents`（issue #64），供回放与档案评估（#60）使用，经 `/meta` 端点在终局后读取；不经 observation 暴露。Agent 行动首条事件的 `meta["skills"]`（issue #58/#60，逗号分隔技能名）同样只供 GM 视角与离线分析：`/events` 对非 GM 视角过滤掉该键，`/replay` 终局后全量返回（含 `meta.skills`）。
 
 **加入对局**：
 ```json
