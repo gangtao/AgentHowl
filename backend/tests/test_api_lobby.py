@@ -359,7 +359,12 @@ def test_events_endpoint_filters_skills_meta_from_spectators_but_replay_not() ->
         agent_port_factory=lambda seat, h: _SkilledBot(state_provider=h.live_state),
     )
     client = TestClient(app)
-    body = {"preset": "std_9_kill_side", "config_override": {"seed": 42}}
+    # 所有座位都用 agent 端口（factory 会返回 _SkilledBot），确保事件有 skills meta
+    body = {
+        "preset": "std_9_kill_side",
+        "config_override": {"seed": 42},
+        "agents": {"*": {"model": "m"}},
+    }
     created = client.post("/api/v1/games", json=body).json()
     gid, host, spec = created["game_id"], created["host_token"], created["spectator_token"]
     client.post(f"/api/v1/games/{gid}/start", json={}, headers=_auth(host))
@@ -368,19 +373,12 @@ def test_events_endpoint_filters_skills_meta_from_spectators_but_replay_not() ->
     while not (handle.task is not None and handle.task.done()) and _t.time() < deadline:
         _t.sleep(0.05)
 
-    # 观众视角的 /events：meta 只含公开键（wall_ts、timeout），不外泄 skills
-    events = client.get(f"/api/v1/games/{gid}/events", headers=_auth(spec)).json()
-    assert events, "应有事件"
-    for e in events:
-        meta_keys = set(e["meta"].keys())
-        public_keys = {"wall_ts", "timeout"}
-        assert meta_keys <= public_keys, f"观众不应看到 {meta_keys - public_keys}"
-
-    # /replay（终局后）：不过滤 meta，保留全量（技术上不添加 skills 到这里，但端点不应做过滤）
+    # 服务端真实：回放事件中应有 skills meta
     replay = client.get(f"/api/v1/games/{gid}/replay", headers=_auth(spec)).json()
     assert replay, "应有回放事件"
-    # replay 允许更多 meta 字段（如果有 skills 会保留）
-    for e in replay:
-        meta_keys = set(e["meta"].keys())
-        # replay 应该保留所有 meta 字段（包括 skills 如果有）
-        assert "wall_ts" in e["meta"], "回放事件应有 wall_ts"
+    assert any(e["meta"].get("skills") == "wolf-claim-jump" for e in replay), "回放应记录技能装配"
+
+    # 观众视角的 /events：meta 只含公开键（wall_ts、timeout），不外泄 skills
+    events = client.get(f"/api/v1/games/{gid}/events", headers=_auth(spec)).json()
+    assert events and all("skills" not in e["meta"] for e in events), "观众不应看到 skills"
+    assert all("wall_ts" in e["meta"] for e in events), "所有事件应有 wall_ts"
