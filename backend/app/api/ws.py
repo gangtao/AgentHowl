@@ -23,27 +23,29 @@ from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 
 from app.api.deps import TokenInfo
 from app.api.rest import _your_turn_payload
+from app.api.views import event_json_for_viewer
 from app.engine.events import Event, EventType
 from app.engine.observation import visible_events
 from app.runtime.player_port import HumanPlayerPort, NotYourTurnError, TurnPrompt
 from app.runtime.registry import GameRegistry
 from app.schemas.actions import ToolCall, ToolCallError, parse_tool_call
-from app.store.event_store import event_to_json
 
 router = APIRouter()
 
 
 def _build_event_frames(
-    events: list[Event], round_for: Callable[[Event], int]
+    events: list[Event], round_for: Callable[[Event], int], viewer: Any = "GM"
 ) -> list[dict[str, Any]]:
     """game_event + 由可见 PHASE_CHANGED/GAME_OVER 派生的附加帧（纯构建，不做 IO）。
 
     round_for 由调用方决定语义：补发路径传历史 seq→round 映射的查表函数，
     实时路径传返回当前 live round 的函数。
+    viewer 用于 meta 字段过滤（issue #60）：非 GM 视角只保留公开 meta。
     """
     frames: list[dict[str, Any]] = []
     for e in events:
-        frames.append({"type": "game_event", "seq": e.seq, "event": event_to_json(e)})
+        event_json = event_json_for_viewer(e, viewer)
+        frames.append({"type": "game_event", "seq": e.seq, "event": event_json})
         if e.type == EventType.PHASE_CHANGED:
             frames.append(
                 {
@@ -99,7 +101,7 @@ async def ws_endpoint(
 
     async def on_events(events: list[Event]) -> None:
         """实时订阅回调：只入队，不直接 send（issue #30 复审 Critical #1）。"""
-        for frame in _build_event_frames(events, lambda _e: handle.live_state().round):
+        for frame in _build_event_frames(events, lambda _e: handle.live_state().round, viewer):
             out_q.put_nowait(frame)
 
     # ---- 关键同步块：先订阅、后读历史、再把历史帧入队，中间不 await ----
@@ -109,7 +111,7 @@ async def ws_endpoint(
     history = games.store.load_events(info.game_id, from_seq=from_seq)
     round_map = _seq_round_map(games.store.load_events(info.game_id))
     backfill = visible_events(handle.live_state(), history, viewer)
-    for frame in _build_event_frames(backfill, lambda e: round_map.get(e.seq, 0)):
+    for frame in _build_event_frames(backfill, lambda e: round_map.get(e.seq, 0), viewer):
         out_q.put_nowait(frame)
     # ---- 同步块结束 ----
 

@@ -341,3 +341,46 @@ def test_meta_endpoint_gated_until_game_over_and_echoes_effective_agents() -> No
     assert len(meta["roster"]) == 9 and set(meta["agents"]) == {"1"}
     one = meta["agents"]["1"]
     assert one["skills"] == ["logic-chain"] and one["memory_id"] == "alice"
+
+
+def test_events_endpoint_filters_skills_meta_from_spectators_but_replay_not() -> None:
+    """issue #60：/events（观众）不外泄 skills meta；/replay（终局后）保留。"""
+    import time as _t
+
+    from app.runtime.player_port import BotPlayerPort
+
+    # 定制 bot 端口，模拟 AgentPlayerPort 的 last_skills_used 属性
+    class _SkilledBot(BotPlayerPort):
+        last_skills_used: tuple[str, ...] = ("wolf-claim-jump",)
+
+    app = create_app(
+        store=InMemoryEventStore(),
+        timeouts=RunnerTimeouts(speech_sec=5.0, action_sec=5.0),
+        agent_port_factory=lambda seat, h: _SkilledBot(state_provider=h.live_state),
+    )
+    client = TestClient(app)
+    body = {"preset": "std_9_kill_side", "config_override": {"seed": 42}}
+    created = client.post("/api/v1/games", json=body).json()
+    gid, host, spec = created["game_id"], created["host_token"], created["spectator_token"]
+    client.post(f"/api/v1/games/{gid}/start", json={}, headers=_auth(host))
+    handle = client.app.state.games.get(gid)  # type: ignore[attr-defined]
+    deadline = _t.time() + 30
+    while not (handle.task is not None and handle.task.done()) and _t.time() < deadline:
+        _t.sleep(0.05)
+
+    # 观众视角的 /events：meta 只含公开键（wall_ts、timeout），不外泄 skills
+    events = client.get(f"/api/v1/games/{gid}/events", headers=_auth(spec)).json()
+    assert events, "应有事件"
+    for e in events:
+        meta_keys = set(e["meta"].keys())
+        public_keys = {"wall_ts", "timeout"}
+        assert meta_keys <= public_keys, f"观众不应看到 {meta_keys - public_keys}"
+
+    # /replay（终局后）：不过滤 meta，保留全量（技术上不添加 skills 到这里，但端点不应做过滤）
+    replay = client.get(f"/api/v1/games/{gid}/replay", headers=_auth(spec)).json()
+    assert replay, "应有回放事件"
+    # replay 允许更多 meta 字段（如果有 skills 会保留）
+    for e in replay:
+        meta_keys = set(e["meta"].keys())
+        # replay 应该保留所有 meta 字段（包括 skills 如果有）
+        assert "wall_ts" in e["meta"], "回放事件应有 wall_ts"

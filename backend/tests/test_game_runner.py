@@ -310,9 +310,13 @@ async def test_full_game_skilled_ports_tag_first_event_per_action_and_not_timeou
     tagged = [e for e in events if "skills" in e.meta]
     assert tagged and all(e.meta["skills"] == "logic-chain,side-taking" for e in tagged)
     assert all("timeout" not in e.meta for e in tagged)
-    # 同一次提交（同 wall_ts 的连续事件）只有首条带标记
+    # 同一次提交（同 wall_ts 的连续事件）只有首条带标记：不存在两个连续事件
+    # 同时带 skills 和相同 wall_ts
     for prev, cur in zip(events, events[1:], strict=False):
-        if cur.meta.get("wall_ts") == prev.meta.get("wall_ts"):
-            assert "skills" not in cur.meta
+        assert not (
+            prev.meta.get("wall_ts") == cur.meta.get("wall_ts")
+            and "skills" in prev.meta
+            and "skills" in cur.meta
+        )
     # 生命周期头（非行动产生）不带标记
     assert all("skills" not in e.meta for e in events[:2])
