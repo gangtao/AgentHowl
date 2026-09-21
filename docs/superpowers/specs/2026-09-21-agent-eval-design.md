@@ -52,11 +52,12 @@
 - `GameRunner._drive_seat`：`port.act(...)` 返回后 `skills = tuple(getattr(port, "last_skills_used", ()))`；`await self._commit(res.events, skills=skills)`。
 - `GameRunner._commit(events, timed_out=False, skills=())`：已有的「meta 充实」处，`skills` 非空时只在**首条**事件 `meta` 追加 `"skills": ",".join(skills)`；超时代打路径不传 `skills`。
 - 引擎不读 `meta`；`Event.meta` 已随 JSONL 序列化。
+- 隔离（实现期附注，Ruling 2）：`meta["skills"]` 可暴露阵营（`wolf-*` 技能名），API 对非 GM 视角（玩家 / 观众的 `/events` 与 WS 帧）只序列化公开 meta 键（`wall_ts`、`timeout`，`app/api/views.py::PUBLIC_META_KEYS`）；`/replay` 终局后全量不变；离线分析器读 store 全量。
 
 ## 5. bench 驱动（`backend/app/cli/bench.py`）与 `_wire_game` 扩展
 
 - `_wire_game(config, *, human_seat=None, agents=None, library=None, experiences=None, store: EventStore | None = None, game_id: str = "cli")`：新增两参数，默认行为不变。
-- 参数：`--games N`（默认 1）、`--preset`、`--seed S`（默认 42）、`--agents PATH`（A）、`--agents-b PATH`（B，需 `--agents`）、`--label-a`（默认 `A`）、`--label-b`（默认 `B`）、`--skills-dir`、`--out DIR`（默认 `data/bench/<YYYYmmdd-HHMMSS>`）、`--json PATH`、`--report-only DIR`、`--no-color`。`--report-only` 与跑局参数互斥。
+- 参数：`--games N`（默认 1）、`--preset`、`--seed S`（默认 42）、`--agents PATH`（A）、`--agents-b PATH`（B，需 `--agents`）、`--label-a`（默认 `A`）、`--label-b`（默认 `B`）、`--skills-dir`、`--out DIR`（默认 `data/bench/<YYYYmmdd-HHMMSS>`）、`--json PATH`、`--report-only DIR`。`--report-only` 与跑局参数互斥；A/B 内容相同（同指纹）拒绝；`--report-only` 目录不存在、`--out` 已存在且非空均为参数错误；未终局日志不计入汇总并提示跳过数（实现期附注）。
 - 座位分配：`assign_seats(num_players, game_index, a: AgentProfiles, b: AgentProfiles | None) -> AgentProfiles`：座位 s 取 `a` 若 `(s + game_index) % 2 == 0` 或 `b is None`，否则 `b`；对选中集合 `profile_for(set, s)`，None 则不放（随机 bot）；返回按座位号键的映射（不含 `"*"`）。纯函数，确定性。
 - 每局：`seed = S + i`，`config = build_preset(preset).model_copy(update={"seed": seed})`，`game_id = f"bench-{seed}"`，`_wire_game(config, agents=assign_seats(...), library=, store=store, game_id=game_id)` → `await runner.run()`；打印 `seed={seed} winner={winner} rounds={round}`。顺序执行。不装配跨局记忆、不跑 postgame（档案里的 `memory_id` 只被记进 meta）。
 - 标签映射：`labels: dict[str, str]` = 对 A 集合的每个档案 `fingerprint → label_a`（多个档案时 `A/{key}`，key 为 yaml 座位键），B 同理；随机 bot 组标签「随机 bot」。
