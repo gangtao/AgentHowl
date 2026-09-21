@@ -356,7 +356,7 @@ seats:
 
 ```bash
 make bench GAMES=20 AGENTS=a.yaml AGENTS_B=b.yaml        # A/B 交错跑 20 局并出报告
-make bench GAMES=20 AGENTS=a.yaml                        # 只给 A：A vs 随机 bot
+make bench GAMES=20 AGENTS=a.yaml                        # 只给 A（a.yaml 未覆盖的座位仍是随机 bot）
 make bench GAMES=20                                       # 不给 AGENTS：零 LLM，全随机 bot 冒烟
 ```
 
