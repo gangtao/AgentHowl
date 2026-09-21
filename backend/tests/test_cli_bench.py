@@ -92,16 +92,16 @@ def test_main_ab_with_bot_ports_records_profiles_and_delta(tmp_path, capsys, mon
         return BotPlayerPort(state_provider=lambda: holder["runner"].state)  # type: ignore[attr-defined]
 
     monkeypatch.setattr(ap, "build_agent_port", fake_build_agent_port)
-    import app.cli.play as play_mod
+    import app.cli.bench as bench_mod
 
-    orig = play_mod._wire_game
+    orig = bench_mod._wire_game
 
     def wire(config, **kw):
         out = orig(config, **kw)
         holder["runner"] = out[0]
         return out
 
-    monkeypatch.setattr(play_mod, "_wire_game", wire)
+    monkeypatch.setattr(bench_mod, "_wire_game", wire)
     a, b = tmp_path / "a.yaml", tmp_path / "b.yaml"
     a.write_text('seats:\n  "*": {model: ollama/a, skills: [logic-chain]}\n', encoding="utf-8")
     b.write_text(
@@ -130,6 +130,10 @@ def test_main_ab_with_bot_ports_records_profiles_and_delta(tmp_path, capsys, mon
     m3, m4 = store.load_meta("bench-3"), store.load_meta("bench-4")
     assert m3.agents["0"].model == "ollama/a" and m3.agents["1"].model == "ollama/b"
     assert m4.agents["0"].model == "ollama/b" and m4.agents["1"].model == "ollama/a"
+    # M1 修复：端口须真正被 wire 包装顶替驱动，不能全程超时落默认行动
+    for gid in ("bench-3", "bench-4"):
+        events = store.load_events(gid)
+        assert events and not any(e.meta.get("timeout") == "true" for e in events)
 
 
 def test_main_argument_errors(tmp_path, capsys) -> None:
@@ -141,3 +145,41 @@ def test_main_argument_errors(tmp_path, capsys) -> None:
     with pytest.raises(SystemExit):
         main(["--report-only", str(tmp_path), "--games", "2"])
     assert "--report-only" in capsys.readouterr().err
+    # m2：--report-only 互斥检查须识别 --flag=value 形式，不能被静默绕过
+    with pytest.raises(SystemExit):
+        main(["--report-only", str(tmp_path), "--games=2"])
+    assert "--report-only" in capsys.readouterr().err
+    # m3：--report-only 指向不存在的目录 → 明确报错，且不把目录建出来
+    missing = tmp_path / "nope"
+    with pytest.raises(SystemExit):
+        main(["--report-only", str(missing)])
+    assert "不存在" in capsys.readouterr().err
+    assert not missing.exists()
+    # m4：--out 指向已存在且非空的目录 → 明确报错，不与旧局混算
+    out2 = tmp_path / "out2"
+    main(["--games", "1", "--seed", "9", "--out", str(out2)])
+    capsys.readouterr()
+    with pytest.raises(SystemExit):
+        main(["--games", "1", "--seed", "9", "--out", str(out2)])
+    assert "已存在" in capsys.readouterr().err
+
+
+def test_main_rejects_ab_with_identical_profile_content(tmp_path, capsys) -> None:
+    """m1：A/B 内容相同（指纹撞车）时无意义，须明确报错而非静默让 B 覆盖 A。"""
+    same_a, same_b = tmp_path / "same_a.yaml", tmp_path / "same_b.yaml"
+    same_a.write_text('seats:\n  "*": {model: dup, name: 甲}\n', encoding="utf-8")
+    same_b.write_text('seats:\n  "*": {model: dup, name: 乙}\n', encoding="utf-8")
+    with pytest.raises(SystemExit):
+        main(
+            [
+                "--games",
+                "1",
+                "--agents",
+                str(same_a),
+                "--agents-b",
+                str(same_b),
+                "--out",
+                str(tmp_path / "dup"),
+            ]
+        )
+    assert "指纹" in capsys.readouterr().err

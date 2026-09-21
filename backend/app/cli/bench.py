@@ -38,6 +38,15 @@ def assign_seats(
     return out
 
 
+def shared_fingerprints(a: AgentProfiles, b: AgentProfiles | None) -> set[str]:
+    """A、B 两份档案集里指纹相交的部分（内容相同即撞车，`name`/`memory_id` 不参与指纹）。"""
+    if not a or not b:
+        return set()
+    fp_a = {profile_fingerprint(p) for p in a.values()}
+    fp_b = {profile_fingerprint(p) for p in b.values()}
+    return fp_a & fp_b
+
+
 def label_map(
     a: AgentProfiles, b: AgentProfiles | None, label_a: str, label_b: str
 ) -> dict[str | None, str]:
@@ -100,13 +109,16 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--out", default=None, help="事件日志目录（默认 data/bench/<时间戳>）")
     parser.add_argument("--json", default=None, help="把报告 JSON 写到该路径")
     parser.add_argument("--report-only", default=None, metavar="DIR", help="只分析已有日志目录")
-    parser.add_argument("--no-color", action="store_true")
     args = parser.parse_args(argv)
 
     if args.report_only is not None:
-        if any(x in argv for x in ("--games", "--agents", "--agents-b", "--out")):
+        _mutex_flags = ("--games", "--agents", "--agents-b", "--out")
+        if any(arg == flag or arg.startswith(flag + "=") for flag in _mutex_flags for arg in argv):
             parser.error("--report-only 不能与 --games/--agents/--agents-b/--out 同时给出")
-        store: EventStore = JsonFileEventStore(Path(args.report_only))
+        report_dir = Path(args.report_only)
+        if not report_dir.is_dir():
+            parser.error(f"--report-only 目录不存在：{report_dir}")
+        store: EventStore = JsonFileEventStore(report_dir)
         labels: dict[str | None, str] = {None: RANDOM_BOT_LABEL}
         table, doc = report(store, labels)
         print(table)
@@ -132,11 +144,18 @@ def main(argv: list[str] | None = None) -> None:
             validate_profiles(b, n, library)
     except (ValueError, SkillError) as exc:
         parser.error(str(exc))
+    shared = shared_fingerprints(a, b)
+    if shared:
+        parser.error(
+            f"--agents 与 --agents-b 含内容相同的档案（指纹 {sorted(shared)}），A/B 无意义"
+        )
     out_dir = (
         Path(args.out)
         if args.out
         else Path("data/bench") / datetime.now().strftime("%Y%m%d-%H%M%S")
     )
+    if out_dir.is_dir() and any(out_dir.iterdir()):
+        parser.error(f"--out 目录已存在且非空：{out_dir}（避免与旧局混算）")
     store = JsonFileEventStore(out_dir)
     asyncio.run(
         run_bench(
