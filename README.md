@@ -252,9 +252,11 @@ uv run python -m app.cli.simulate --games 100                 # 纯引擎胜负�
 # agents.yaml
 seats:
   "0": { name: 老张, model: ollama/qwen2.5-coder:7b, thinking: false, skills: [seer-badge-flow, logic-chain],
-         personality: {description: 老油条，话不多但每句都带钩子, traits: {多疑: 0.9, 冷静: 0.8}} }
+         personality: {description: 老油条，话不多但每句都带钩子, traits: {多疑: 0.9, 冷静: 0.8}},
+         memory_id: laozhang }
   "3": { model: ollama/qwen3:8b, thinking: true, temperature: 0.7,
-         personality: {preset: {system: MBTI, value: ENFP}, style_notes: 爱用感叹号} }
+         personality: {preset: {system: MBTI, value: ENFP}, style_notes: 爱用感叹号},
+         memory_id: bot3 }
   "*": { model: ollama/qwen2.5-coder:7b }   # 其余座位的默认档案
 ```
 
@@ -287,6 +289,60 @@ make watch AGENTS=agents.yaml
 seats:
   "0": { model: ollama/qwen2.5-coder:7b, personality: {description: 老油条，话不多但每句都带钩子, traits: {多疑: 0.9}} }
   "3": { model: ollama/qwen3:8b, personality: {preset: {system: MBTI, value: ENFP}, style_notes: 爱用感叹号} }
+```
+
+### 跨局记忆 / Cross-game memory
+
+每座位档案的 `memory_id` 字段（issue #59）给该座位的 Agent 配一份跨局持久经验：文件名安全的
+标识（`[A-Za-z0-9_-]{1,64}`），同一局内须座位唯一，`"*"` 通配档案不可配置（会展开成多个座位
+共用一份记忆）——建局即拒（同局重复 / `"*"` 配置 → 参数错误 / API 400；格式非法 → 参数错误 /
+API 422）。不配 `memory_id` 的座位行为不变（不持久化、系统 prompt 无变化）。
+
+**局后复盘**：对局跑到 `GAME_OVER` 之后（不在对局过程中），对每个配了 `memory_id` 的座位单独
+起一次复盘调用（`reflection_model`，缺省同 `model`），输入是该座位自己视角的记忆加终局揭示
+（胜负、全员身份），不看完整 GM 事件流；产出 1–3 条「当…时，应…」形式的教训，以及对本局
+其他有 `memory_id` 的对手每人至多 2 条行为笔记——没有 `memory_id` 的对手不记。单座位复盘失败
+（模型报错、解析失败等）只记日志，不影响其他座位、不影响本局结果。
+
+**存哪**：`data/agent_memory/<memory_id>.json`，一个 `memory_id` 一份（CLI 用 `--memory-dir`
+指定目录，API 服务用 `create_app(memory_dir=...)`，缺省都是 `data/agent_memory`）。每份文档
+教训累计上限 50 条（超出淘汰最早）、每个对手的笔记上限 10 条；文件损坏（非法 JSON、顶层非
+对象、字段校验失败、`memory_id` 与文件名不符）在开局（start）时即 fail-loud——API 报 500，CLI 报
+参数错误，不会静默丢弃已有经验。
+
+**下一局怎么用**：建局时把该 `memory_id` 的历史经验渲染成系统 prompt 的静态段『==
+跨局经验 ==』，教训按当前角色优先、其次其他角色，最近的排前面；对手笔记只列本局在场且有
+`memory_id` 的对手，各取最近 3 条；整段受字符预算限制（默认 1200 字），超预算逐行截断。首局
+（尚无历史）或对手全部陌生时该段为空，不出现在 prompt 里。
+
+**隔离**：跨局经验只进各自座位自己的系统 prompt，不进任何其他座位的视角；对局进行中绝不写
+经验存储（写入只发生在终局后的复盘任务里，见上面的集成测试）；也不进入本局内的夜间私聊或
+逐轮反思 prompt——只在开局装配的静态段生效。
+
+**已知限制**：两局使用同一个 `memory_id` 且几乎同时终局时，两次复盘各自 `load` 旧文档再
+`save`，后写入的会覆盖先写入的（没有跨进程锁）；CLI 串行跑局不受影响，但 API 在同一
+`memory_id` 的复盘窗口（约 120 秒）内建第二局，会装载到复盘完成前的旧文档——不丢数据，
+只是那局的静态段少了上一局刚产出的经验。真人占用的座位其档案（含 `memory_id`）整体不生
+效——该座位不读取经验、不复盘，其他 Agent 也不会把它当作有记忆的对手（不装配其笔记、不对
+它记笔记）。多局累积经验没有一键命令，靠重复用同一份 `agents.yaml`（同样的 `memory_id`）
+多次跑局自然积累。
+
+```yaml
+seats:
+  "0": { model: ollama/qwen2.5-coder:7b, memory_id: laozhang }
+```
+
+开局座位档案表里会带上已有局数：
+
+```
+0号 老张 · ollama/qwen2.5-coder:7b · T=0.3 · 记忆 laozhang（0 局）
+```
+
+对局结束后打印本局的复盘摘要：
+
+```
+复盘中…
+记忆 laozhang：1 局，教训 2，对手笔记 1
 ```
 
 ### 技能包 / Skill packs

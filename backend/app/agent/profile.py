@@ -2,7 +2,8 @@
 
 registry / api / cli 三个入口都只经本模块解析档案：查找（座位优先于 "*"）、
 键校验、旧字段（ai_model 等）折叠、到 AgentConfig 的映射。字段随各 issue 增量添加
-（#56 模型路由、#58 skills、#57 personality）；extra="forbid" 保证未实现的键被拒绝而非静默忽略。
+（#56 模型路由、#58 skills、#57 personality、#59 memory_id）；
+extra="forbid" 保证未实现的键被拒绝而非静默忽略。
 """
 
 from __future__ import annotations
@@ -11,6 +12,7 @@ from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.agent.experience import MEMORY_ID_PATTERN
 from app.agent.personality import PersonalitySpec
 from app.agent.skills import SkillError
 from app.engine.config import GameConfig
@@ -36,6 +38,8 @@ class AgentProfile(BaseModel):
     skills: tuple[str, ...] = ()  # 技能名或 "*"（issue #58）；元组（有序、不可变）
     # 注意：配置了 personality 的档案不可哈希，勿以档案对象为键（见 #57 规格 §2）
     personality: PersonalitySpec | None = None  # 任意性格特点（issue #57）
+    # 跨局记忆标识（issue #59）：None=不持久化；同一局内须唯一，"*" 档案不得配置
+    memory_id: str | None = Field(default=None, pattern=MEMORY_ID_PATTERN)
 
     @field_validator("name", mode="before")
     @classmethod
@@ -63,12 +67,26 @@ def profile_for(agents: AgentProfiles, seat: int) -> AgentProfile | None:
 def validate_profiles(
     agents: AgentProfiles, num_players: int, library: SkillLibrary | None = None
 ) -> None:
-    """键只能是 "*" 或 0..num_players-1 的十进制座位号；给了 library 时连带校验技能名。"""
+    """键只能是 "*" 或 0..num_players-1 的十进制座位号；给了 library 时连带校验技能名；
+    memory_id 须座位唯一且不得配在 "*"。
+    """
     for key in agents:
         if key == STAR:
             continue
         if not key.isdecimal() or str(int(key)) != key or not 0 <= int(key) < num_players:
             raise ValueError(f"agents 键 {key!r} 非法：须为 '*' 或 0..{num_players - 1} 的座位号")
+    seen: dict[str, str] = {}
+    for key, profile in agents.items():
+        mid = profile.memory_id
+        if mid is None:
+            continue
+        if key == STAR:
+            raise ValueError("agents['*'] 不能配置 memory_id：通配档案会展开成多个座位共用一份记忆")
+        if mid in seen:
+            raise ValueError(
+                f"memory_id {mid!r} 被座位 {seen[mid]} 与 {key} 重复使用：同一局内须唯一"
+            )
+        seen[mid] = key
     if library is not None:
         for profile in agents.values():
             try:

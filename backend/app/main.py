@@ -13,6 +13,7 @@ from fastapi.responses import JSONResponse
 from app.agent.skills import BUILTIN_SKILLS_DIR, SkillLibrary
 from app.api import rest, ws
 from app.api.deps import TokenRegistry
+from app.runtime.experience_store import ExperienceStore, JsonFileExperienceStore
 from app.runtime.game_runner import LobbyError, RunnerTimeouts
 from app.runtime.player_port import NotYourTurnError, PlayerPort
 from app.runtime.registry import GameRegistry
@@ -30,6 +31,8 @@ def create_app(
     data_dir: Path | None = None,
     agent_port_factory: Callable[[int, GameHandle], PlayerPort] | None = None,
     skills_dir: Path | None = None,
+    memory_dir: Path | None = None,
+    experience_store: ExperienceStore | None = None,
 ) -> FastAPI:
     app = FastAPI(title="AgentHowl API", version="0.1.0")
     # 内置目录允许缺失（打包场景，容忍过滤）；显式指定的外部目录原样传给 load，
@@ -38,11 +41,14 @@ def create_app(
     if skills_dir is not None:
         dirs.append(skills_dir)  # 显式指定的外部目录不存在 → SkillLibrary.load 报错（fail-loud）
     skill_library = SkillLibrary.load(dirs) if dirs else SkillLibrary.empty()
+    # 跨局记忆目录（issue #59）：惰性建目录，无 memory_id 的运行永不落盘
     app.state.games = GameRegistry(
         store=store or JsonFileEventStore(data_dir or Path("data/games")),
         timeouts=timeouts,
         agent_port_factory=agent_port_factory,
         skill_library=skill_library,
+        experience_store=experience_store
+        or JsonFileExperienceStore(memory_dir or Path("data/agent_memory")),
     )
     app.state.tokens = TokenRegistry()
     app.include_router(rest.router, prefix="/api/v1")

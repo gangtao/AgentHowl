@@ -10,7 +10,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING
 
 from pydantic import BaseModel
@@ -21,6 +21,14 @@ from app.agent.decisions import (
     decision_kind_for,
     response_model_for,
     to_action,
+)
+from app.agent.experience import (
+    DEFAULT_EXPERIENCE_BUDGET_CHARS,
+    AgentExperience,
+    GameReflection,
+    GameReveal,
+    build_reflection_prompt,
+    render_experience,
 )
 from app.agent.llm_client import DEFAULT_MODEL, LLMClient
 from app.agent.memory import AgentMemory
@@ -34,7 +42,7 @@ from app.agent.skills import (
     skills_index_text,
 )
 from app.engine.actions import Action
-from app.engine.config import GameConfig
+from app.engine.config import GameConfig, RoleType
 from app.engine.events import Event
 from app.engine.observation import PlayerObservation
 
@@ -56,6 +64,8 @@ class AgentConfig(BaseModel):
     thinking: bool = False  # 开启推理模型思考（软 JSON 解析；更强推理但明显更慢）
     # 每次决策装配技能正文的字符预算（issue #58）
     skill_budget_chars: int = DEFAULT_SKILL_BUDGET_CHARS
+    # 装配跨局经验的字符预算（issue #59）
+    experience_budget_chars: int = DEFAULT_EXPERIENCE_BUDGET_CHARS
 
 
 class AgentPlayerPort:
@@ -68,6 +78,8 @@ class AgentPlayerPort:
         memory: AgentMemory | None = None,
         skills: Sequence[Skill] = (),
         personality: PersonalitySpec | None = None,
+        experience: AgentExperience | None = None,
+        opponents: Mapping[str, int] | None = None,
     ) -> None:
         self._seat = seat
         self._game_config = game_config
@@ -77,6 +89,8 @@ class AgentPlayerPort:
         self._system_prompt: str | None = None  # 静态段按首个 observation 的角色惰性生成
         self._skills = tuple(skills)
         self._personality = personality
+        self._experience = experience
+        self._opponents: dict[str, int] = dict(opponents or {})
         self.last_skills_used: tuple[str, ...] = ()
 
     async def on_events(self, events: list[Event]) -> None:
@@ -85,8 +99,23 @@ class AgentPlayerPort:
     def _system_for(self, obs: PlayerObservation) -> str:
         if self._system_prompt is None:
             personality_text = render_personality(self._personality) if self._personality else ""
+            # 跨局经验按本局角色挑选，故只能在首个 observation 到达后渲染；随后缓存
+            experience_text = (
+                render_experience(
+                    self._experience,
+                    role=obs.my_role,
+                    opponents=self._opponents,
+                    budget_chars=self._cfg.experience_budget_chars,
+                )
+                if self._experience is not None
+                else ""
+            )
             static = static_system_prompt(
-                self._game_config, self._seat, obs.my_role, personality_text=personality_text
+                self._game_config,
+                self._seat,
+                obs.my_role,
+                personality_text=personality_text,
+                experience_text=experience_text,
             )
             if self._skills:
                 static += "\n== 你的技能 ==\n" + skills_index_text(self._skills)
@@ -157,6 +186,34 @@ class AgentPlayerPort:
             self.memory.note_night_private(decision.analysis, observation.round)
         return to_action(kind, decision, observation.my_seat)
 
+    async def reflect_on_game(
+        self, reveal: GameReveal, *, timeout_s: float = 120.0
+    ) -> GameReflection | None:
+        """局后复盘（issue #59）：只用本端口自己的记忆分区 + 终局揭示；任何失败 → None。
+
+        不写回 AgentMemory；由 runtime 的 postgame 把结果记入经验存储。
+        """
+        if reveal.my_seat != self._seat:
+            raise ValueError(f"揭示表座位 {reveal.my_seat} 与端口座位 {self._seat} 不符")
+        night_private = (
+            self.memory.night_private_context() if reveal.my_role == RoleType.WEREWOLF else ""
+        )
+        system, user = build_reflection_prompt(reveal, self.memory.build_context(), night_private)
+        try:
+            return await asyncio.wait_for(
+                self._client.complete_structured(
+                    system_prompt=system,
+                    user_prompt=user,
+                    response_model=GameReflection,
+                    model=self._cfg.reflection_model or self._cfg.model,
+                    temperature=self._cfg.temperature,
+                ),
+                timeout=timeout_s,
+            )
+        except Exception as exc:  # 含超时与校验失败：降级为本局不写经验
+            logger.warning("seat=%d 局后复盘失败：%s", self._seat, exc)
+            return None
+
 
 def build_agent_port(
     seat: int,
@@ -164,8 +221,12 @@ def build_agent_port(
     profile: AgentProfile,
     *,
     library: SkillLibrary | None = None,
+    experience: AgentExperience | None = None,
+    opponents: Mapping[str, int] | None = None,
 ) -> AgentPlayerPort:
-    """registry / CLI 默认工厂：真实 LiteLLM 客户端 + 档案映射的 AgentConfig（issue #56/#58）。"""
+    """registry / CLI 默认工厂：真实 LiteLLM 客户端 + 档案映射的 AgentConfig
+    （issue #56/#58/#59）。
+    """
     from app.agent.llm_client import LiteLLMInstructorClient
     from app.agent.profile import to_agent_config
 
@@ -184,4 +245,6 @@ def build_agent_port(
         client=LiteLLMInstructorClient(),
         skills=skills,
         personality=profile.personality,
+        experience=experience,
+        opponents=opponents,
     )

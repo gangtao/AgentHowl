@@ -7,12 +7,13 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from pathlib import Path
 
 import yaml
 from pydantic import ValidationError
 
+from app.agent.experience import AgentExperience
 from app.agent.profile import (
     AgentProfile,
     AgentProfiles,
@@ -29,8 +30,21 @@ from app.engine.events import Event
 from app.engine.observation import Viewer
 from app.engine.state import GameState
 from app.runtime.connection import ConnectionManager
+from app.runtime.experience_store import (
+    ExperienceStore,
+    InMemoryExperienceStore,
+    JsonFileExperienceStore,
+)
 from app.runtime.game_runner import GameRunner, RunnerTimeouts
 from app.runtime.player_port import BotPlayerPort, HumanPlayerPort, PlayerPort
+from app.runtime.postgame import (
+    non_reflecting_seats,
+    opponents_for,
+    run_postgame,
+    seat_memory_ids,
+    utc_now_iso,
+)
+from app.store.event_store import StoreError
 
 ReadLine = Callable[[str], Awaitable[str]]
 
@@ -113,18 +127,57 @@ def load_agent_profiles(path: str) -> AgentProfiles:
     return agents
 
 
+def load_experiences(
+    agents: AgentProfiles,
+    num_players: int,
+    store: ExperienceStore,
+    *,
+    human_seat: int | None = None,
+) -> dict[str, AgentExperience]:
+    """建局前装载所有配了 memory_id 座位的经验（坏文件在此 fail-loud）。
+
+    human_seat：真人座位，其档案（含 memory_id）整体不生效，不读取其经验文件。
+    """
+    exclude = () if human_seat is None else (human_seat,)
+    seat_ids = seat_memory_ids(agents, num_players, exclude=exclude)
+    return {mid: store.load(mid) for mid in seat_ids.values()}
+
+
+async def _postgame_report(
+    state: GameState,
+    agents: AgentProfiles,
+    ports: Mapping[int, PlayerPort],
+    store: ExperienceStore,
+    game_id: str,
+) -> None:
+    """终局后复盘并打印每个 memory_id 的累积摘要；无 memory_id 档案 → 静默。"""
+    seat_ids = seat_memory_ids(agents, len(state.players), exclude=non_reflecting_seats(ports))
+    if not seat_ids:
+        return
+    print("复盘中…")
+    updated = await run_postgame(
+        game_id=game_id, final_state=state, profiles=agents, ports=ports, store=store
+    )
+    for mid, exp in updated.items():
+        notes = sum(len(v) for v in exp.opponent_notes.values())
+        print(f"记忆 {mid}：{exp.games_played} 局，教训 {len(exp.lessons)}，对手笔记 {notes}")
+
+
 def _wire_game(
     config: GameConfig,
     *,
     human_seat: int | None = None,
     agents: AgentProfiles | None = None,
     library: SkillLibrary | None = None,
+    experiences: Mapping[str, AgentExperience] | None = None,
 ) -> tuple[GameRunner, ConnectionManager, dict[int, PlayerPort]]:
     """装配 store/roster/ports/conns/runner（不订阅、不 run）。agents 缺省=全随机 bot。"""
     from app.store.event_store import InMemoryEventStore
 
     agents = agents or {}
     n = config.num_players
+    exclude = () if human_seat is None else (human_seat,)
+    seat_ids = seat_memory_ids(agents, n, exclude=exclude)
     holder: dict[str, GameRunner] = {}
 
     def state_of() -> GameState:
@@ -140,7 +193,15 @@ def _wire_game(
         elif profile is not None:
             from app.agent.agent_player import build_agent_port
 
-            ports[seat] = build_agent_port(seat, config, profile, library=library)
+            exp = (experiences or {}).get(profile.memory_id) if profile.memory_id else None
+            ports[seat] = build_agent_port(
+                seat,
+                config,
+                profile,
+                library=library,
+                experience=exp,
+                opponents=opponents_for(seat, seat_ids),
+            )
             used_profiles.append(profile)
         else:
             ports[seat] = BotPlayerPort(state_provider=state_of)
@@ -175,13 +236,18 @@ async def run_watch(
     agents: AgentProfiles | None = None,
     library: SkillLibrary | None = None,
     read_line: ReadLine = default_read_line,
+    experience_store: ExperienceStore | None = None,
 ) -> GameState:
     """看局：打印型订阅者按 view 叙述，delay/step 限速，跑到 GAME_OVER。
 
     agents 按座位配置 LLM Agent（座位号字符串或 "*"）；未匹配的座位为内置随机 bot。
     """
-    runner, conns, _ = _wire_game(config, agents=agents, library=library)
-    print(render_agent_roster(agents or {}, config.num_players, None))
+    store = experience_store if experience_store is not None else InMemoryExperienceStore()
+    experiences = load_experiences(agents or {}, config.num_players, store)
+    runner, conns, ports = _wire_game(
+        config, agents=agents, library=library, experiences=experiences
+    )
+    print(render_agent_roster(agents or {}, config.num_players, None, experiences=experiences))
 
     async def on_events(events: list[Event]) -> None:
         for e in events:  # 已按 view 过滤
@@ -194,7 +260,9 @@ async def run_watch(
                 await asyncio.sleep(delay)
 
     conns.subscribe(view, on_events)  # 必须先于 run
-    return await runner.run()
+    state = await runner.run()
+    await _postgame_report(state, agents or {}, ports, store, f"cli-{config.seed}-{utc_now_iso()}")
+    return state
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -243,6 +311,11 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument(
         "--skills-dir", default=None, help="外部技能目录（SKILL.md 子目录；同名覆盖内置）"
     )
+    parser.add_argument(
+        "--memory-dir",
+        default="data/agent_memory",
+        help="跨局记忆目录（每个 memory_id 一个 JSON；无 memory_id 档案时不落盘）",
+    )
     args = parser.parse_args(argv)
 
     config = build_preset(args.preset).model_copy(update={"seed": args.seed})
@@ -275,28 +348,34 @@ def main(argv: list[str] | None = None) -> None:
     except (ValueError, SkillError) as exc:  # SkillError 是 ValueError 子类，列出以示意图
         parser.error(str(exc))
 
-    if args.seat is None:
-        asyncio.run(
-            run_watch(
-                config,
-                view=_parse_view(args.view),
-                delay=args.delay,
-                step=args.step,
-                agents=agents,
-                library=library,
+    store = JsonFileExperienceStore(Path(args.memory_dir))
+    try:
+        if args.seat is None:
+            asyncio.run(
+                run_watch(
+                    config,
+                    view=_parse_view(args.view),
+                    delay=args.delay,
+                    step=args.step,
+                    agents=agents,
+                    library=library,
+                    experience_store=store,
+                )
             )
-        )
-    else:
-        from app.cli.play_human import run_play
+        else:
+            from app.cli.play_human import run_play
 
-        asyncio.run(
-            run_play(
-                config,
-                seat=args.seat,
-                agents=agents,
-                library=library,
+            asyncio.run(
+                run_play(
+                    config,
+                    seat=args.seat,
+                    agents=agents,
+                    library=library,
+                    experience_store=store,
+                )
             )
-        )
+    except StoreError as exc:  # 坏的经验文件：明确报错而非 traceback
+        parser.error(str(exc))
 
 
 if __name__ == "__main__":

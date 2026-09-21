@@ -146,3 +146,89 @@ async def test_per_seat_profiles_reach_agent_config() -> None:
     state = await asyncio.wait_for(handle.task, timeout=120)
     assert state.phase == Phase.GAME_OVER
     assert seen[0] == "scripted-zero" and seen[1] == "scripted" and len(seen) == 9
+
+
+async def test_two_games_accumulate_experience_and_second_game_prompt_has_it() -> None:
+    """两座位配 memory_id：第 1 局终局后复盘落盘（局中零写入）；
+
+    第 2 局系统 prompt 含往局教训与对手行。
+    """
+    from app.agent.experience import GameReflection
+    from app.agent.profile import AgentProfile
+    from app.runtime.experience_store import InMemoryExperienceStore
+    from app.runtime.postgame import opponents_for
+
+    store = InMemoryExperienceStore()
+    clients: dict[int, ScriptedLLMClient] = {}
+
+    def make_registry() -> GameRegistry:
+        def factory(seat: int, handle: GameHandle) -> PlayerPort:
+            base = _omniscient_script(handle, seat)
+
+            def script(rm: type[BaseModel], system: str, user: str) -> BaseModel:
+                if rm is GameReflection:
+                    return GameReflection(
+                        lessons=[f"(lesson {seat}) 当被怀疑时，应先摆事实"],
+                        opponent_notes={s: [f"(note by {seat})"] for s in range(9)},
+                    )
+                return base(rm, system, user)
+
+            client = ScriptedLLMClient(script)
+            clients[seat] = client
+            return AgentPlayerPort(
+                seat=seat,
+                game_config=handle.config,
+                agent_config=AgentConfig(model="scripted", agent_seed=7),
+                client=client,
+                experience=handle.experiences.get(seat),
+                opponents=opponents_for(seat, handle.seat_memory_ids),
+            )
+
+        return GameRegistry(
+            InMemoryEventStore(), TIMEOUTS, agent_port_factory=factory, experience_store=store
+        )
+
+    agents = {
+        "0": AgentProfile(model="scripted", memory_id="alice"),
+        "1": AgentProfile(model="scripted", memory_id="bob"),
+        "*": AgentProfile(model="scripted"),
+    }
+    config = build_preset("std_9_kill_side").model_copy(update={"seed": 3})
+
+    async def postgame_of(handle: GameHandle):  # done-callback 在下一轮循环才挂上任务
+        for _ in range(10):
+            if handle.postgame_task is not None:
+                return handle.postgame_task
+            await asyncio.sleep(0)
+        raise AssertionError("postgame_task 未被调度")
+
+    reg1 = make_registry()
+    h1 = reg1.create(config, allow_spectators=False, agents=agents)
+    reg1.start(h1)
+    assert store.saves == 0
+    assert h1.task is not None
+    await asyncio.wait_for(h1.task, timeout=120)
+    assert store.saves == 0  # 对局中（含终局瞬间）不写；写入只在 postgame 任务里
+    await asyncio.wait_for(await postgame_of(h1), timeout=60)
+    assert store.saves == 2
+    alice = store.load("alice")
+    assert alice.games_played == 1 and alice.lessons[0].text.startswith("(lesson 0)")
+    assert [n.text for n in alice.opponent_notes["bob"]] == ["(note by 0)"]
+    assert set(alice.opponent_notes) == {"bob"}  # 无 memory_id 座位与自己被丢弃
+    # 第 1 局的系统 prompt 不含经验（首局）
+    assert all("跨局经验" not in c[1] for s in (0, 1) for c in clients[s].calls)
+
+    reg2 = make_registry()
+    h2 = reg2.create(config, allow_spectators=False, agents=agents)
+    reg2.start(h2)
+    assert h2.experiences[0].games_played == 1
+    assert h2.task is not None
+    await asyncio.wait_for(h2.task, timeout=120)
+    # 0 号可能首夜被刀而一次未行动；取 0/1 中有决策调用的那位（两位同时首夜出局极罕见）
+    s = next(s for s in (0, 1) if any("== 局势 ==" in c[2] for c in clients[s].calls))
+    system = next(c[1] for c in clients[s].calls if "== 局势 ==" in c[2])
+    assert "== 跨局经验 ==" in system and f"(lesson {s})" in system
+    assert f"{1 - s}号：(note by {s})" in system  # 对手 memory_id 映射回本局座位
+    assert all("跨局经验" not in c[1] for c in clients[2].calls)  # 无 memory_id 座位无经验
+    await asyncio.wait_for(await postgame_of(h2), timeout=60)
+    assert store.load("alice").games_played == 2 and store.saves == 4

@@ -129,3 +129,10 @@ def test_profile_personality_field() -> None:
         )
     with pytest.raises(ValidationError):
         AgentProfile.model_validate({"model": "m", "personality": {}})
+
+
+def test_profile_memory_id_field_and_echo_shape() -> None:
+    p = AgentProfile.model_validate({"model": "m", "memory_id": "alice"})
+    assert p.memory_id == "alice"
+    assert AgentProfile(model="m").memory_id is None
+    assert "memory_id" in AgentProfile(model="m").model_dump()
