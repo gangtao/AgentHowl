@@ -8,7 +8,7 @@ import json
 from app.agent.personality import personality_summary
 from app.agent.profile import AgentProfile
 
-_DEFAULT_TEMPERATURE = 0.3
+_DEFAULT_TEMPERATURE = AgentProfile.model_fields["temperature"].default
 
 
 def profile_fingerprint(profile: AgentProfile) -> str:

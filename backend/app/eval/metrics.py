@@ -67,7 +67,7 @@ class SeatStats(BaseModel):
     skill_counts: dict[str, int] = Field(default_factory=dict)
 
     def add(self, other: SeatStats) -> None:
-        for name in self.model_fields:
+        for name in type(self).model_fields:
             if name == "skill_counts":
                 for k, v in other.skill_counts.items():
                     self.skill_counts[k] = self.skill_counts.get(k, 0) + v
@@ -120,12 +120,12 @@ def analyze_game(meta: GameMeta, events: Sequence[Event]) -> GameAnalysis:  # no
             if p.target is None:
                 st.no_kill_proposals += 1
         elif t is EventType.WOLF_KILL_REVOTE and isinstance(p, WolfKillRevotePayload):
-            if not revote_counted:
+            if not revote_counted and night_counted:
                 for w in alive_wolves:
                     seats[w].revote_nights += 1
                 revote_counted = True
         elif t is EventType.WOLF_KILL_DECIDED and isinstance(p, WolfKillDecidedPayload):
-            if p.target is None and not decided_counted:
+            if p.target is None and not decided_counted and night_counted:
                 for w in alive_wolves:
                     seats[w].decided_no_kill += 1
                 decided_counted = True
@@ -187,7 +187,8 @@ def analyze_game(meta: GameMeta, events: Sequence[Event]) -> GameAnalysis:  # no
         if skills and e.actor_seat is not None:
             st = seats[e.actor_seat]
             st.skills_assembled += 1
-            for name in skills.split(","):
+            for raw_name in skills.split(","):
+                name = raw_name.strip()
                 if name:
                     st.skill_counts[name] = st.skill_counts.get(name, 0) + 1
         state = reduce(state, e)
@@ -370,7 +371,8 @@ def aggregate(
 def diff(a: ProfileStats, b: ProfileStats) -> dict[str, float | None]:
     """a − b 的全部比率；任一为 None → None。"""
     ra, rb = a.rates(), b.rates()
-    return {
-        k: (ra[k] - rb[k] if ra[k] is not None and rb[k] is not None else None)  # type: ignore[operator]
-        for k in ProfileStats.RATE_FIELDS
-    }
+    out: dict[str, float | None] = {}
+    for k in ProfileStats.RATE_FIELDS:
+        x, y = ra[k], rb[k]
+        out[k] = x - y if x is not None and y is not None else None
+    return out
