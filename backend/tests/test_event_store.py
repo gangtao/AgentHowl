@@ -260,3 +260,40 @@ class TestJsonFile:
         finally:
             # 还原权限以便 tmp cleanup
             path.chmod(0o644)
+
+
+def test_meta_agents_roundtrip_and_legacy_meta_loads_empty(tmp_path: Path) -> None:
+    """meta.agents（issue #64）：每座位档案随 JSONL 首行持久化；旧文件无该键 → {}。"""
+    from app.agent.personality import PersonalitySpec
+    from app.agent.profile import AgentProfile
+
+    meta, _final, events = _run_fixture_game()
+    profiles = {
+        "0": AgentProfile(
+            model="ollama/a",
+            skills=("logic-chain",),
+            personality=PersonalitySpec(traits={"多疑": 0.9}),
+            memory_id="alice",
+        ),
+        "3": AgentProfile(model="ollama/b", thinking=True),
+    }
+    rich = GameMeta(game_id="g1", config=meta.config, roster=meta.roster, agents=profiles)
+    store = JsonFileEventStore(tmp_path)
+    store.create_game(rich)
+    for e in events:
+        store.append("g1", e)
+    got = JsonFileEventStore(tmp_path).load_meta("g1")
+    assert got.agents == profiles  # 人格 / 技能元组 / memory_id 全部往返
+    assert got.agents["0"].skills == ("logic-chain",)
+
+    # 旧 meta（无 agents 键）照常装载
+    legacy = tmp_path / "old.jsonl"
+    data = {
+        "game_id": "old",
+        "config": meta.config.model_dump(mode="json"),
+        "roster": [s.model_dump() for s in meta.roster],
+    }
+    head = {"kind": "meta", "data": data}
+    legacy.write_text(json.dumps(head, ensure_ascii=False) + "\n", encoding="utf-8")
+    assert JsonFileEventStore(tmp_path).load_meta("old").agents == {}
+    assert GameMeta(game_id="x", config=meta.config, roster=meta.roster).agents == {}

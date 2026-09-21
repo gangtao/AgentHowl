@@ -394,3 +394,33 @@ def test_create_rejects_duplicate_and_star_memory_id() -> None:
         reg.create(
             config, allow_spectators=False, agents={"*": AgentProfile(model="m", memory_id="a")}
         )
+
+
+async def test_meta_records_effective_agent_profiles_only() -> None:
+    """issue #64：meta.agents 只记实际建成 Agent 端口的座位；真人占座不记；"*" 展开为具体座位。"""
+    from app.agent.profile import AgentProfile
+    from app.runtime.player_port import BotPlayerPort
+
+    reg = _registry(agent_port_factory=lambda seat, h: BotPlayerPort(state_provider=h.live_state))
+    cfg = build_preset("std_9_kill_side").model_copy(update={"seed": 5})
+    star, zero = AgentProfile(model="ollama/star", skills=("logic-chain",)), AgentProfile(model="x")
+    handle = reg.create(cfg, allow_spectators=False, agents={"0": zero, "*": star})
+    reg.join(handle, "Alice", "HUMAN")  # 占 0 号：其档案不生效，也不入 meta
+    reg.start(handle, fill_with_bots=True)
+    await asyncio.sleep(0)  # run() 首步 create_game(meta)
+    meta = reg.store.load_meta(handle.game_id)
+    assert set(meta.agents) == {str(s) for s in range(1, 9)}
+    assert all(p == star for p in meta.agents.values())
+    assert handle.task is not None
+    handle.task.cancel()
+
+
+async def test_meta_agents_empty_without_profiles() -> None:
+    reg = _registry()
+    cfg = build_preset("std_9_kill_side").model_copy(update={"seed": 5})
+    handle = reg.create(cfg, allow_spectators=False, ai_model=None)
+    reg.start(handle)
+    await asyncio.sleep(0)
+    assert reg.store.load_meta(handle.game_id).agents == {}
+    assert handle.task is not None
+    handle.task.cancel()

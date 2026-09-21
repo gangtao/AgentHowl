@@ -572,6 +572,7 @@ class LLMClient(Protocol):
 | GET | `/api/v1/games/{game_id}/my-turn` | 长轮询：挂起至轮到本玩家（polling 降级用） |
 | GET | `/api/v1/games/{game_id}/events` | 获取事件日志（回放用，支持 `?from_seq=`） |
 | GET | `/api/v1/games/{game_id}/replay` | 上帝视角完整回放数据（对局结束后开放） |
+| GET | `/api/v1/games/{game_id}/meta` | 对局头记录 `GameMeta`：配置、名单、各座位实际生效的 Agent 档案（`agents`，issue #64；对局结束后开放） |
 
 **创建对局**：
 ```json
@@ -595,7 +596,7 @@ POST /api/v1/games
 `ai_model`）→ 400；`skills` 含未知技能名同样 → 400；`memory_id` 同局内被多个座位
 重复使用、或配在 `agents["*"]` → 400；`memory_id` 格式非法（非文件名安全字符）与
 `personality` 含越权或改规则短语同为 422（pydantic 校验失败）。响应体 `agents` 字段
-回显解析后的最终映射（含旧字段折叠结果）。
+回显解析后的最终映射（含旧字段折叠结果）。开局时实际建成 Agent 端口的座位（真人占座与随机 bot 除外，`"*"` 展开为具体座位）→ 档案的映射写入事件日志首行 `GameMeta.agents`（issue #64），供回放与档案评估（#60）使用，经 `/meta` 端点在终局后读取；不经 observation 暴露。
 
 **加入对局**：
 ```json

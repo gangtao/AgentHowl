@@ -40,7 +40,7 @@ from app.schemas.games import (
     StartRequest,
     StartResponse,
 )
-from app.store.event_store import event_to_json
+from app.store.event_store import GameMeta, event_to_json
 
 router = APIRouter(prefix="/games", tags=["games"])
 
@@ -235,6 +235,23 @@ def replay_endpoint(
     if not handle.started or handle.live_state().phase != Phase.GAME_OVER:
         raise HTTPException(status_code=403, detail="对局未结束，上帝视角回放未开放")
     return [event_to_json(e) for e in games.store.load_events(game_id)]
+
+
+@router.get("/{game_id}/meta")
+def meta_endpoint(
+    game_id: str,
+    info: TokenInfo = Depends(require_token),
+    games: GameRegistry = Depends(get_games),
+) -> GameMeta:
+    """对局头记录（配置 / 名单 / 各座位实际生效的 Agent 档案，issue #64）。
+
+    与 /replay 同一门槛：终局后才开放——档案含模型与技能等 GM 层信息，不经 observation 暴露。
+    """
+    handle = _handle_for(games, game_id)
+    require_kind(info, game_id, "PLAYER", "SPECTATOR", "HOST")
+    if not handle.started or handle.live_state().phase != Phase.GAME_OVER:
+        raise HTTPException(status_code=403, detail="对局未结束，对局元数据未开放")
+    return games.store.load_meta(game_id)
 
 
 @router.post("/{game_id}/actions")
