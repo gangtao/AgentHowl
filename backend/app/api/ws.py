@@ -34,7 +34,7 @@ router = APIRouter()
 
 
 def _build_event_frames(
-    events: list[Event], round_for: Callable[[Event], int], viewer: Any = "GM"
+    events: list[Event], round_for: Callable[[Event], int], viewer: Any
 ) -> list[dict[str, Any]]:
     """game_event + 由可见 PHASE_CHANGED/GAME_OVER 派生的附加帧（纯构建，不做 IO）。
 

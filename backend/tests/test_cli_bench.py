@@ -6,9 +6,10 @@ import pytest
 
 from app.agent.profile import AgentProfile
 from app.cli.bench import assign_seats, label_map, main
+from app.engine.config import build_preset
 from app.eval.fingerprint import profile_fingerprint
 from app.eval.metrics import RANDOM_BOT_LABEL
-from app.store.event_store import JsonFileEventStore
+from app.store.event_store import GameMeta, JsonFileEventStore, SeatName
 
 
 def test_assign_seats_interleaves_rotates_and_resolves_star() -> None:
@@ -74,6 +75,37 @@ def test_main_zero_llm_writes_logs_reports_and_report_only_matches(tmp_path, cap
     assert doc["diff"] is None
     main(["--report-only", str(out_dir)])
     assert _table(capsys.readouterr().out) == table
+
+
+def test_report_only_skips_unfinished_games_and_reports_count(tmp_path, capsys) -> None:
+    """F1（终审）：目录里只有 meta 行（未终局，API 建局后中断的常态）→ 不计入分母，报个数。"""
+    out_dir = tmp_path / "run"
+    main(["--games", "2", "--seed", "3", "--out", str(out_dir)])
+    capsys.readouterr()
+    # 只写 meta 行、不写任何事件——模拟服务重启中断 / 仍在进行的 API 日志文件
+    store = JsonFileEventStore(out_dir)
+    cfg = build_preset("std_9_kill_side").model_copy(update={"seed": 99})
+    roster = tuple(SeatName(seat=s, display_name=f"P{s}") for s in range(cfg.num_players))
+    store.create_game(GameMeta(game_id="bench-99", config=cfg, roster=roster))
+
+    js = tmp_path / "r.json"
+    main(["--report-only", str(out_dir), "--json", str(js)])
+    out, err = capsys.readouterr()
+    table = _table(out)
+    row = next(line for line in table.splitlines() if line.startswith(RANDOM_BOT_LABEL))
+    assert row.removeprefix(RANDOM_BOT_LABEL).split()[0] == "18"  # 只计入 2 个终局 × 9 座位
+    assert "跳过未终局 1 局" in err
+    doc = json.loads(js.read_text(encoding="utf-8"))
+    assert doc["skipped_unfinished"] == 1
+
+
+def test_report_only_bad_jsonl_is_argument_error_not_traceback(tmp_path) -> None:
+    """F6（终审）：坏 JSONL → parser.error（SystemExit），不是裸 traceback。"""
+    bad_dir = tmp_path / "bad"
+    bad_dir.mkdir()
+    (bad_dir / "broken.jsonl").write_text("not json\n", encoding="utf-8")
+    with pytest.raises(SystemExit):
+        main(["--report-only", str(bad_dir)])
 
 
 def test_main_ab_with_bot_ports_records_profiles_and_delta(tmp_path, capsys, monkeypatch) -> None:

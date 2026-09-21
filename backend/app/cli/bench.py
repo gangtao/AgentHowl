@@ -20,7 +20,7 @@ from app.engine.config import build_preset
 from app.eval.fingerprint import profile_fingerprint
 from app.eval.metrics import RANDOM_BOT_LABEL, aggregate, analyze_game, collect_profiles
 from app.eval.report import render_table, to_json
-from app.store.event_store import EventStore, JsonFileEventStore
+from app.store.event_store import EventStore, JsonFileEventStore, StoreError
 
 Printer = Callable[[str], None]
 
@@ -28,7 +28,12 @@ Printer = Callable[[str], None]
 def assign_seats(
     num_players: int, game_index: int, a: AgentProfiles, b: AgentProfiles | None
 ) -> AgentProfiles:
-    """第 game_index 局的座位档案：交错 + 逐局轮转；解析为 None 的座位留给随机 bot。"""
+    """第 game_index 局的座位档案：交错 + 逐局轮转；解析为 None 的座位留给随机 bot。
+
+    座位专属键（如 `"0"`）只在该座位本局分到对应档案集（A 或 B）时才生效——同一座位
+    在 A、B 两份档案集间逐局轮转，所以一份档案集里的座位专属覆盖只对半数局起效；另
+    半数局该座位读的是另一份档案集里同键（或 `"*"`）解析出的档案（N3 终审）。
+    """
     out: AgentProfiles = {}
     for seat in range(num_players):
         chosen = a if b is None or (seat + game_index) % 2 == 0 else b
@@ -87,12 +92,21 @@ async def run_bench(
 
 
 def report(store: EventStore, labels: dict[str | None, str]) -> tuple[str, dict[str, object]]:
-    """对 store 里全部对局做分析；返回 (表格文本, JSON 文档)。"""
+    """对 store 里全部对局做分析；返回 (表格文本, JSON 文档)。
+
+    F1（终审）：未终局日志（服务重启中断 / 仍在进行 / API 建局后只写了 meta 行）不计入
+    统计分母；跳过的局数既打到 stderr，也写进 JSON 的 skipped_unfinished 字段。
+    """
     ids = store.list_games()
     metas = [store.load_meta(g) for g in ids]
     analyses = [analyze_game(m, store.load_events(m.game_id)) for m in metas]
+    skipped = sum(1 for a in analyses if not a.finished)
+    if skipped:
+        print(f"跳过未终局 {skipped} 局", file=sys.stderr)
     stats = aggregate(analyses, collect_profiles(metas))
-    return render_table(stats, labels), to_json(stats, labels)
+    doc = to_json(stats, labels)
+    doc["skipped_unfinished"] = skipped
+    return render_table(stats, labels), doc
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -120,7 +134,10 @@ def main(argv: list[str] | None = None) -> None:
             parser.error(f"--report-only 目录不存在：{report_dir}")
         store: EventStore = JsonFileEventStore(report_dir)
         labels: dict[str | None, str] = {None: RANDOM_BOT_LABEL}
-        table, doc = report(store, labels)
+        try:
+            table, doc = report(store, labels)
+        except StoreError as exc:  # 坏 JSONL 等：明确报错而非裸 traceback（F6 终审）
+            parser.error(str(exc))
         print(table)
         if args.json:
             Path(args.json).write_text(
@@ -169,7 +186,10 @@ def main(argv: list[str] | None = None) -> None:
         )
     )
     labels = label_map(a, b, args.label_a, args.label_b)
-    table, doc = report(store, labels)
+    try:
+        table, doc = report(store, labels)
+    except StoreError as exc:  # 坏 JSONL 等：明确报错而非裸 traceback（F6 终审）
+        parser.error(str(exc))
     print(f"日志目录：{out_dir}")
     print(table)
     if args.json:

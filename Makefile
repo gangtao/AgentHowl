@@ -101,8 +101,8 @@ sim: ## 纯引擎随机自对局胜负统计（例：make sim GAMES=100）
 	cd $(BACKEND) && $(UV) python -m app.cli.simulate --games $(GAMES) $(ARGS)
 
 .PHONY: bench
-bench: ## 档案 A/B bench（例：make bench GAMES=20 AGENTS=a.yaml AGENTS_B=b.yaml；不给 AGENTS 为随机 bot）
-	cd $(BACKEND) && $(UV) python -m app.cli.bench --games $(GAMES) $(if $(AGENTS),--agents $(AGENTS),) $(if $(AGENTS_B),--agents-b $(AGENTS_B),) $(ARGS)
+bench: ## 档案 A/B bench（例：make bench GAMES=20 SEED=7 AGENTS=a.yaml AGENTS_B=b.yaml SKILLS_DIR=x；不给 AGENTS 为随机 bot）
+	cd $(BACKEND) && $(UV) python -m app.cli.bench --games $(GAMES) --seed $(SEED) $(if $(AGENTS),--agents $(AGENTS),) $(if $(AGENTS_B),--agents-b $(AGENTS_B),) $(if $(SKILLS_DIR),--skills-dir $(SKILLS_DIR),) $(ARGS)
 
 # ---- 清理 ---------------------------------------------------------------
 

@@ -385,7 +385,7 @@ B；每局 `seed = --seed + i`，事件落到 `--out`（默认 `data/bench/<时�
 | 发言均长 | 发言字符数 / 发言次数 |
 | 声称率 | 带 `claim_role` 的发言占比 |
 | 上警率 | 报名竞选警长的局占比（分母限 `sheriff.enabled` 的局） |
-| 改票率 | PK 轮里目标不同于首轮目标的比例 |
+| 改票率 | PK 轮里改投的比例（分母限首轮目标本身就是 PK 候选之一的投票；首轮弃票或投了非 PK 候选者不计） |
 | 空刀率 | 狼队夜间提议目标为空的比例 |
 | 重提率 | 出现 `WOLF_KILL_REVOTE`（团队未达成一致再议）的狼夜占比 |
 | 技能次数 | 事件 `meta["skills"]` 记到的技能装配次数总和 |
@@ -393,7 +393,7 @@ B；每局 `seed = --seed + i`，事件落到 `--out`（默认 `data/bench/<时�
 技能次数统计不依赖 bench——技能装配次数来自 runtime 写入行动首条事件的 `meta["skills"]`，
 任何来源（API / CLI 看局或玩局 / bench）落盘的 JSONL 日志目录都能用 `--report-only` 统计。
 bench 跑局时不装配跨局记忆、不跑局后复盘（档案里的 `memory_id` 只被记进 `meta.agents`，
-不产生新经验）；也不做跨局记忆——每局都是独立冷启动。
+不产生新经验）；每局都是独立冷启动。
 
 真机跑 `uv run python -m app.cli.bench --games 3 --seed 3 --out /tmp/agenthowl-bench-doc`
 （零 LLM，全随机 bot）的实际输出：

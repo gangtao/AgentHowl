@@ -4,7 +4,7 @@ import json
 
 from app.engine.config import RoleType
 from app.eval.metrics import RANDOM_BOT_LABEL, ProfileStats, RoleStats, SeatStats
-from app.eval.report import ordered, render_table, to_json
+from app.eval.report import _fmt_delta, ordered, render_table, to_json
 
 
 def _stats(games: int, wins: int, **totals: int) -> ProfileStats:
@@ -68,6 +68,11 @@ def test_ordered_and_to_json() -> None:
     assert profiles[2]["fingerprint"] is None and profiles[2]["rates"]["win_rate"] == 0.0
     assert doc["diff"]["win_rate"] == -0.5 and doc["diff_labels"] == ["A", "B"]
     assert to_json({"fa": a}, {})["diff"] is None
+
+
+def test_fmt_delta_normalizes_negative_zero() -> None:
+    """F4（终审）：浮点减法产生的 -1e-9 不应展示成 -0.0pp（字符串归一化，非数值加 0.0）。"""
+    assert _fmt_delta("win_rate", -1e-9) == "+0.0pp"
 
 
 def test_render_table_duplicate_summary_suffix() -> None:

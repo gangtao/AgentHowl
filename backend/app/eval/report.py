@@ -54,14 +54,20 @@ def _fmt(name: str, v: float | None) -> str:
     return f"{v * 100:.1f}%"
 
 
+def _signed(v: float, spec: str) -> str:
+    """按 spec 格式化并归一化 -0.0（F4 终审：字符串归一化，数值加 0.0 治不了 -1e-9）。"""
+    s = format(v, spec)
+    return "+" + s[1:] if s.startswith("-") and float(s) == 0 else s
+
+
 def _fmt_delta(name: str, d: float | None) -> str:
     if name in _COUNT_FIELDS:
         return "—"
     if d is None:
         return "N/A"
     if name.startswith("avg_"):
-        return f"{d:+.1f}"
-    return f"{d * 100:+.1f}pp"
+        return _signed(d, "+.1f")
+    return _signed(d * 100, "+.1f") + "pp"
 
 
 def ordered(

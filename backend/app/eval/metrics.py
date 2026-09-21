@@ -83,6 +83,7 @@ class GameAnalysis(BaseModel):
     roles: dict[int, RoleType]
     fingerprints: dict[int, str | None]
     seats: dict[int, SeatStats]
+    finished: bool = False  # 见到 GAME_OVER 才 True（F1 终审：未终局日志不应计入聚合分母）
 
 
 def _die(seats: dict[int, SeatStats], dead: set[int], seat: int, round_no: int) -> None:
@@ -101,6 +102,7 @@ def analyze_game(meta: GameMeta, events: Sequence[Event]) -> GameAnalysis:  # no
     pk_candidates: tuple[int, ...] | None = None  # 非 None = 正处于 PK 轮
     night_counted = revote_counted = decided_counted = False
     winner: str | None = None
+    finished = False
     for e in events:
         p = e.payload
         t = e.type
@@ -183,6 +185,7 @@ def analyze_game(meta: GameMeta, events: Sequence[Event]) -> GameAnalysis:  # no
                         st.vote_changes += 1
         elif t is EventType.GAME_OVER and isinstance(p, GameOverPayload):
             winner = p.winner
+            finished = True
         skills = e.meta.get("skills")
         if skills and e.actor_seat is not None:
             st = seats[e.actor_seat]
@@ -211,6 +214,7 @@ def analyze_game(meta: GameMeta, events: Sequence[Event]) -> GameAnalysis:  # no
         roles=roles,
         fingerprints=fps,
         seats=seats,
+        finished=finished,
     )
 
 
@@ -339,6 +343,8 @@ def aggregate(
     profiles = profiles or {}
     out: dict[str | None, ProfileStats] = {}
     for a in analyses:
+        if not a.finished:  # F1 终审：未终局（中断 / 仍在进行）不计入聚合分母
+            continue
         for seat, st in a.seats.items():
             fp = a.fingerprints.get(seat)
             if fp not in out:

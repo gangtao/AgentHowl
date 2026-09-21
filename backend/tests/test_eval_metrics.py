@@ -8,6 +8,7 @@ from app.engine.events import (
     Event,
     EventType,
     GameOverPayload,
+    NightResolvedPayload,
     PlayerExiledPayload,
     PlayerSpokePayload,
     RoundStartedPayload,
@@ -58,6 +59,22 @@ def test_random_bot_game_consistency() -> None:
     wolves = [s for s, r in a.roles.items() if r == RoleType.WEREWOLF]
     assert all(a.seats[w].wolf_nights >= 1 for w in wolves)
     assert all(a.seats[s].wolf_nights == 0 for s in a.seats if s not in wolves)
+
+
+def test_unfinished_game_not_finished_and_excluded_from_aggregate() -> None:
+    """F1（终审）：没见到 GAME_OVER 的事件流（中断 / 仍在进行）不应计入分母。"""
+    cfg = build_preset("std_9_kill_side").model_copy(update={"seed": 3})
+    final, events = run_game(cfg, "g1")
+    game_over_idx = next(i for i, e in enumerate(events) if e.type is EventType.GAME_OVER)
+    truncated = events[:game_over_idx]  # 截到 GAME_OVER 之前
+
+    unfinished = analyze_game(_meta(final), truncated)
+    assert unfinished.finished is False
+    finished = analyze_game(_meta(final), events)
+    assert finished.finished is True
+
+    stats = aggregate([unfinished, finished])
+    assert stats[None].games == 9  # 只有终局的一局（9 座位）计入
 
 
 def test_manual_sequence_votes_wolves_speech_sheriff_skills() -> None:
@@ -124,6 +141,8 @@ def test_manual_sequence_votes_wolves_speech_sheriff_skills() -> None:
         (EventType.VOTE_CAST, VoteCastPayload(voter=4, target=8), 4, {}),
         # 首轮 2∉PK 候选 → 不计入分母
         (EventType.VOTE_CAST, VoteCastPayload(voter=6, target=7), 6, {}),
+        # m7（终审）：夜死具体断言——8 号本轮被刀
+        (EventType.NIGHT_RESOLVED, NightResolvedPayload(deaths=(8,)), None, {}),
         (EventType.PLAYER_EXILED, PlayerExiledPayload(seat=7), None, {}),
         (EventType.GAME_OVER, GameOverPayload(winner="WOLF"), None, {}),
     ]
@@ -143,7 +162,7 @@ def test_manual_sequence_votes_wolves_speech_sheriff_skills() -> None:
         )
     a = analyze_game(_meta(final, agents={"0": AgentProfile(model="m")}), events)
 
-    s0, s1, s2, s3, s4, s5, s6, s7 = (a.seats[i] for i in range(8))
+    s0, s1, s2, s3, s4, s5, s6, s7, s8 = (a.seats[i] for i in range(9))
     # 狼队：三狼各 1 狼夜；0 号提案 2 次、无空刀；1 号 1 次空刀提案；重提与决定空刀记到三狼
     assert (s0.wolf_nights, s1.wolf_nights, s2.wolf_nights) == (1, 1, 1)
     assert (s0.proposals, s0.no_kill_proposals, s1.proposals, s1.no_kill_proposals) == (2, 0, 1, 1)
@@ -159,6 +178,8 @@ def test_manual_sequence_votes_wolves_speech_sheriff_skills() -> None:
     assert (s6.votes, s6.pk_votes_eligible, s6.vote_changes) == (2, 0, 0)
     # 放逐与胜负
     assert s7.exiled == 1 and s7.rounds_alive == 1 and s7.alive_at_end == 0
+    # 夜死（m7 终审）：8 号被刀，死于本轮，终局不在世
+    assert s8.night_killed == 1 and s8.rounds_alive == 1 and s8.alive_at_end == 0
     assert s0.wins == 1 and s3.wins == 0
     # 技能：按事件计次、逐名计数
     assert s0.skills_assembled == 1 and s0.skill_counts == {"wolf-team-kill": 1}

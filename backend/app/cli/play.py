@@ -44,7 +44,7 @@ from app.runtime.postgame import (
     seat_memory_ids,
     utc_now_iso,
 )
-from app.store.event_store import EventStore, StoreError
+from app.store.event_store import EventStore, InMemoryEventStore, StoreError
 
 ReadLine = Callable[[str], Awaitable[str]]
 
@@ -177,8 +177,6 @@ def _wire_game(
 
     store/game_id 供 bench 落盘（issue #60）：缺省仍是内存 store + game_id="cli"。
     """
-    from app.store.event_store import InMemoryEventStore
-
     agents = agents or {}
     n = config.num_players
     exclude = () if human_seat is None else (human_seat,)

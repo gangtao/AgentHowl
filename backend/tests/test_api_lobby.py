@@ -1,6 +1,7 @@
 """REST 大厅端点：create/join/start 与鉴权（issue #30）。"""
 
 from collections.abc import Iterator
+from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
@@ -382,3 +383,13 @@ def test_events_endpoint_filters_skills_meta_from_spectators_but_replay_not() ->
     events = client.get(f"/api/v1/games/{gid}/events", headers=_auth(spec)).json()
     assert events and all("skills" not in e["meta"] for e in events), "观众不应看到 skills"
     assert all("wall_ts" in e["meta"] for e in events), "所有事件应有 wall_ts"
+
+    # F2（终审）：WS 实时 + 补发共用的 _build_event_frames 同样不外泄 skills——
+    # 用 from_seq=0 全量补发路径覆盖（现有 WS 重连测试只比 seq，不比 event 体）
+    with client.websocket_connect(f"/api/v1/ws?token={spec}&from_seq=0") as ws:
+        frames: list[dict[str, Any]] = []
+        while len(frames) < len(events):
+            f = ws.receive_json()
+            if f["type"] == "game_event":
+                frames.append(f["event"])
+    assert all("skills" not in e["meta"] for e in frames)
