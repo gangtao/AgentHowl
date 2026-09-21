@@ -20,6 +20,7 @@ THINKING        ?=     # 非空则开启推理模型思考（更强推理但慢�
 WOLF_RULE       ?=     # 狼刀裁决规则 unanimous|majority|random（缺省=预设默认 unanimous）
 WOLF_ROUNDS     ?=     # 狼队提案最多几轮，不一致则重提（缺省 2）
 AGENTS          ?=     # 每座位 Agent 档案 YAML（seats: {座位号|'*': {model,...}}）
+AGENTS_B        ?=     # bench 档案 B（YAML；不给则 bench 全用 AGENTS/随机 bot）
 SKILLS_DIR      ?=     # 外部技能目录（SKILL.md 子目录；同名覆盖内置）
 ARGS            ?=
 
@@ -98,6 +99,10 @@ play: ## 终端玩局，你扮演 SEAT 座位（例：make play SEAT=2 AI_MODEL=
 .PHONY: sim
 sim: ## 纯引擎随机自对局胜负统计（例：make sim GAMES=100）
 	cd $(BACKEND) && $(UV) python -m app.cli.simulate --games $(GAMES) $(ARGS)
+
+.PHONY: bench
+bench: ## 档案 A/B bench（例：make bench GAMES=20 AGENTS=a.yaml AGENTS_B=b.yaml；不给 AGENTS 为随机 bot）
+	cd $(BACKEND) && $(UV) python -m app.cli.bench --games $(GAMES) $(if $(AGENTS),--agents $(AGENTS),) $(if $(AGENTS_B),--agents-b $(AGENTS_B),) $(ARGS)
 
 # ---- 清理 ---------------------------------------------------------------
 

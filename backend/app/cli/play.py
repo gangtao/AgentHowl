@@ -44,7 +44,7 @@ from app.runtime.postgame import (
     seat_memory_ids,
     utc_now_iso,
 )
-from app.store.event_store import StoreError
+from app.store.event_store import EventStore, StoreError
 
 ReadLine = Callable[[str], Awaitable[str]]
 
@@ -170,8 +170,13 @@ def _wire_game(
     agents: AgentProfiles | None = None,
     library: SkillLibrary | None = None,
     experiences: Mapping[str, AgentExperience] | None = None,
+    store: EventStore | None = None,
+    game_id: str = "cli",
 ) -> tuple[GameRunner, ConnectionManager, dict[int, PlayerPort]]:
-    """装配 store/roster/ports/conns/runner（不订阅、不 run）。agents 缺省=全随机 bot。"""
+    """装配 store/roster/ports/conns/runner（不订阅、不 run）。agents 缺省=全随机 bot。
+
+    store/game_id 供 bench 落盘（issue #60）：缺省仍是内存 store + game_id="cli"。
+    """
     from app.store.event_store import InMemoryEventStore
 
     agents = agents or {}
@@ -215,9 +220,9 @@ def _wire_game(
     any_thinking = any(p.thinking for p in used_profiles.values())
     conns = ConnectionManager(state_provider=state_of)
     runner = GameRunner(
-        store=InMemoryEventStore(),
+        store=store if store is not None else InMemoryEventStore(),
         config=config,
-        game_id="cli",
+        game_id=game_id,
         roster=roster,
         ports=ports,
         connections=conns,
