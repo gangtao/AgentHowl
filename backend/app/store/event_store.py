@@ -64,10 +64,9 @@ class GameMeta(BaseModel):
 
 
 def event_to_json(event: Event) -> dict[str, object]:
-    d = event.model_dump(mode="json")
-    # Explicitly serialize payload's actual type (not base EventPayload)
-    d["payload"] = event.payload.model_dump(mode="json")
-    return d
+    """事件 → JSON dict。Event.payload 已声明 SerializeAsAny（issue #34），
+    model_dump 即按运行时具体类序列化。"""
+    return event.model_dump(mode="json")
 
 
 def event_from_json(data: object) -> Event:

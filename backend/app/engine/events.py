@@ -9,7 +9,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from enum import StrEnum
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, SerializeAsAny
 
 from app.engine.config import Faction, RoleType, faction_of
 from app.engine.phases import ElectionStage, Phase
@@ -308,7 +308,9 @@ class Event(BaseModel):
     ts: float  # 纯引擎内是逻辑 tick；墙钟时间由 runtime(M2) 写入 meta
     type: EventType
     actor_seat: int | None = None
-    payload: EventPayload
+    # SerializeAsAny：按运行时具体 payload 类序列化（issue #34）。否则 pydantic v2 按声明的基类
+    # EventPayload（无字段）dump，所有负载都成 {}——store 层的 event_to_json 曾为此单独重序列化。
+    payload: SerializeAsAny[EventPayload]
     visibility: Visibility
     meta: dict[str, str] = {}
 
