@@ -37,6 +37,10 @@ def test_same_seed_byte_identical_event_log(preset: str, seed: int) -> None:
     dump1 = [e.model_dump(mode="json") for e in ev1]
     dump2 = [e.model_dump(mode="json") for e in ev2]
     assert dump1 == dump2
+    # issue #34：payload 须按运行时具体类序列化——否则上面的比较对负载恒为 {}、形同虚设
+    roles = next(d for d in dump1 if d["type"] == "ROLES_ASSIGNED")
+    assert roles["payload"].get("assignments"), "payload 序列化为空：比较未覆盖事件负载"
+    assert all(d["payload"] != {} for d in dump1 if d["type"] not in ("GAME_STARTED",))
 
 
 @pytest.mark.parametrize("preset", PRESETS)
