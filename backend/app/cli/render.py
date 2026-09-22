@@ -30,6 +30,7 @@ from app.engine.events import (
     SeerCheckedPayload,
     SheriffCandidacyPayload,
     SheriffElectedPayload,
+    SheriffVoteStartedPayload,
     VoteCastPayload,
     VoteResultPayload,
     WolfKillDecidedPayload,
@@ -126,6 +127,8 @@ def render_event(event: Event) -> str:  # noqa: PLR0911
         return f"【竞选】{_ELECTION_STAGE_ZH[p.stage]}{order}"
     if t == EventType.SHERIFF_CANDIDACY and isinstance(p, SheriffCandidacyPayload):
         return f"{p.seat}号{'上警竞选' if p.running else '不上警'}"
+    if t == EventType.SHERIFF_VOTE_STARTED and isinstance(p, SheriffVoteStartedPayload):
+        return f"【竞选】警长开票，候选：{_seats(p.candidates)}"
     if t == EventType.SHERIFF_ELECTED and isinstance(p, SheriffElectedPayload):
         return f"【警长】{p.seat}号当选警长"
     if t == EventType.BADGE_PASSED and isinstance(p, BadgePassedPayload):

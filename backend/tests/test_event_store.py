@@ -37,13 +37,9 @@ def _run_fixture_game(seed: int = 42) -> tuple[GameMeta, GameState, list[Event]]
 
 
 def _assert_replay_matches(replayed: GameState, final: GameState) -> None:
-    """回放状态与实时终局一致（口径与 test_determinism 一致，排除游标字段）。"""
+    """回放状态与实时终局全等（issue #37 后不再豁免游标字段）。"""
     assert replayed.phase == final.phase == Phase.GAME_OVER
-    assert replayed.winner == final.winner
-    assert [p.alive for p in replayed.players] == [p.alive for p in final.players]
-    assert [p.role for p in replayed.players] == [p.role for p in final.players]
-    assert replayed.sheriff_seat == final.sheriff_seat
-    assert replayed.election_stage == final.election_stage
+    assert replayed == final
 
 
 class TestCodec:

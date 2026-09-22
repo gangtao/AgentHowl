@@ -19,9 +19,7 @@ def test_replay_equals_live() -> None:
     final, events = run_game(stage1_config(seed=5), game_id="g5")
     # 从「发牌前」的空局基态重放全部事件，应得到与实时终态一致的关键投影
     replayed = reduce_all(_blank_state(final), events)
-    assert replayed.phase == final.phase
-    assert [p.alive for p in replayed.players] == [p.alive for p in final.players]
-    assert replayed.winner == final.winner
+    assert replayed == final  # issue #37：全等，不再只比关键投影
 
 
 def _blank_state(final):  # type: ignore[no-untyped-def]

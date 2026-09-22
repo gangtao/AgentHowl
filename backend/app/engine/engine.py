@@ -62,6 +62,7 @@ from app.engine.events import (
     SheriffDirectionSetPayload,
     SheriffElectedPayload,
     SheriffVoteCastPayload,
+    SheriffVoteStartedPayload,
     SheriffWithdrewPayload,
     Visibility,
     VoteCastPayload,
@@ -538,16 +539,15 @@ def _after_self_destruct(state: GameState) -> tuple[GameState, list[Event]]:
             return s, [*events, e]
         state, ev0 = _after_day_death(state)
         return state, [*events, *ev0]
-    # 竞选期自爆：补公布首夜死讯并继续（含猎人/遗言绕行）；skip_day 游标保证
-    # 无论同步还是绕行续接，最终都在 _enter_day_speech 漏斗处跳过当天直接入夜。
+    # 竞选期自爆：补公布首夜死讯并继续（含猎人/遗言绕行）；skip_day 随事件入流（issue #37），
+    # 保证无论同步还是绕行续接，最终都在 _enter_day_speech 漏斗处跳过当天直接入夜。
     state, e = _emit(
         state,
         EventType.ELECTION_STAGE_CHANGED,
-        ElectionStageChangedPayload(stage=ElectionStage.NONE),
+        ElectionStageChangedPayload(stage=ElectionStage.NONE, skip_day=True),
         Visibility.PUBLIC,
     )
     events.append(e)
-    state = state.model_copy(update={"skip_day": True})
     state, ev = _announce_and_continue_night(state, state.night_deaths, events)
     return state, ev
 
@@ -573,7 +573,7 @@ def _apply_sheriff(state: GameState, a: SheriffAction) -> tuple[GameState, list[
                     Visibility.PUBLIC,
                     actor=a.actor_seat,
                 )
-            s = s.model_copy(update={"sheriff_confirmed": s.sheriff_confirmed | {a.actor_seat}})
+            # sheriff_confirmed 由 reduce 在 withdraw 子阶段据事件写入（issue #37）
             return s, [e]
         running = at == SheriffActionType.RUN_FOR_SHERIFF
         s, e = _emit(
@@ -913,8 +913,8 @@ def _system_transition(state: GameState) -> tuple[GameState, list[Event]]:
         # 猎人已开枪（HUNTER_SHOT 事件已应用），按 resume_token 续接
         token = state.resume_token
         victim_dead = state.night_deaths  # 夜间语境
+        # resume_token 的清零随下一条 PHASE_CHANGED / GAME_OVER 经 reduce 落流（issue #37）
         if token == "night_after_hunter":
-            state = state.model_copy(update={"resume_token": None})
             winner = check_win(state)
             if winner is not None:
                 s, e = _emit(
@@ -923,7 +923,6 @@ def _system_transition(state: GameState) -> tuple[GameState, list[Event]]:
                 return s, [e]
             return _finish_night_deaths(state, victim_dead, [])
         # day_after_hunter
-        state = state.model_copy(update={"resume_token": None})
         winner = check_win(state)
         if winner is not None:
             s, e = _emit(
@@ -934,7 +933,6 @@ def _system_transition(state: GameState) -> tuple[GameState, list[Event]]:
 
     if ph == Phase.LAST_WORDS:
         token = state.resume_token
-        state = state.model_copy(update={"resume_token": None})
         if token == "day_speech":
             return _enter_day_speech(state)
         return _after_day_death(state)
@@ -1048,17 +1046,12 @@ def _announce_and_continue_night(
         state, frozenset(ordered), state.pending_night.witch_poison_target
     )
     if shooter is not None:
-        state = state.model_copy(
-            update={
-                "pending_hunter": shooter,
-                "resume_token": "night_after_hunter",
-                "night_deaths": ordered,
-            }
-        )
         state, e = _emit(
             state,
             EventType.PHASE_CHANGED,
-            PhaseChangedPayload(to=Phase.HUNTER_SHOOT),
+            PhaseChangedPayload(
+                to=Phase.HUNTER_SHOOT, pending_hunter=shooter, resume_token="night_after_hunter"
+            ),
             Visibility.PUBLIC,
         )
         return state, [*events, e]
@@ -1080,7 +1073,7 @@ def _campaign_speech_order(state: GameState) -> tuple[int, ...]:
 
 
 def _enter_withdraw(state: GameState, events: list[Event]) -> tuple[GameState, list[Event]]:
-    """进入退水确认子阶段（confirmed 是游标，保持 model_copy）。"""
+    """进入退水确认子阶段（sheriff_confirmed 由 reduce 随该事件清零，issue #37）。"""
     state, e = _emit(
         state,
         EventType.ELECTION_STAGE_CHANGED,
@@ -1088,7 +1081,6 @@ def _enter_withdraw(state: GameState, events: list[Event]) -> tuple[GameState, l
         Visibility.PUBLIC,
     )
     events.append(e)
-    state = state.model_copy(update={"sheriff_confirmed": frozenset()})
     return state, events
 
 
@@ -1146,7 +1138,14 @@ def _advance_election(state: GameState) -> tuple[GameState, list[Event]]:
             Visibility.PUBLIC,
         )
         events.append(e)
-        state = state.model_copy(update={"sheriff_votes": {}})
+        # 开票：候选集合与清空票箱经事件落流（issue #37）
+        state, e2 = _emit(
+            state,
+            EventType.SHERIFF_VOTE_STARTED,
+            SheriffVoteStartedPayload(candidates=state.sheriff_candidates),
+            Visibility.PUBLIC,
+        )
+        events.append(e2)
         return state, events
     # vote 阶段收尾
     weights = {s: 1.0 for s in living_seats(state)}
@@ -1154,15 +1153,20 @@ def _advance_election(state: GameState) -> tuple[GameState, list[Event]]:
     if elected is not None:
         return _finish_election(state, elected, events)
     if tie and state.phase == Phase.SHERIFF_ELECTION:
-        # 进入 PK：候选缩小为平票者
-        state = state.model_copy(update={"sheriff_candidates": tie, "sheriff_votes": {}})
+        # 进入 PK：候选缩小为平票者、清空票箱——经 SHERIFF_VOTE_STARTED 落流（issue #37）
+        state, e0 = _emit(
+            state,
+            EventType.SHERIFF_VOTE_STARTED,
+            SheriffVoteStartedPayload(candidates=tie),
+            Visibility.PUBLIC,
+        )
         state, e = _emit(
             state,
             EventType.PHASE_CHANGED,
             PhaseChangedPayload(to=Phase.SHERIFF_PK, speech_order=tie),
             Visibility.PUBLIC,
         )
-        return state, [e]
+        return state, [e0, e]
     # PK 再平票 -> 警徽流失
     return _lose_badge(state, BadgeLostReason.TIE_AGAIN, events)
 
@@ -1248,11 +1252,12 @@ def _finish_night_deaths(
     state, badge_ev = _auto_badge_if_orphaned(state, recipients)
     events = [*events, *badge_ev]
     if recipients:
-        state = state.model_copy(update={"resume_token": "day_speech"})
         state, e = _emit(
             state,
             EventType.PHASE_CHANGED,
-            PhaseChangedPayload(to=Phase.LAST_WORDS, speech_order=recipients),
+            PhaseChangedPayload(
+                to=Phase.LAST_WORDS, speech_order=recipients, resume_token="day_speech"
+            ),
             Visibility.PUBLIC,
         )
         return state, [*events, e]
@@ -1316,8 +1321,8 @@ def _speech_order(state: GameState) -> tuple[int, ...]:
 
 def _enter_day_speech(state: GameState) -> tuple[GameState, list[Event]]:
     if state.skip_day:
-        # 竞选期自爆的「立即天黑」：跳过当天发言/投票（胜负判定与入夜由 _after_day_death 处理）
-        state = state.model_copy(update={"skip_day": False})
+        # 竞选期自爆的「立即天黑」：跳过当天发言/投票（胜负判定与入夜由 _after_day_death 处理）；
+        # skip_day 由 reduce 在 ROUND_STARTED / GAME_OVER 时清零（issue #37）
         return _after_day_death(state)
     order = _speech_order(state)
     s, e = _emit(
@@ -1439,13 +1444,12 @@ def _after_exile(state: GameState) -> tuple[GameState, list[Event]]:
     if exiled is not None:
         pl = player_at(state, exiled)
         if pl.role == RoleType.HUNTER and pl.hunter_can_shoot:
-            state = state.model_copy(
-                update={"pending_hunter": exiled, "resume_token": "day_after_hunter"}
-            )
             state, e = _emit(
                 state,
                 EventType.PHASE_CHANGED,
-                PhaseChangedPayload(to=Phase.HUNTER_SHOOT),
+                PhaseChangedPayload(
+                    to=Phase.HUNTER_SHOOT, pending_hunter=exiled, resume_token="day_after_hunter"
+                ),
                 Visibility.PUBLIC,
             )
             return state, [e]
@@ -1461,11 +1465,12 @@ def _enter_day_last_words(
     recipients = _last_words_recipients(state, dead_today, is_night=False)
     state, badge_ev = _auto_badge_if_orphaned(state, recipients)
     if recipients:
-        state = state.model_copy(update={"resume_token": "after_day"})
         state, e = _emit(
             state,
             EventType.PHASE_CHANGED,
-            PhaseChangedPayload(to=Phase.LAST_WORDS, speech_order=recipients),
+            PhaseChangedPayload(
+                to=Phase.LAST_WORDS, speech_order=recipients, resume_token="after_day"
+            ),
             Visibility.PUBLIC,
         )
         return state, [*badge_ev, e]

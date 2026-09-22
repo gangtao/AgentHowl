@@ -46,8 +46,4 @@ def test_reduce_events_equals_live_state(preset: str, seed: int) -> None:
     final, events = run_game(cfg, game_id="g")
     replayed = reduce_all(_blank(final), events)
     assert replayed.phase == final.phase == Phase.GAME_OVER
-    assert replayed.winner == final.winner
-    assert [p.alive for p in replayed.players] == [p.alive for p in final.players]
-    assert [p.role for p in replayed.players] == [p.role for p in final.players]
-    assert replayed.sheriff_seat == final.sheriff_seat
-    assert replayed.election_stage == final.election_stage
+    assert replayed == final  # issue #37：全字段相等（逐步不变量见 test_replay_invariant.py）
