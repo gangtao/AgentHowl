@@ -59,6 +59,7 @@ class EventType(StrEnum):
     SHERIFF_CANDIDACY = "SHERIFF_CANDIDACY"
     SHERIFF_WITHDREW = "SHERIFF_WITHDREW"
     SHERIFF_VOTE_CAST = "SHERIFF_VOTE_CAST"
+    SHERIFF_VOTE_STARTED = "SHERIFF_VOTE_STARTED"  # 警长投票开票/PK 开票（issue #37）
     SHERIFF_ELECTED = "SHERIFF_ELECTED"
     SHERIFF_DIRECTION_SET = "SHERIFF_DIRECTION_SET"
     SHERIFF_BADGE_LOST = "SHERIFF_BADGE_LOST"
@@ -93,6 +94,10 @@ class RoundStartedPayload(EventPayload):
 class PhaseChangedPayload(EventPayload):
     to: Phase
     speech_order: tuple[int, ...] | None = None  # 进入 DAY_SPEECH/PK 发言时一并设定顺序
+    # 中断游标（issue #37）：进入 HUNTER_SHOOT 时携带待开枪座位；进入 HUNTER_SHOOT/LAST_WORDS 时
+    # 携带续接标记。reduce 在每个 PHASE_CHANGED 上原样写入 resume_token（None 即清零）。
+    pending_hunter: int | None = None
+    resume_token: str | None = None
 
 
 class VoteStartedPayload(EventPayload):
@@ -198,6 +203,13 @@ class SheriffVoteCastPayload(EventPayload):
     target: int | None
 
 
+class SheriffVoteStartedPayload(EventPayload):
+    """警长投票开票（issue #37）：与 VOTE_STARTED 对称——候选集合与清空票箱经事件落流，
+    PK 时 candidates 为平票者（此前 sheriff_candidates 收窄与 sheriff_votes 重置是游标直写）。"""
+
+    candidates: tuple[int, ...]
+
+
 class SheriffElectedPayload(EventPayload):
     seat: int  # 恒为真实当选座位；流失走 SHERIFF_BADGE_LOST
 
@@ -219,6 +231,8 @@ class ElectionStageChangedPayload(EventPayload):
     # 进入 speech 子阶段时一并设定上警发言顺序（issue #47）；
     # 与 PhaseChangedPayload.speech_order 同语义
     speech_order: tuple[int, ...] | None = None
+    # 竞选期自爆中止竞选（stage=NONE）时置位：当天跳过发言/投票直接入夜（issue #37 入流）
+    skip_day: bool = False
 
 
 class SheriffWithdrewPayload(EventPayload):
@@ -270,6 +284,7 @@ EVENT_PAYLOAD_TYPES: dict[EventType, type[EventPayload]] = {
     EventType.SHERIFF_CANDIDACY: SheriffCandidacyPayload,
     EventType.SHERIFF_WITHDREW: SheriffWithdrewPayload,
     EventType.SHERIFF_VOTE_CAST: SheriffVoteCastPayload,
+    EventType.SHERIFF_VOTE_STARTED: SheriffVoteStartedPayload,
     EventType.SHERIFF_ELECTED: SheriffElectedPayload,
     EventType.SHERIFF_BADGE_LOST: SheriffBadgeLostPayload,
     EventType.SHERIFF_DIRECTION_SET: SheriffDirectionSetPayload,
@@ -357,13 +372,16 @@ def _reduce_dispatch(state: GameState, event: Event) -> dict[str, object]:
             "tie_round": 0,
             "speech_order": (),
             "speech_idx": 0,
+            "skip_day": False,
         }
 
     if t == EventType.PHASE_CHANGED and isinstance(p, PhaseChangedPayload):
-        upd: dict[str, object] = {"phase": p.to}
+        upd: dict[str, object] = {"phase": p.to, "resume_token": p.resume_token}
         if p.speech_order is not None:
             upd["speech_order"] = p.speech_order
             upd["speech_idx"] = 0
+        if p.pending_hunter is not None:
+            upd["pending_hunter"] = p.pending_hunter
         return upd
 
     if t == EventType.VOTE_STARTED and isinstance(p, VoteStartedPayload):
@@ -475,19 +493,32 @@ def _reduce_dispatch(state: GameState, event: Event) -> dict[str, object]:
         candidates = state.sheriff_candidates
         if p.running and p.seat not in candidates:
             candidates = (*candidates, p.seat)
-        return {"sheriff_declared": declared, "sheriff_candidates": candidates}
+        cand_upd: dict[str, object] = {
+            "sheriff_declared": declared,
+            "sheriff_candidates": candidates,
+        }
+        if state.election_stage == ElectionStage.WITHDRAW.value:
+            # 退水期的 RUN = 坚持竞选的公开再确认（issue #37：确认游标入流）
+            cand_upd["sheriff_confirmed"] = state.sheriff_confirmed | {p.seat}
+        return cand_upd
 
     if t == EventType.SHERIFF_WITHDREW and isinstance(p, SheriffWithdrewPayload):
         candidates = tuple(s for s in state.sheriff_candidates if s != p.seat)
-        return {
+        wd_upd: dict[str, object] = {
             "sheriff_candidates": candidates,
             "sheriff_withdrawn": state.sheriff_withdrawn | {p.seat},
         }
+        if state.election_stage == ElectionStage.WITHDRAW.value:
+            wd_upd["sheriff_confirmed"] = state.sheriff_confirmed | {p.seat}
+        return wd_upd
 
     if t == EventType.SHERIFF_VOTE_CAST and isinstance(p, SheriffVoteCastPayload):
         sv = dict(state.sheriff_votes)
         sv[p.voter] = p.target
         return {"sheriff_votes": sv}
+
+    if t == EventType.SHERIFF_VOTE_STARTED and isinstance(p, SheriffVoteStartedPayload):
+        return {"sheriff_candidates": p.candidates, "sheriff_votes": {}}
 
     if t == EventType.SHERIFF_ELECTED and isinstance(p, SheriffElectedPayload):
         # 先剥离在任者（当选时通常无在任者，保留为 issue #19 全化不变量防御）再授予
@@ -512,6 +543,10 @@ def _reduce_dispatch(state: GameState, event: Event) -> dict[str, object]:
         if p.speech_order is not None:
             stage_upd["speech_order"] = p.speech_order
             stage_upd["speech_idx"] = 0
+        if p.stage == ElectionStage.WITHDRAW:
+            stage_upd["sheriff_confirmed"] = frozenset()  # 退水确认游标随子阶段开启清零（#37）
+        if p.skip_day:
+            stage_upd["skip_day"] = True
         return stage_upd
 
     if t == EventType.WOLF_SELF_DESTRUCT and isinstance(p, WolfSelfDestructPayload):
@@ -527,7 +562,8 @@ def _reduce_dispatch(state: GameState, event: Event) -> dict[str, object]:
         return badge_upd
 
     if t == EventType.GAME_OVER and isinstance(p, GameOverPayload):
-        return {"winner": p.winner, "phase": Phase.GAME_OVER}
+        # 终局清中断游标：引擎在续接分支里先清 resume_token 再判胜（issue #37）
+        return {"winner": p.winner, "phase": Phase.GAME_OVER, "resume_token": None}
 
     if t == EventType.WITCH_POTION_CONSUMED and isinstance(p, WitchPotionConsumedPayload):
         updates: dict[str, object] = {}

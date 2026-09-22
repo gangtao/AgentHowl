@@ -50,7 +50,8 @@ def test_vote_candidates_and_pk_pending() -> None:
 
 def test_pk_speech_pending_during_vote_pk() -> None:
     """pk_speech_pending 在 VOTE_PK 阶段当存在待发言时为 True（行为驱动测试）。"""
-    config = build_preset("std_9_kill_side").model_copy(update={"seed": 1})
+    # seed 4：#37 使警长开票多一条事件、state_version 前移后仍能命中 VOTE_PK 待发言态
+    config = build_preset("std_9_kill_side").model_copy(update={"seed": 4})
     state = create_game(config, "g_obs_pk_test").state
     state = _advance_until(
         state,

@@ -78,8 +78,11 @@ class GameState(BaseModel):
 
     winner: str | None = None
     state_version: int = 0
-    resume_token: str | None = None  # 中断（猎人开枪/遗言）处理完后的续接标记
-    skip_day: bool = False  # 竞选期自爆置位：死讯（含枪/遗言绕行）处理完后跳过当天直接入夜（游标）
+    # 中断（猎人开枪/遗言）处理完后的续接标记；随 PHASE_CHANGED.resume_token 入流（issue #37）
+    resume_token: str | None = None
+    # 竞选期自爆置位：死讯（含枪/遗言绕行）处理完后跳过当天直接入夜；
+    # 随 ELECTION_STAGE_CHANGED.skip_day 入流，ROUND_STARTED/GAME_OVER 清零（issue #37）
+    skip_day: bool = False
 
     # 警长竞选
     sheriff_candidates: tuple[int, ...] = ()
@@ -90,7 +93,9 @@ class GameState(BaseModel):
         # 值域见 phases.ElectionStage（PK 由 phase==SHERIFF_PK 区分）
     )
     sheriff_withdrawn: frozenset[int] = frozenset()  # 退水者（事实：整场竞选失去投票权）
-    sheriff_confirmed: frozenset[int] = frozenset()  # withdraw 子阶段确认进度（游标）
+    # withdraw 子阶段确认进度：reduce 据 SHERIFF_CANDIDACY/SHERIFF_WITHDREW 累加、
+    # 随子阶段开启清零（issue #37）
+    sheriff_confirmed: frozenset[int] = frozenset()
     sheriff_speech_direction: str | None = None  # 警长方向 "LEFT"/"RIGHT"（事实，经事件写入）
 
     badge_flow_claims: dict[int, tuple[int, ...]] = Field(default_factory=dict)
