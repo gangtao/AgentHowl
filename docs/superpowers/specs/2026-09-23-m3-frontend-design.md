@@ -15,6 +15,7 @@
 - 回放：终局后 `GET /replay` 装入，`ReplayBar` 拖动 / 播放 / 步进 / 倍速；直播中亦可拨回历史再「回到直播」。
 - 前端**零信息过滤**：所有可见性裁剪由服务端 token 决定，前端按事件存在与否渲染。
 - 部署：`frontend/dist` 存在时后端挂静态站点；开发用 Vite 代理，不改 CORS。
+- **Agent 档案库（后端持久化）**：`GET/POST/PUT/DELETE /api/v1/agents`（`data/agents/<agent_id>.json`），`GET /api/v1/skills`、`GET /api/v1/presets`；前端 **AgentLibrary / AgentEditor / SeatAssignment** 三个 UI 让用户定义 Agent（名字、模型、人格、技能、记忆标识）并挑选多个放到座位上开局，建局请求自动装成 `agents: {seat: AgentProfile}`。
 
 ## 2. 后端：GM token 与状态端点
 
@@ -32,6 +33,27 @@
 - viewer 映射：`GM` → `"GM"`（`visible_events` 全量；`event_json_for_viewer` 不裁 `meta`）；`/events` 与 WS 的 `viewer` 计算处各加一行。
 - `/state` 的 GM 分支返回引擎 `GameState` 全量投影（`model_dump(mode="json")`），供前端重连时的兜底核对（正常路径以 `reduce` 为准，见 §5）。
 - 测试（`tests/test_api_e2e.py` / `test_api_ws.py` / `test_api_lobby.py`）：GM `/events` 含三种非 PUBLIC 可见性事件且 `meta.skills` 保留；GM WS 帧同；观众流仍 100% PUBLIC；GM `/actions` 403、`/start` 403；`/state` GM 返回 `phase`/`players[*].role`。
+
+## 2b. 后端：Agent 档案库与建局辅助端点
+
+**存储（`app/runtime/agent_library.py`，IO 层）**
+- 文档：`StoredAgent = {agent_id: str, profile: AgentProfile, created_at: str, updated_at: str}`；`agent_id` 服务端生成（`a_` + 8 位十六进制），文件 `data/agents/<agent_id>.json`，原子写（临时文件 + `os.replace`，与 `experience_store` 同法）；坏文件 → `StoreCorruptionError`（列表接口跳过并记 warning，单个读取 500）。
+- `AgentLibraryStore` 协议：`list() -> list[StoredAgent]`、`get(id)`、`put(stored)`、`delete(id)`；`InMemoryAgentLibrary`（测试）与 `JsonFileAgentLibrary(dir)`；`create_app(agents_dir=None, agent_library=None)` 默认 `data/agents`（惰性建目录）。
+- 校验：`profile` 走 `AgentProfile`（extra=forbid）；`profile.name` 必填且**库内唯一**（同名 409）；`memory_id` 可选、库内唯一（同 id 409——两个档案共用一份记忆会互相污染）；技能名经 `SkillLibrary.resolve` 校验（未知 → 400）；人格护栏 → 422（pydantic）。
+
+**端点（`app/api/agents.py`，前缀 `/api/v1`，无鉴权——与建局一致，M3 单用户本地部署）**
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/agents` | `[{agent_id, profile, created_at, updated_at}]`，按 `updated_at` 倒序 |
+| POST | `/agents` | body `AgentProfile`（含 `name`）→ 201 `StoredAgent` |
+| GET | `/agents/{id}` | 404 不存在 |
+| PUT | `/agents/{id}` | 整体替换 `profile`；`updated_at` 刷新；改 `memory_id` 不迁移经验文件（文档说明） |
+| DELETE | `/agents/{id}` | 204；不删除 `data/agent_memory/<memory_id>.json`（经验属于 `memory_id`，可被另一档案复用） |
+| GET | `/skills` | `[{name, description, roles, phases}]`（`default_library()` + `AGENTHOWL_SKILLS_DIR`） |
+| GET | `/presets` | `[{name, num_players, roles: [{role, count}], sheriff: bool, description_zh}]`（`_PRESETS`；中文说明表放 `app/schemas/presets.py`） |
+
+- 建局请求不变：前端把 SeatAssignment 的结果装成 `agents: {"0": profile, "3": profile, "*": profile?}` 发 `POST /games`（档案内容随请求传，后端不按 `agent_id` 反查——`GameMeta.agents` 仍记录完整档案，与 #64 一致）。
+- 测试（`tests/test_api_agents.py`、`tests/test_agent_library.py`）：CRUD 往返、同名 / 同 memory_id 409、未知技能 400、护栏 422、坏文件跳过、目录惰性创建、`/skills` 含内置 14 个、`/presets` 4 个且 `num_players` 正确。
 
 ## 3. 金样导出 CLI（`backend/app/cli/export_fixture.py`）
 
@@ -57,10 +79,11 @@ python -m app.cli.export_fixture --preset std_9_kill_side --seed 3 --out ../fron
     index.html  vite.config.ts  tsconfig.json  package.json  .eslintrc.cjs  .prettierrc
     src/main.tsx  src/App.tsx（hash 路由：#/ → Lobby，#/g/{gameId} → GamePage）
     src/engine/{types.ts, reduce.ts, phases.ts, select.ts, normalize.ts}  src/engine/__fixtures__/*.json  src/engine/*.test.ts
-    src/api/{rest.ts, ws.ts, tokens.ts}
+    src/api/{rest.ts, ws.ts, tokens.ts, agents.ts}
     src/store/game.ts
-    src/components/{SeatCircle, SpeechFeed, PhaseBar, NightOverlay, VotePanel, ElectionPanel, ReplayBar}/
-    src/pages/{Lobby, GamePage}.tsx
+    src/components/{SeatCircle, SpeechFeed, PhaseBar, NightOverlay, VotePanel, ElectionPanel, ReplayBar,
+                    AgentCard, AgentEditor, PersonalityEditor, SkillPicker, SeatAssignment}/
+    src/pages/{Lobby, AgentLibrary, GamePage}.tsx
     src/styles/{tokens.css, global.css}
   ```
 - `vite.config.ts`：`server.proxy = {"/api": {target: "http://localhost:8000", ws: true, changeOrigin: true}}`；`build.outDir = "dist"`。
@@ -81,6 +104,7 @@ python -m app.cli.export_fixture --preset std_9_kill_side --seed 3 --out ../fron
 - `useGameStore`（Zustand）状态：`gameId`、`token`、`viewer: "GM" | "SPECTATOR"`、`meta: GameMeta | null`、`events: Event[]`、`head: GameState | null`、`checkpoints: Map<number, GameState>`（每 50 条事件存一份）、`mode: "live" | "replay"`、`cursor: number | null`（回放游标 seq；`null` = 跟随最新）、`connection: "idle" | "connecting" | "open" | "closed" | "error"`、`error: string | null`、`playing: boolean`、`speed: number`。
 - 动作：`load(meta)`（`head = initialState(meta)`）；`appendEvents(batch)`：按 `seq` 过滤已有、要求 `seq === lastSeq + 1`（乱序 / 缺口 → 记录 `gap` 并触发重连补发，不静默丢弃）、逐条 `reduce` 更新 `head`、按需存检查点；`setCursor(seq | null)`；`viewState()`：cursor 为 `null` → `head`，否则取 `≤ cursor` 的最近检查点 re-reduce 到 cursor（memo 上次结果）；`play/pause/setSpeed/stepForward/stepBack`（播放用 `setInterval` 按 `speed` 推进 cursor，到末尾自动暂停）。
 - `src/api/rest.ts`：`createGame(req)`、`startGame(gameId, hostToken)`、`getMeta(gameId, token)`、`getReplay(gameId, token)`、`getEvents(gameId, token, fromSeq)`；`ApiError{status, detail}`；`Authorization: Bearer <token>`。
+- `src/api/agents.ts`：`listAgents()`、`createAgent(profile)`、`updateAgent(id, profile)`、`deleteAgent(id)`、`listSkills()`、`listPresets()`；`useAgentLibrary()`（Zustand 小 store：`agents`、`skills`、`presets`、加载 / 错误态，进入 Lobby 或 AgentLibrary 时拉取）。
 - `src/api/ws.ts`：`useLiveEvents({gameId, token, enabled})`——`useRef` 持 `WebSocket`（StrictMode 双挂载安全）、URL `/api/v1/ws?token=…&from_seq=<lastSeq+1>`；收到 `game_event` 帧推入 ref 缓冲，`requestAnimationFrame` 批量 `appendEvents`（每帧最多 200 条）；`phase_change` / `game_over` 帧仅用于轻提示（toast），状态一律来自 `reduce`；`error` 帧写 `error`；关闭码映射：4401 「token 无效」、4403「该 token 无权观战」、4404「对局不存在」、4409「对局尚未开始」；非终局的意外断线按指数退避（1s→8s）重连并从 `lastSeq + 1` 补发；`game_over` 后不再重连。
 - 回放来源：进入对局页时若 `meta` 可取且 `head.phase === "GAME_OVER"`（或 `/replay` 200）→ `getReplay` 一次装入、`mode = "replay"`、`cursor = 0`；直播中拖动 `ReplayBar` 即 `cursor` 非 null（`mode` 仍 `live`，新事件继续追加到 `events`/`head`）；「回到直播」→ `cursor = null`。
 - `src/api/tokens.ts`：token 只放 URL hash（`#/g/{gameId}?gm=…` 或 `?spec=…`），不写 localStorage；`viewer` 由哪个参数存在决定。
@@ -88,14 +112,38 @@ python -m app.cli.export_fixture --preset std_9_kill_side --seed 3 --out ../fron
 ## 7. UI（`src/pages/`、`src/components/`）——供设计稿使用的界面规格
 
 ### 7.1 页面与路由
-- `#/` **Lobby**：创建并开始一局全 AI 对局。
+- `#/` **Lobby**：三步建局——选 preset → 分配座位（从档案库挑 Agent）→ 创建并开始。
+- `#/agents` **AgentLibrary**：Agent 档案库（列表 / 新建 / 编辑 / 复制 / 删除 / 导入导出）。
 - `#/g/{gameId}?gm=<token>` / `#/g/{gameId}?spec=<token>` **GamePage**：直播 + 回放；同一页面，GM 与观众只差数据。
 
-### 7.2 Lobby
-- 表单：preset 下拉（4 个内置 preset，显示中文说明：`std_9_kill_side` 9 人屠边 …）；seed（数字，默认随机）；`ai_model` 文本（留空 = 全随机 bot，占位提示「例：ollama/qwen2.5:7b」）；可折叠「高级」：agents JSON 文本域（`{"seats": {...}}` 或 `{"*": {...}}`，粘贴即用）。
-- 主按钮「创建并开始」：`POST /api/v1/games` → `POST /start` → 跳转 `#/g/{id}?gm=…`。
-- 成功后弹出「分享」卡片：两条链接（上帝视角 / 观众链接）各带复制按钮，提示「上帝视角链接含全部身份信息，勿分享给玩家」。
-- 错误：400/422 的 `detail` 原文展示在表单下方。
+### 7.2 Lobby（三步）
+```
+┌ 步骤 1 选择对局 ─────────────────────────────────────────────┐
+│ preset 卡片 ×4（9 人屠边 / 9 人屠城 / 12 人预女猎白 / 12 人预女猎守）│
+│ 每张：人数、角色配置 chips、是否有警长、一句说明；seed 输入（默认随机） │
+├ 步骤 2 分配座位 ─────────────────────────────────────────────┤
+│ 左：档案库侧栏（搜索框；AgentCard 列表：名字 · 模型 · 技能 n · 性格摘要 · 记忆 id；│
+│      「+ 新建」跳 AgentEditor 抽屉）                                 │
+│ 右：座位表 N 行：[0号] [下拉：随机 bot | 档案A | 档案B …]  …          │
+│      工具行：「用 ___ 填满其余座位」(写入 "*")、「全部随机 bot」、「随机打乱」│
+│      同一档案可放多个座位（同 memory_id 除外：第二次选择时提示「该记忆已在 2号使用」并禁用）│
+├ 步骤 3 创建并开始 ───────────────────────────────────────────┤
+│ 汇总：N 座位（x 个 Agent，y 个随机 bot）、seed；主按钮「创建并开始」  │
+│ 成功 → 分享卡片（上帝视角链接 / 观众链接 + 复制；安全提示）→ 进入对局页 │
+└──────────────────────────────────────────────────────────────┘
+```
+- 步骤 2 的座位表把选择装成 `agents` 映射：座位专属 → `"{seat}"`，填满其余 → `"*"`，随机 bot 不写。
+- 校验前置：`memory_id` 同局唯一由 UI 禁用保证，后端 400 仍原文展示；`"*"` 档案含 `memory_id` 时提示改用逐座位分配（后端会 400）。
+- 错误：400/409/422 的 `detail` 原文展示在对应步骤下方。
+
+### 7.2b AgentLibrary 与 AgentEditor
+- **AgentLibrary 页**：顶部「Agent 档案库」+「新建」+「导入 JSON」+「导出全部」；网格 `AgentCard`：名字（大）、模型、发言 / 反思模型（有则小字）、技能 chips（最多 3 个 +n）、性格摘要（复用 `personality_summary` 口径：预设代码 / 描述前 12 字 / 首特质）、`记忆 {memory_id}`（有则）、更新时间；卡片操作：编辑、复制（名字加「副本」）、删除（确认框，提示「不会删除该记忆的经验文件」）。空态：插画 + 「还没有 Agent，先建一个」。
+- **AgentEditor（右侧抽屉 / 独立页，表单分组）**：
+  1. 基本：名字（必填，唯一校验即时提示）、模型（文本，占位「ollama/qwen2.5:7b」）、发言模型 / 反思模型（可选）、温度（滑块 0–2，默认 0.3）、thinking 开关。
+  2. 技能 `SkillPicker`：来自 `GET /skills` 的多选清单（名称 + 描述 + 适用角色 / 阶段 chips）；「全部（*）」开关。
+  3. 人格 `PersonalityEditor`：描述（多行，≤300，计数）；特质：从内置 15 词点选加入 + 每个一条 0–1 滑块（可自定义词，≤12 字）；预设：无 / MBTI（四轴 4 个分段选择器 + 可选每轴强度）/ Big Five（5 条滑块）；说话风格（≤100）。实时预览：右侧显示 `render_personality` 的等价文本（前端按同一规则渲染或调用后端预览端点——本期前端渲染一份只读预览，文案以后端为准，不做校验）。护栏短语命中时即时红字（前端复制 `FORBIDDEN_PHRASES` 列表仅做提示，最终以后端 422 为准）。
+  4. 记忆：`memory_id`（可选；「按名字生成」按钮：拼音 / 转写为安全字符；唯一校验即时提示）；说明「同一 memory_id 的 Agent 跨局累积经验」。
+  - 底部：保存 / 取消；保存失败展示后端 `detail`。
 
 ### 7.3 GamePage 布局（桌面优先，≥1200px 三栏；<900px 纵向堆叠）
 ```
@@ -134,8 +182,10 @@ python -m app.cli.export_fixture --preset std_9_kill_side --seed 3 --out ../fron
 
 - 后端：§2 授权矩阵与 WS 全量；§3 CLI 结构 / 前缀相等 / 排序；§8 静态挂载两种情形；litellm 惰性守卫不变。
 - 前端（Vitest，`npm run test`）：金样逐事件对拍 ×4；`reduce` 未知类型抛错；`normalizeState` 幂等；store：去重 / 缺口触发补发 / 检查点回放 `viewState(cursor)` 与 `reduceAll(prefix)` 相等 / 播放到末尾自动暂停；WS hook 用手写假 `WebSocket`（唯一允许的 fake）测缓冲批量、断线重连 `from_seq`、关闭码映射；组件冒烟：`SeatCircle` GM 显示角色牌 / 观众不显示、`SpeechFeed` 渲染发言与 GM 行、`ReplayBar` 拖动改 cursor。
+- 前端（档案库）：`useAgentLibrary` 对假 fetch 的 CRUD 状态机；`SeatAssignment` 把选择装成 `agents` 映射（座位专属 / `*` / 随机 bot 不写）、同 `memory_id` 二次选择被禁用；`AgentEditor` 必填与长度校验、`PersonalityEditor` 输出与 `PersonalitySpec` 形状一致（含空对象不提交）。
 - 手工验收：`make serve` + `make fe-dev`，Lobby 建一局全随机 bot（零 LLM），GM 链接实时看到夜间连线与发言到终局，拖回放；观众链接同页只见公开信息。
+- 手工验收（档案库）：新建两个带不同人格 / 技能 / `memory_id` 的 Agent，分配到 0 号与 3 号，其余用第三个档案填满，开局后 GM 页顶栏 / 座位显示名字；`GET /meta` 记录的档案与 UI 一致。
 
 ## 10. 明确不在范围（M4 / M5）
 
-玩家视角与真人操作面板（`ActionBar`、`your_turn`、`/actions`）；视角切换到某座位；夜间动画特效（本期遮罩 + 连线 + 文本）；多局列表 / 历史页；token 持久化与登录；移动端深度适配；i18n。
+玩家视角与真人操作面板（`ActionBar`、`your_turn`、`/actions`）；视角切换到某座位；夜间动画特效（本期遮罩 + 连线 + 文本）；多局列表 / 历史页；token 持久化与登录；档案库鉴权 / 多用户；档案评估（#60 bench）结果在 UI 展示；移动端深度适配；i18n。
