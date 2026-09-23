@@ -15,6 +15,7 @@
 - 回放：终局后 `GET /replay` 装入，`ReplayBar` 拖动 / 播放 / 步进 / 倍速；直播中亦可拨回历史再「回到直播」。
 - 前端**零信息过滤**：所有可见性裁剪由服务端 token 决定，前端按事件存在与否渲染。
 - 部署：`frontend/dist` 存在时后端挂静态站点；开发用 Vite 代理，不改 CORS。
+- **模型服务 Provider（后端持久化）**：`GET/POST/PUT/DELETE /api/v1/providers`（`data/providers/<id>.json`，密钥永不回传）、`POST /providers/{id}/test`、`GET /providers/{id}/models`；`AgentProfile.provider` 指向 provider，调用时后端按 provider 传 `api_base` / `api_key`；`provider` 为空时行为与现状逐字相同（`model` 含 LiteLLM 前缀、走环境变量）。
 - **Agent 档案库（后端持久化）**：`GET/POST/PUT/DELETE /api/v1/agents`（`data/agents/<agent_id>.json`），`GET /api/v1/skills`、`GET /api/v1/presets`；前端 **AgentLibrary / AgentEditor / SeatAssignment** 三个 UI 让用户定义 Agent（名字、模型、人格、技能、记忆标识）并挑选多个放到座位上开局，建局请求自动装成 `agents: {seat: AgentProfile}`。
 
 ## 2. 后端：GM token 与状态端点
@@ -55,6 +56,34 @@
 - 建局请求不变：前端把 SeatAssignment 的结果装成 `agents: {"0": profile, "3": profile, "*": profile?}` 发 `POST /games`（档案内容随请求传，后端不按 `agent_id` 反查——`GameMeta.agents` 仍记录完整档案，与 #64 一致）。
 - 测试（`tests/test_api_agents.py`、`tests/test_agent_library.py`）：CRUD 往返、同名 / 同 memory_id 409、未知技能 400、护栏 422、坏文件跳过、目录惰性创建、`/skills` 含内置 14 个、`/presets` 4 个且 `num_players` 正确。
 
+## 2c. 后端：模型服务 Provider
+
+**模型（`app/agent/provider.py`，纯 pydantic）**
+- `ProviderKind = Literal["ollama", "openai", "anthropic", "openai_compatible", "gemini", "deepseek"]`——值即 LiteLLM 模型前缀（`openai_compatible` 映射为 LiteLLM 的 `openai/` 前缀 + 自定义 `api_base`）。
+- `Provider = {provider_id: str, name: str, kind: ProviderKind, api_base: str | None, api_key: str | None, default_model: str | None, created_at, updated_at}`；`provider_id` 服务端生成（`p_` + 8 位十六进制）；`name` 库内唯一（409）。
+- `ProviderPublic`（API 响应）：去掉 `api_key`，加 `has_key: bool`、`key_hint: str | None`（末 4 位）。
+- `resolve_model(profile_model: str, provider: Provider | None) -> tuple[str, dict[str, str]]`：`provider` 为 None → `(profile_model, {})`（现状）；否则 `(f"{prefix}/{profile_model}", {"api_base": …, "api_key": …})`（只放非空项；`openai_compatible` → 前缀 `openai`）。
+
+**存储（`app/runtime/provider_store.py`）**：`ProviderStore` 协议 `list/get/put/delete`；`InMemoryProviderStore` / `JsonFileProviderStore(dir)`（原子写；文件权限 `0600`；坏文件 → `StoreCorruptionError`，列表跳过并记 warning）；`create_app(providers_dir=None, provider_store=None)` 默认 `data/providers`（惰性建目录）。
+
+**接入调用链**
+- `AgentProfile.provider: str | None = None`（provider_id；`extra=forbid` 不变）。`validate_profiles(..., providers=None)`：给了 provider 集合时校验引用存在（未知 → 400）。
+- `AgentConfig` 增加 `api_base: str | None`、`api_key: str | None`；`to_agent_config(profile, game_config, provider=None)` 用 `resolve_model` 填 `model` / `model_speech` / `reflection_model`（三者共用同一 provider）与凭据。
+- `LiteLLMInstructorClient.complete_structured(..., api_base=None, api_key=None)`：非空时随调用透传给 `litellm`（LiteLLM 支持按次传参）；`AgentPlayerPort` 从 `AgentConfig` 取。`memory.reflect` 与 `reflect_on_game` 同样透传。
+- registry / CLI 建端口时按 `profile.provider` 从 `ProviderStore` 取 provider（registry 在 `start()`；CLI `--providers-dir`，默认 `data/providers`）；`GameRegistry(provider_store=)`。
+- **隔离**：`GameMeta.agents` 记录的 `AgentProfile` 只含 `provider` id 与模型名，**永不含密钥**；日志（logger）不得打印 `api_key`；`/meta`、建局回显同理。
+
+**端点（`app/api/providers.py`，前缀 `/api/v1`，无鉴权）**
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/providers` | `[ProviderPublic]` |
+| POST | `/providers` | body `{name, kind, api_base?, api_key?, default_model?}` → 201 `ProviderPublic` |
+| GET / PUT / DELETE | `/providers/{id}` | PUT 时 `api_key` 省略 = 保留原密钥、`""` = 清除；DELETE 若有档案引用 → 409 列出档案名 |
+| POST | `/providers/{id}/test` | 用 `default_model`（或 body `{model}`）发一条最小补全（`max_tokens=8`，5s 超时）→ `{ok, latency_ms, error?}` |
+| GET | `/providers/{id}/models` | Ollama：`GET {api_base}/api/tags`；openai / openai_compatible / deepseek：`GET {api_base}/v1/models`；anthropic / gemini：返回内置静态列表；失败 → `{models: [], error}`（不 5xx） |
+
+- 测试（`tests/test_provider.py`、`tests/test_api_providers.py`）：`resolve_model` 三种情形；响应不含 `api_key` 且 `key_hint` 正确；PUT 省略 / 清空密钥语义；被引用时 DELETE 409；文件 0600；`test` / `models` 端点用假 HTTP（`httpx.MockTransport`，唯一允许的 fake）；`to_agent_config` 填凭据；`AgentPlayerPort` 把 `api_base`/`api_key` 传给 `complete_structured`（ScriptedLLMClient 记录 kwargs）；`GameMeta.agents` 与建局回显不含密钥。
+
 ## 3. 金样导出 CLI（`backend/app/cli/export_fixture.py`）
 
 ```
@@ -79,11 +108,12 @@ python -m app.cli.export_fixture --preset std_9_kill_side --seed 3 --out ../fron
     index.html  vite.config.ts  tsconfig.json  package.json  .eslintrc.cjs  .prettierrc
     src/main.tsx  src/App.tsx（hash 路由：#/ → Lobby，#/g/{gameId} → GamePage）
     src/engine/{types.ts, reduce.ts, phases.ts, select.ts, normalize.ts}  src/engine/__fixtures__/*.json  src/engine/*.test.ts
-    src/api/{rest.ts, ws.ts, tokens.ts, agents.ts}
+    src/api/{rest.ts, ws.ts, tokens.ts, agents.ts, providers.ts}
     src/store/game.ts
     src/components/{SeatCircle, SpeechFeed, PhaseBar, NightOverlay, VotePanel, ElectionPanel, ReplayBar,
-                    AgentCard, AgentEditor, PersonalityEditor, SkillPicker, SeatAssignment}/
-    src/pages/{Lobby, AgentLibrary, GamePage}.tsx
+                    AgentCard, AgentEditor, PersonalityEditor, SkillPicker, SeatAssignment,
+                    ProviderCard, ProviderEditor, ModelSelect}/
+    src/pages/{Lobby, AgentLibrary, Providers, GamePage}.tsx
     src/styles/{tokens.css, global.css}
   ```
 - `vite.config.ts`：`server.proxy = {"/api": {target: "http://localhost:8000", ws: true, changeOrigin: true}}`；`build.outDir = "dist"`。
@@ -104,6 +134,7 @@ python -m app.cli.export_fixture --preset std_9_kill_side --seed 3 --out ../fron
 - `useGameStore`（Zustand）状态：`gameId`、`token`、`viewer: "GM" | "SPECTATOR"`、`meta: GameMeta | null`、`events: Event[]`、`head: GameState | null`、`checkpoints: Map<number, GameState>`（每 50 条事件存一份）、`mode: "live" | "replay"`、`cursor: number | null`（回放游标 seq；`null` = 跟随最新）、`connection: "idle" | "connecting" | "open" | "closed" | "error"`、`error: string | null`、`playing: boolean`、`speed: number`。
 - 动作：`load(meta)`（`head = initialState(meta)`）；`appendEvents(batch)`：按 `seq` 过滤已有、要求 `seq === lastSeq + 1`（乱序 / 缺口 → 记录 `gap` 并触发重连补发，不静默丢弃）、逐条 `reduce` 更新 `head`、按需存检查点；`setCursor(seq | null)`；`viewState()`：cursor 为 `null` → `head`，否则取 `≤ cursor` 的最近检查点 re-reduce 到 cursor（memo 上次结果）；`play/pause/setSpeed/stepForward/stepBack`（播放用 `setInterval` 按 `speed` 推进 cursor，到末尾自动暂停）。
 - `src/api/rest.ts`：`createGame(req)`、`startGame(gameId, hostToken)`、`getMeta(gameId, token)`、`getReplay(gameId, token)`、`getEvents(gameId, token, fromSeq)`；`ApiError{status, detail}`；`Authorization: Bearer <token>`。
+- `src/api/providers.ts`：`listProviders()`、`createProvider()`、`updateProvider()`、`deleteProvider()`、`testProvider(id, model?)`、`listModels(id)`；`useProviders()` store。
 - `src/api/agents.ts`：`listAgents()`、`createAgent(profile)`、`updateAgent(id, profile)`、`deleteAgent(id)`、`listSkills()`、`listPresets()`；`useAgentLibrary()`（Zustand 小 store：`agents`、`skills`、`presets`、加载 / 错误态，进入 Lobby 或 AgentLibrary 时拉取）。
 - `src/api/ws.ts`：`useLiveEvents({gameId, token, enabled})`——`useRef` 持 `WebSocket`（StrictMode 双挂载安全）、URL `/api/v1/ws?token=…&from_seq=<lastSeq+1>`；收到 `game_event` 帧推入 ref 缓冲，`requestAnimationFrame` 批量 `appendEvents`（每帧最多 200 条）；`phase_change` / `game_over` 帧仅用于轻提示（toast），状态一律来自 `reduce`；`error` 帧写 `error`；关闭码映射：4401 「token 无效」、4403「该 token 无权观战」、4404「对局不存在」、4409「对局尚未开始」；非终局的意外断线按指数退避（1s→8s）重连并从 `lastSeq + 1` 补发；`game_over` 后不再重连。
 - 回放来源：进入对局页时若 `meta` 可取且 `head.phase === "GAME_OVER"`（或 `/replay` 200）→ `getReplay` 一次装入、`mode = "replay"`、`cursor = 0`；直播中拖动 `ReplayBar` 即 `cursor` 非 null（`mode` 仍 `live`，新事件继续追加到 `events`/`head`）；「回到直播」→ `cursor = null`。
@@ -114,6 +145,8 @@ python -m app.cli.export_fixture --preset std_9_kill_side --seed 3 --out ../fron
 ### 7.1 页面与路由
 - `#/` **Lobby**：三步建局——选 preset → 分配座位（从档案库挑 Agent）→ 创建并开始。
 - `#/agents` **AgentLibrary**：Agent 档案库（列表 / 新建 / 编辑 / 复制 / 删除 / 导入导出）。
+- `#/providers` **Providers**：模型服务配置（地址 / 密钥 / 默认模型 / 测试连接 / 拉取模型列表）。
+- 顶部导航：对局 · Agent 档案库 · 模型服务。
 - `#/g/{gameId}?gm=<token>` / `#/g/{gameId}?spec=<token>` **GamePage**：直播 + 回放；同一页面，GM 与观众只差数据。
 
 ### 7.2 Lobby（三步）
@@ -139,11 +172,16 @@ python -m app.cli.export_fixture --preset std_9_kill_side --seed 3 --out ../fron
 ### 7.2b AgentLibrary 与 AgentEditor
 - **AgentLibrary 页**：顶部「Agent 档案库」+「新建」+「导入 JSON」+「导出全部」；网格 `AgentCard`：名字（大）、模型、发言 / 反思模型（有则小字）、技能 chips（最多 3 个 +n）、性格摘要（复用 `personality_summary` 口径：预设代码 / 描述前 12 字 / 首特质）、`记忆 {memory_id}`（有则）、更新时间；卡片操作：编辑、复制（名字加「副本」）、删除（确认框，提示「不会删除该记忆的经验文件」）。空态：插画 + 「还没有 Agent，先建一个」。
 - **AgentEditor（右侧抽屉 / 独立页，表单分组）**：
-  1. 基本：名字（必填，唯一校验即时提示）、模型（文本，占位「ollama/qwen2.5:7b」）、发言模型 / 反思模型（可选）、温度（滑块 0–2，默认 0.3）、thinking 开关。
+  1. 基本：名字（必填，唯一校验即时提示）；**模型服务** `ModelSelect`：Provider 下拉（来自 `/providers`，末项「未配置——直接写 LiteLLM 模型串」= `provider` 为空的兼容模式）→ 模型下拉（`GET /providers/{id}/models` 的列表，可手输；默认取 provider 的 `default_model`）；发言模型 / 反思模型（可选，同一 provider 下的模型下拉）；温度（滑块 0–2，默认 0.3）；thinking 开关（仅 provider 为 ollama 时显示说明「推理模型思考开关」）。Provider 未配置时显示指向 `#/providers` 的引导链接。
   2. 技能 `SkillPicker`：来自 `GET /skills` 的多选清单（名称 + 描述 + 适用角色 / 阶段 chips）；「全部（*）」开关。
   3. 人格 `PersonalityEditor`：描述（多行，≤300，计数）；特质：从内置 15 词点选加入 + 每个一条 0–1 滑块（可自定义词，≤12 字）；预设：无 / MBTI（四轴 4 个分段选择器 + 可选每轴强度）/ Big Five（5 条滑块）；说话风格（≤100）。实时预览：右侧显示 `render_personality` 的等价文本（前端按同一规则渲染或调用后端预览端点——本期前端渲染一份只读预览，文案以后端为准，不做校验）。护栏短语命中时即时红字（前端复制 `FORBIDDEN_PHRASES` 列表仅做提示，最终以后端 422 为准）。
   4. 记忆：`memory_id`（可选；「按名字生成」按钮：拼音 / 转写为安全字符；唯一校验即时提示）；说明「同一 memory_id 的 Agent 跨局累积经验」。
   - 底部：保存 / 取消；保存失败展示后端 `detail`。
+
+### 7.2c Providers 页
+- 顶部「模型服务」+「新建」；卡片 `ProviderCard`：名字、类型徽标（Ollama / OpenAI / Anthropic / OpenAI 兼容 / Gemini / DeepSeek）、地址、密钥状态（「已配置 ····ab12」/「未配置」）、默认模型、连通状态点（最近一次测试：绿 / 红 / 灰未测）、被几个 Agent 引用；操作：编辑、测试连接、删除（被引用时禁用并提示引用的档案名）。
+- `ProviderEditor`（抽屉）：名字、类型（选择后自动填默认地址：Ollama `http://localhost:11434`、OpenAI 留空、OpenAI 兼容必填）、API 地址、API 密钥（密码框；编辑时显示「保留现有密钥」占位，留空即不改，「清除」按钮）、默认模型（下拉，来自「拉取模型列表」按钮的结果，可手输）；「测试连接」按钮显示延迟 / 错误原文；保存 / 取消。
+- 空态：「还没有模型服务。Ollama 用户：安装后点『新建』选择 Ollama，地址保持默认即可。」
 
 ### 7.3 GamePage 布局（桌面优先，≥1200px 三栏；<900px 纵向堆叠）
 ```
@@ -182,10 +220,11 @@ python -m app.cli.export_fixture --preset std_9_kill_side --seed 3 --out ../fron
 
 - 后端：§2 授权矩阵与 WS 全量；§3 CLI 结构 / 前缀相等 / 排序；§8 静态挂载两种情形；litellm 惰性守卫不变。
 - 前端（Vitest，`npm run test`）：金样逐事件对拍 ×4；`reduce` 未知类型抛错；`normalizeState` 幂等；store：去重 / 缺口触发补发 / 检查点回放 `viewState(cursor)` 与 `reduceAll(prefix)` 相等 / 播放到末尾自动暂停；WS hook 用手写假 `WebSocket`（唯一允许的 fake）测缓冲批量、断线重连 `from_seq`、关闭码映射；组件冒烟：`SeatCircle` GM 显示角色牌 / 观众不显示、`SpeechFeed` 渲染发言与 GM 行、`ReplayBar` 拖动改 cursor。
+- 前端（Provider）：`useProviders` 对假 fetch 的 CRUD；`ProviderEditor` 密钥「留空不改 / 清除」语义；`ModelSelect` 在 provider 为空时回退为文本输入。
 - 前端（档案库）：`useAgentLibrary` 对假 fetch 的 CRUD 状态机；`SeatAssignment` 把选择装成 `agents` 映射（座位专属 / `*` / 随机 bot 不写）、同 `memory_id` 二次选择被禁用；`AgentEditor` 必填与长度校验、`PersonalityEditor` 输出与 `PersonalitySpec` 形状一致（含空对象不提交）。
 - 手工验收：`make serve` + `make fe-dev`，Lobby 建一局全随机 bot（零 LLM），GM 链接实时看到夜间连线与发言到终局，拖回放；观众链接同页只见公开信息。
 - 手工验收（档案库）：新建两个带不同人格 / 技能 / `memory_id` 的 Agent，分配到 0 号与 3 号，其余用第三个档案填满，开局后 GM 页顶栏 / 座位显示名字；`GET /meta` 记录的档案与 UI 一致。
 
 ## 10. 明确不在范围（M4 / M5）
 
-玩家视角与真人操作面板（`ActionBar`、`your_turn`、`/actions`）；视角切换到某座位；夜间动画特效（本期遮罩 + 连线 + 文本）；多局列表 / 历史页；token 持久化与登录；档案库鉴权 / 多用户；档案评估（#60 bench）结果在 UI 展示；移动端深度适配；i18n。
+玩家视角与真人操作面板（`ActionBar`、`your_turn`、`/actions`）；视角切换到某座位；夜间动画特效（本期遮罩 + 连线 + 文本）；多局列表 / 历史页；token 持久化与登录；档案库 / Provider 鉴权与多用户、密钥加密存储（本期本地 0600 明文）；档案评估（#60 bench）结果在 UI 展示；移动端深度适配；i18n。
