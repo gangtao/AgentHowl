@@ -1,0 +1,982 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<link rel="stylesheet" href="_ds/nocturne-a3ae1fdd-c89e-45b6-b74e-f589047090b7/styles.css">
+<script src="_ds/nocturne-a3ae1fdd-c89e-45b6-b74e-f589047090b7/_ds_bundle.js"></script>
+<style>
+body{margin:0;background:#0f1019;font-family:"Inter",system-ui,sans-serif}
+a{color:#9184d9}a:hover{color:#b5abfc}
+.dv-turn{padding:40px 44px 32px;scroll-margin-top:16px}
+.dv-thd{display:flex;align-items:baseline;gap:10px;margin:0 0 8px}
+.dv-tid{font:600 10px ui-monospace,Menlo,monospace;padding:3px 7px;background:#e9e9ed;color:#161826;border-radius:4px;text-decoration:none}
+.dv-tname{font:500 14px/1.2 Inter,system-ui,sans-serif;color:#e9e9ed}
+.dv-note{max-width:760px;margin:0 0 24px;font:400 12px/1.6 Inter,system-ui,sans-serif;color:#9397ab}
+.dv-opts{display:flex;flex-wrap:wrap;gap:36px;align-items:flex-start}
+.dv-opt{flex:none;display:flex;flex-direction:column;gap:9px;scroll-margin-top:16px}
+.dv-oid{font:600 10.5px ui-monospace,Menlo,monospace;padding:3px 7px;background:#292b31;color:#e9e9ed;border-radius:5px;text-decoration:none}
+.dv-olabel{display:flex;align-items:baseline;gap:8px;font:400 11.5px/1.3 Inter,system-ui,sans-serif;color:#9397ab}
+.dv-card{max-width:100%;background:#161826;border:1px solid #3f424d;border-radius:8px;box-shadow:0 8px 28px rgba(0,0,0,.5);overflow:hidden;color:#e9e9ed}
+.dv-opt:target .dv-oid{background:#9184d9;color:#161826}
+.dv-next{margin:26px 0 0;font:12px/1.5 Inter,system-ui,sans-serif;color:#75798c}
+@keyframes ah-pulse{0%,100%{box-shadow:0 0 0 0 rgba(229,72,77,.6)}70%{box-shadow:0 0 0 6px rgba(229,72,77,0)}}
+@keyframes ah-spin{to{transform:rotate(360deg)}}
+</style>
+</helmet>
+<section class="dv-turn" id="t3">
+<div class="dv-thd"><a class="dv-tid" href="#t3">3</a><span class="dv-tname">模型服务 Provider（文档 §2c / §7.2c 新增）</span></div>
+<p class="dv-note">新增 <code>#/providers</code> 页与 ProviderEditor 抽屉；AgentEditor 的「模型」字段改为 ModelSelect（Provider → 模型两级下拉），替换 <a class="dv-oid" href="#2c">2c</a> 中的文本输入。顶部导航统一为：对局 · Agent 档案库 · 模型服务。密钥只显示末 4 位（<code>key_hint</code>）。</p>
+<div class="dv-opts">
+
+<!-- 3a Providers page -->
+<div class="dv-opt" id="3a"><div class="dv-olabel"><a class="dv-oid" href="#3a">3a</a>Providers 页 · <code>#/providers</code> — ProviderCard（类型 / 地址 / 密钥状态 / 默认模型 / 连通点 / 引用数）</div>
+<div class="dv-card" style="width:1180px;height:640px;display:grid;grid-template-rows:56px 1fr">
+  <div class="nav" style="padding:0 var(--space-8);background:linear-gradient(to right,transparent,var(--color-divider) 48px,var(--color-divider) calc(100% - 48px),transparent) no-repeat bottom/100% 1px"><span class="nav-brand">AgentHowl</span><a href="#2a">对局</a><a href="#2b">Agent 档案库</a><a href="#3a" aria-current="page">模型服务</a></div>
+  <div style="display:flex;flex-direction:column;gap:var(--space-6);padding:36px var(--space-8) 32px 56px">
+    <div style="display:flex;align-items:flex-end;gap:var(--space-4)">
+      <div><h3 style="font-size:22px;margin-bottom:4px">模型服务</h3><p class="text-muted" style="font-size:13px;margin:0">4 个 provider · 存于 data/providers/（本地 0600）· 密钥永不回传</p></div>
+      <div style="margin-left:auto;display:flex;gap:8px"><span class="btn btn-primary">+ 新建</span></div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--space-4)">
+      <sc-for list="{{ providers }}" as="p" hint-placeholder-count="4">
+        <div class="card elev-sm" style="padding:var(--space-4) var(--space-6);gap:var(--space-3)">
+          <div style="display:flex;align-items:center;gap:10px">
+            <span style="font-size:18px;font-weight:500">{{ p.name }}</span>
+            <span class="tag tag-accent" style="padding:1px 8px;font-size:10.5px">{{ p.kind }}</span>
+            <span style="margin-left:auto;display:inline-flex;align-items:center;gap:6px;font-size:11.5px;color:var(--color-neutral-400)"><span style="width:8px;height:8px;border-radius:50%;background:{{ p.stCol }}"></span>{{ p.stTxt }}</span>
+          </div>
+          <div style="display:grid;grid-template-columns:72px 1fr;gap:4px 12px;font-size:12.5px">
+            <span style="color:var(--color-neutral-500)">地址</span><span style="font-family:ui-monospace,Menlo,monospace;font-size:12px;color:var(--color-neutral-200)">{{ p.base }}</span>
+            <span style="color:var(--color-neutral-500)">密钥</span><span style="font-family:ui-monospace,Menlo,monospace;font-size:12px;color:{{ p.keyFg }}">{{ p.key }}</span>
+            <span style="color:var(--color-neutral-500)">默认模型</span><span style="font-family:ui-monospace,Menlo,monospace;font-size:12px;color:var(--color-neutral-200)">{{ p.model }}</span>
+          </div>
+          <div class="card-meta" style="justify-content:space-between;margin-top:2px"><span>{{ p.refs }}</span><span style="display:flex;gap:2px"><span class="btn btn-ghost" style="font-size:12px;padding:2px 6px">测试连接</span><span class="btn btn-ghost" style="font-size:12px;padding:2px 6px">编辑</span><span class="btn btn-ghost" style="font-size:12px;padding:2px 6px;color:var(--color-neutral-500);opacity:{{ p.delOp }}">删除</span></span></div>
+        </div>
+      </sc-for>
+    </div>
+    <div style="font-size:11.5px;color:var(--color-neutral-500)">被引用的 provider 不可删除（后端 409 会列出档案名）；删除按钮悬停提示同文案。</div>
+  </div>
+</div></div>
+
+<!-- 3b ProviderEditor -->
+<div class="dv-opt" id="3b"><div class="dv-olabel"><a class="dv-oid" href="#3b">3b</a>ProviderEditor 抽屉 — 类型选择自动填地址、密钥「保留 / 清除」、拉取模型列表、测试连接</div>
+<div class="dv-card" style="width:1180px;height:820px;position:relative;display:grid;grid-template-rows:56px 1fr">
+  <div class="nav" style="padding:0 var(--space-8);opacity:.35"><span class="nav-brand">AgentHowl</span><a href="#3b">对局</a><a href="#3b">Agent 档案库</a><a href="#3b" aria-current="page">模型服务</a></div>
+  <div style="padding:36px 56px;opacity:.35;display:grid;grid-template-columns:repeat(2,1fr);gap:var(--space-4);align-content:start">
+    <sc-for list="{{ providers }}" as="p" hint-placeholder-count="4"><div class="card" style="height:140px"><span style="font-size:18px">{{ p.name }}</span><span style="font-size:11.5px;color:var(--color-neutral-400)">{{ p.base }}</span></div></sc-for>
+  </div>
+  <div style="position:absolute;inset:0;background:color-mix(in srgb,var(--color-neutral-900) 45%,transparent)"></div>
+  <div style="position:absolute;top:0;right:0;bottom:0;width:560px;background:var(--color-surface);box-shadow:var(--shadow-lg);display:grid;grid-template-rows:auto 1fr auto">
+    <div style="display:flex;align-items:center;gap:12px;padding:20px 28px 14px;background:linear-gradient(to right,transparent,var(--color-divider) 48px,var(--color-divider) calc(100% - 48px),transparent) no-repeat bottom/100% 1px"><span style="font-size:18px;font-weight:500">编辑模型服务 · 本地 Ollama</span><span class="tag tag-neutral" style="font-family:ui-monospace,Menlo,monospace">p_1c7e04a9</span><span style="margin-left:auto;color:var(--color-neutral-500)">✕</span></div>
+    <div style="display:flex;flex-direction:column;gap:18px;padding:20px 28px;min-height:0;overflow:hidden">
+      <div class="field"><label>名字 *</label><div class="input" style="display:flex;align-items:center;justify-content:space-between">本地 Ollama<span style="font-size:10.5px;color:#34C38F">✓ 唯一</span></div></div>
+      <div class="field"><label>类型</label><div style="display:flex;gap:6px;flex-wrap:wrap"><sc-for list="{{ kinds }}" as="k" hint-placeholder-count="6"><span style="padding:5px 11px;border-radius:var(--radius-md);font-size:12.5px;box-shadow:inset 0 0 0 1px var(--color-divider);{{ k.style }}">{{ k.k }}</span></sc-for></div></div>
+      <div class="field"><label>API 地址</label><div class="input" style="display:flex;align-items:center;font-family:ui-monospace,Menlo,monospace;font-size:12.5px">http://localhost:11434</div><span style="display:block;margin-top:4px;font-size:11px;color:var(--color-neutral-500)">Ollama 默认地址已自动填入；OpenAI 兼容类型时必填。</span></div>
+      <div class="field"><label>API 密钥</label><div style="display:flex;gap:6px"><div class="input" style="display:flex;align-items:center;color:var(--color-neutral-500);font-size:13px">保留现有密钥（留空即不改）</div><span class="btn btn-secondary" style="flex:none">清除</span></div><span style="display:block;margin-top:4px;font-size:11px;color:var(--color-neutral-500)">Ollama 通常无需密钥。</span></div>
+      <div class="field"><label style="display:flex;justify-content:space-between;align-items:center">默认模型<span class="btn btn-ghost" style="font-size:12px;padding:0 4px">↻ 拉取模型列表</span></label>
+        <div class="input" style="display:flex;align-items:center;justify-content:space-between;font-family:ui-monospace,Menlo,monospace;font-size:12.5px;border-color:var(--color-accent)">qwen2.5:14b<span style="color:var(--color-neutral-500)">▴</span></div>
+        <div style="margin-top:4px;border-radius:var(--radius-md);background:var(--color-bg);box-shadow:var(--shadow-md);padding:4px;display:flex;flex-direction:column">
+          <span style="font-size:10.5px;color:var(--color-neutral-500);padding:4px 8px">GET /api/tags · 5 个模型 · 可手输</span>
+          <sc-for list="{{ models }}" as="m" hint-placeholder-count="5"><div style="display:grid;grid-template-columns:1fr auto 14px;gap:10px;padding:6px 8px;border-radius:var(--radius-sm);background:{{ m.bg }};color:{{ m.fg }};font-size:12.5px;font-family:ui-monospace,Menlo,monospace"><span>{{ m.m }}</span><span style="color:var(--color-neutral-500);font-size:11px">{{ m.s }}</span><span style="color:var(--color-accent)">{{ m.mark }}</span></div></sc-for>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:var(--radius-md);background:color-mix(in srgb,#34C38F 10%,transparent)"><span class="btn btn-secondary" style="padding:4px 10px;font-size:12px">测试连接</span><span style="width:8px;height:8px;border-radius:50%;background:#34C38F"></span><span style="font-size:12.5px">连通 · 142 ms</span><span style="margin-left:auto;font-size:11px;color:var(--color-neutral-500)">qwen2.5:14b · max_tokens=8</span></div>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;padding:14px 28px 20px;background:linear-gradient(to right,transparent,var(--color-divider) 48px,var(--color-divider) calc(100% - 48px),transparent) no-repeat top/100% 1px">
+      <span style="font-size:11.5px;color:var(--color-neutral-500)">被 3 个 Agent 引用</span>
+      <span class="btn btn-ghost" style="margin-left:auto">取消</span><span class="btn btn-primary">保存</span>
+    </div>
+  </div>
+</div></div>
+
+<!-- 3c ModelSelect -->
+<div class="dv-opt" id="3c"><div class="dv-olabel"><a class="dv-oid" href="#3c">3c</a>AgentEditor · 基本分组（更新 <a class="dv-oid" href="#2c">2c</a>）— ModelSelect：Provider 下拉展开 / 兼容模式 / 未配置引导</div>
+<div style="display:flex;gap:20px;align-items:flex-start">
+  <div class="dv-card" style="width:560px;padding:20px 28px;display:flex;flex-direction:column;gap:12px;background:var(--color-surface)">
+    <span style="font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--color-accent)">1 · 基本</span>
+    <div class="field"><label>名字 *</label><div class="input" style="display:flex;align-items:center">夜枭</div></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div class="field"><label>模型服务</label><div class="input" style="display:flex;align-items:center;justify-content:space-between;border-color:var(--color-accent)"><span style="display:flex;align-items:center;gap:6px"><span style="width:6px;height:6px;border-radius:50%;background:#34C38F"></span>本地 Ollama</span><span style="color:var(--color-neutral-500)">▴</span></div></div>
+      <div class="field"><label>模型</label><div class="input" style="display:flex;align-items:center;justify-content:space-between;font-family:ui-monospace,Menlo,monospace;font-size:12.5px">qwen2.5:14b<span style="color:var(--color-neutral-500)">▾</span></div></div>
+    </div>
+    <div style="margin-top:-6px;width:calc(50% - 5px);border-radius:var(--radius-md);background:var(--color-bg);box-shadow:var(--shadow-md);padding:4px;display:flex;flex-direction:column">
+      <sc-for list="{{ provOpts }}" as="o" hint-placeholder-count="5"><div style="display:flex;flex-direction:column;gap:1px;padding:6px 8px;border-radius:var(--radius-sm);background:{{ o.bg }};border-top:{{ o.sep }}"><span style="font-size:12.5px;color:{{ o.fg }}">{{ o.t }}</span><span style="font-size:10.5px;color:var(--color-neutral-500)">{{ o.s }}</span></div></sc-for>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div class="field"><label>发言模型（可选）</label><div class="input" style="display:flex;align-items:center;justify-content:space-between;color:var(--color-neutral-500)">同模型<span>▾</span></div></div>
+      <div class="field"><label>反思模型（可选）</label><div class="input" style="display:flex;align-items:center;justify-content:space-between;color:var(--color-neutral-500)">同模型<span>▾</span></div></div>
+    </div>
+    <span style="font-size:11px;color:var(--color-neutral-500);margin-top:-6px">三者共用同一 provider；实际调用串：<code>ollama/qwen2.5:14b</code></span>
+    <div style="display:grid;grid-template-columns:1fr auto;gap:20px;align-items:center">
+      <div class="field" style="display:flex;flex-direction:column;gap:6px"><label style="margin:0">温度 <span style="color:var(--color-neutral-300)">0.3</span></label><div style="position:relative;height:4px;border-radius:2px;background:var(--color-neutral-800)"><span style="position:absolute;left:0;top:0;height:100%;width:15%;background:var(--color-accent);border-radius:2px"></span><span style="position:absolute;left:15%;top:-5px;width:14px;height:14px;border-radius:50%;background:var(--color-accent);transform:translateX(-50%)"></span></div></div>
+      <div style="display:flex;flex-direction:column;align-items:flex-end;gap:2px"><div style="display:flex;align-items:center;gap:8px;font-size:13px">thinking<span style="width:34px;height:20px;border-radius:10px;background:var(--color-accent-800);position:relative;box-shadow:inset 0 0 0 1px var(--color-accent-600)"><span style="position:absolute;right:2px;top:2px;width:16px;height:16px;border-radius:50%;background:var(--color-accent)"></span></span></div><span style="font-size:10.5px;color:var(--color-neutral-500)">推理模型思考开关</span></div>
+    </div>
+  </div>
+  <div style="display:flex;flex-direction:column;gap:20px">
+    <div class="dv-card" style="width:420px;padding:20px 24px;display:flex;flex-direction:column;gap:10px;background:var(--color-surface)">
+      <span style="font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--color-neutral-500)">兼容模式 · provider 为空</span>
+      <div class="field"><label>模型服务</label><div class="input" style="display:flex;align-items:center;justify-content:space-between;color:var(--color-neutral-400)">未配置——直接写 LiteLLM 模型串<span>▾</span></div></div>
+      <div class="field"><label>LiteLLM 模型串</label><div class="input" style="display:flex;align-items:center;font-family:ui-monospace,Menlo,monospace;font-size:12.5px">openai/gpt-4o-mini</div></div>
+      <span style="font-size:11px;color:var(--color-neutral-500)">含前缀；凭据走环境变量，行为与之前相同。</span>
+    </div>
+    <div class="dv-card" style="width:420px;padding:20px 24px;display:flex;flex-direction:column;gap:10px;background:var(--color-surface)">
+      <span style="font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--color-neutral-500)">尚无 provider</span>
+      <div class="field"><label>模型服务</label><div class="input" style="display:flex;align-items:center;justify-content:space-between;color:var(--color-neutral-500)">暂无可选服务<span>▾</span></div></div>
+      <div style="display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--color-neutral-300)">还没有配置模型服务。<a href="#3a">去「模型服务」新建 →</a></div>
+    </div>
+  </div>
+</div></div>
+
+<!-- 3d states -->
+<div class="dv-opt" id="3d"><div class="dv-olabel"><a class="dv-oid" href="#3d">3d</a>Provider 辅助态 — 空态 · 删除被引用（409）· 测试失败原文</div>
+<div style="display:flex;gap:20px;align-items:flex-start">
+  <div class="dv-card" style="width:380px;height:300px;display:grid;place-items:center;text-align:center;padding:24px"><div style="display:flex;flex-direction:column;gap:8px;align-items:center"><div style="width:72px;height:72px;border-radius:50%;border:1px dashed var(--color-neutral-700);display:grid;place-items:center;color:var(--color-neutral-600);font-size:24px;margin-bottom:6px">⌁</div><span style="font-size:16px;font-weight:500">还没有模型服务</span><span style="font-size:12.5px;color:var(--color-neutral-500);line-height:1.6;max-width:280px">Ollama 用户：安装后点「新建」选择 Ollama，地址保持默认即可。</span><span class="btn btn-primary" style="margin-top:8px">+ 新建</span></div></div>
+  <div class="dv-card" style="width:380px;height:300px;display:grid;place-items:center;padding:24px;background:color-mix(in srgb,var(--color-neutral-900) 50%,#161826)">
+    <div class="dialog" style="width:100%;padding:var(--space-6)"><div class="dialog-title" style="font-size:17px">无法删除「本地 Ollama」</div><div class="dialog-body">仍被 3 个 Agent 引用：夜枭、老好人、沉默者。请先在这些档案中改用其他模型服务。</div><div class="dialog-actions"><span class="btn btn-primary">知道了</span></div></div>
+  </div>
+  <div class="dv-card" style="width:380px;height:300px;padding:var(--space-6);display:flex;flex-direction:column;gap:10px">
+    <span style="font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--color-neutral-500)">测试连接 · Anthropic</span>
+    <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:var(--radius-md);background:color-mix(in srgb,#E5484D 10%,transparent)"><span style="width:8px;height:8px;border-radius:50%;background:#E5484D"></span><span style="font-size:12.5px">失败 · 318 ms</span></div>
+    <div style="padding:10px 12px;border-radius:var(--radius-md);background:var(--color-bg);font-family:ui-monospace,Menlo,monospace;font-size:11.5px;line-height:1.6;color:var(--color-neutral-300)">AuthenticationError: invalid x-api-key</div>
+    <span style="font-size:11.5px;color:var(--color-neutral-500)">错误原文来自 <code>POST /providers/{id}/test</code>；拉取模型失败时同样展示 <code>error</code>，列表为空、仍可手输。</span>
+  </div>
+</div></div>
+
+</div>
+<p class="dv-next">下一步可试：「<a class="dv-oid" href="#3a">3a</a> 改成表格列表」 · 「<a class="dv-oid" href="#2a">2a</a> 座位表显示每座使用的 provider」 · 「把 <a class="dv-oid" href="#3c">3c</a> 合并回完整 AgentEditor 抽屉」</p>
+</section>
+<section class="dv-turn" id="t2">
+<div class="dv-thd"><a class="dv-tid" href="#t2">2</a><span class="dv-tname">Agent 档案库 + 三步建局（文档 §2b / §7.2 / §7.2b 新增）</span></div>
+<p class="dv-note">Lobby 改为三步：选 preset → 从档案库挑 Agent 分配座位 → 汇总开局，取代 <a class="dv-oid" href="#1a">1a</a>；新增 AgentLibrary 页与 AgentEditor 抽屉（技能 / 人格 / 记忆）。技能名取自仓库 <code>backend/skills/</code>；人格摘要沿用 <code>personality_summary</code> 口径。</p>
+<div class="dv-opts">
+
+<!-- 2a Lobby three steps -->
+<div class="dv-opt" id="2a"><div class="dv-olabel"><a class="dv-oid" href="#2a">2a</a>Lobby · 三步建局 — 步骤 2 分配座位（12 人 · 档案库侧栏 + 座位表 + 填满工具行）</div>
+<div class="dv-card" style="width:1180px;height:880px;display:grid;grid-template-rows:56px 1fr">
+  <div class="nav" style="padding:0 var(--space-8);background:linear-gradient(to right,transparent,var(--color-divider) 48px,var(--color-divider) calc(100% - 48px),transparent) no-repeat bottom/100% 1px"><span class="nav-brand">AgentHowl</span><a href="#2a" aria-current="page">新的一局</a><a href="#2b">Agent 档案库</a><a href="#2a">文档</a></div>
+  <div style="display:grid;grid-template-columns:220px 1fr;gap:40px;padding:36px var(--space-8) 32px 56px;min-height:0">
+    <div style="display:flex;flex-direction:column;gap:22px">
+      <sc-for list="{{ steps }}" as="s" hint-placeholder-count="3">
+        <div style="display:grid;grid-template-columns:24px 1fr;gap:12px;align-items:start">
+          <span style="width:24px;height:24px;border-radius:50%;background:{{ s.dot }};color:{{ s.nfg }};font-size:11.5px;font-weight:500;display:grid;place-items:center;box-shadow:{{ s.ring }}">{{ s.n }}</span>
+          <div style="display:flex;flex-direction:column;gap:2px;padding-top:3px"><span style="font-size:13.5px;color:{{ s.fg }}">{{ s.t }}</span><span style="font-size:11px;color:var(--color-neutral-500)">{{ s.sub }}</span></div>
+        </div>
+      </sc-for>
+      <div style="margin-top:auto;display:flex;flex-direction:column;gap:6px;padding:12px;border-radius:var(--radius-md);background:var(--color-surface)">
+        <span style="font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--color-accent)">汇总</span>
+        <span style="font-size:13px">12 座位 · 6 个 Agent · 3 个随机 bot</span>
+        <span style="font-size:11.5px;color:var(--color-neutral-500)">其余 3 座由「老好人」填满（*）· seed 随机</span>
+        <span class="btn btn-primary" style="margin-top:6px;opacity:.6">创建并开始</span>
+        <span style="font-size:10.5px;color:var(--color-neutral-600)">agents: {"0": …, "1": …, "3": …, "*": …}</span>
+      </div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:var(--space-4);min-height:0">
+      <div><h3 style="font-size:22px;margin-bottom:4px">分配座位</h3><p class="text-muted" style="font-size:13px;margin:0">从档案库把 Agent 拖或选到座位上；未分配的座位为随机 bot（零 LLM）。同一档案可放多个座位。</p></div>
+      <div style="display:grid;grid-template-columns:300px 1fr;gap:var(--space-6);min-height:0;flex:1">
+        <div style="display:flex;flex-direction:column;gap:var(--space-3);min-height:0">
+          <div class="input" style="display:flex;align-items:center;gap:8px;color:var(--color-neutral-500);min-height:34px"><span>⌕</span>搜索档案…</div>
+          <div style="display:flex;flex-direction:column;gap:6px;overflow:hidden">
+            <sc-for list="{{ agents }}" as="a" hint-placeholder-count="5">
+              <div class="card" style="padding:var(--space-3);gap:4px;cursor:grab">
+                <div style="display:flex;align-items:baseline;justify-content:space-between"><span style="font-size:14px;font-weight:500">{{ a.name }}</span><span style="font-size:10.5px;color:var(--color-neutral-500);font-family:ui-monospace,Menlo,monospace">{{ a.model }}</span></div>
+                <div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center"><sc-for list="{{ a.tags }}" as="t" hint-placeholder-count="0"><span class="tag tag-neutral" style="padding:1px 7px;font-size:10px">{{ t }}</span></sc-for><span style="font-size:10px;color:var(--color-neutral-500)">{{ a.more }}</span></div>
+                <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--color-neutral-500)"><span>{{ a.per }}</span><span style="color:var(--color-accent-300)">{{ a.mem }}</span></div>
+              </div>
+            </sc-for>
+            <span class="btn btn-secondary" style="font-size:12.5px">+ 新建 Agent</span>
+          </div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:var(--space-3)">
+          <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;font-size:12px">
+            <span style="color:var(--color-neutral-500)">工具：</span>
+            <span class="btn btn-secondary" style="padding:4px 10px;font-size:12px">用 <span style="color:var(--color-accent-300)">老好人</span> 填满其余座位（*）</span>
+            <span class="btn btn-secondary" style="padding:4px 10px;font-size:12px">全部随机 bot</span>
+            <span class="btn btn-secondary" style="padding:4px 10px;font-size:12px">随机打乱</span>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 14px">
+            <sc-for list="{{ seatAssign }}" as="r" hint-placeholder-count="12">
+              <div style="display:grid;grid-template-columns:34px 1fr;gap:10px;align-items:center">
+                <span style="font-size:12.5px;color:var(--color-neutral-400);text-align:right">{{ r.seat }}</span>
+                <div style="display:flex;flex-direction:column;gap:2px"><div style="display:flex;align-items:center;gap:8px;min-height:36px;padding:0 10px;border-radius:var(--radius-md);background:{{ r.bg }};box-shadow:{{ r.ring }};font-size:13px;color:{{ r.fg }}"><span style="width:6px;height:6px;border-radius:50%;background:{{ r.dot }}"></span><span style="flex:1">{{ r.v }}</span><span style="color:var(--color-neutral-600)">▾</span></div><span style="font-size:10.5px;color:#F5B041;min-height:0">{{ r.warn }}</span></div>
+              </div>
+            </sc-for>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:6px;margin-top:auto;font-size:11.5px;color:var(--color-neutral-500);line-height:1.5">
+            <span>● 座位专属档案 → <code>"{seat}"</code> · ● 填满 → <code>"*"</code> · 随机 bot 不写入</span>
+            <span style="color:#F5B041">「狐语」的记忆 fox 已在 3号 使用 — 其余座位下拉中该档案被禁用。</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div></div>
+
+<!-- 2b AgentLibrary -->
+<div class="dv-opt" id="2b"><div class="dv-olabel"><a class="dv-oid" href="#2b">2b</a>AgentLibrary 页 · <code>#/agents</code> — 网格 AgentCard、编辑 / 复制 / 删除</div>
+<div class="dv-card" style="width:1180px;height:720px;display:grid;grid-template-rows:56px 1fr">
+  <div class="nav" style="padding:0 var(--space-8);background:linear-gradient(to right,transparent,var(--color-divider) 48px,var(--color-divider) calc(100% - 48px),transparent) no-repeat bottom/100% 1px"><span class="nav-brand">AgentHowl</span><a href="#2a">新的一局</a><a href="#2b" aria-current="page">Agent 档案库</a><a href="#2b">文档</a></div>
+  <div style="display:flex;flex-direction:column;gap:var(--space-6);padding:36px var(--space-8) 32px 56px">
+    <div style="display:flex;align-items:flex-end;gap:var(--space-4)">
+      <div><h3 style="font-size:22px;margin-bottom:4px">Agent 档案库</h3><p class="text-muted" style="font-size:13px;margin:0">5 个档案 · 存于 data/agents/ · 同一 memory_id 跨局累积经验</p></div>
+      <div style="margin-left:auto;display:flex;gap:8px"><span class="btn btn-secondary">导入 JSON</span><span class="btn btn-secondary">导出全部</span><span class="btn btn-primary">+ 新建</span></div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:var(--space-4)">
+      <sc-for list="{{ agents }}" as="a" hint-placeholder-count="5">
+        <div class="card elev-sm" style="padding:var(--space-4);gap:var(--space-3)">
+          <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px">
+            <div style="display:flex;flex-direction:column;gap:2px"><span style="font-size:20px;font-weight:500;letter-spacing:-.01em">{{ a.name }}</span><span style="font-size:11.5px;color:var(--color-neutral-400);font-family:ui-monospace,Menlo,monospace">{{ a.model }}</span><span style="font-size:10.5px;color:var(--color-neutral-500)">{{ a.sub }}</span></div>
+            <span style="font-size:10.5px;color:var(--color-neutral-500);white-space:nowrap">{{ a.temp }}</span>
+          </div>
+          <div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center"><sc-for list="{{ a.tags }}" as="t" hint-placeholder-count="0"><span class="tag tag-neutral" style="padding:1px 8px;font-size:10.5px">{{ t }}</span></sc-for><span style="font-size:10.5px;color:var(--color-neutral-500)">{{ a.more }}</span></div>
+          <div style="display:flex;flex-direction:column;gap:2px;font-size:12px"><span style="color:var(--color-neutral-300)">{{ a.per }}</span><span style="color:var(--color-accent-300)">{{ a.mem }}</span></div>
+          <div class="card-meta" style="margin-top:auto;justify-content:space-between"><span>更新于 {{ a.upd }}</span><span style="display:flex;gap:2px"><span class="btn btn-ghost" style="font-size:12px;padding:2px 6px">编辑</span><span class="btn btn-ghost" style="font-size:12px;padding:2px 6px">复制</span><span class="btn btn-ghost" style="font-size:12px;padding:2px 6px;color:var(--color-neutral-500)">删除</span></span></div>
+        </div>
+      </sc-for>
+      <div style="border:1px dashed var(--color-neutral-800);border-radius:var(--radius-md);display:grid;place-items:center;color:var(--color-neutral-500);font-size:13px;min-height:160px">+ 新建 Agent</div>
+    </div>
+  </div>
+</div></div>
+
+<!-- 2c AgentEditor drawer -->
+<div class="dv-opt" id="2c"><div class="dv-olabel"><a class="dv-oid" href="#2c">2c</a>AgentEditor 抽屉 — 基本 / SkillPicker / PersonalityEditor（MBTI + 特质滑块 + 预览）/ 记忆</div>
+<div class="dv-card" style="width:1180px;height:1280px;position:relative;display:grid;grid-template-rows:56px 1fr">
+  <div class="nav" style="padding:0 var(--space-8);opacity:.35"><span class="nav-brand">AgentHowl</span><a href="#2c">新的一局</a><a href="#2c" aria-current="page">Agent 档案库</a></div>
+  <div style="padding:36px 56px;opacity:.35;display:grid;grid-template-columns:repeat(3,1fr);gap:var(--space-4);align-content:start">
+    <sc-for list="{{ agents }}" as="a" hint-placeholder-count="5"><div class="card" style="height:150px"><span style="font-size:20px">{{ a.name }}</span><span style="font-size:11.5px;color:var(--color-neutral-400)">{{ a.model }}</span></div></sc-for>
+  </div>
+  <div style="position:absolute;inset:0;background:color-mix(in srgb,var(--color-neutral-900) 45%,transparent)"></div>
+  <div style="position:absolute;top:0;right:0;bottom:0;width:620px;background:var(--color-surface);box-shadow:var(--shadow-lg);display:grid;grid-template-rows:auto 1fr auto">
+    <div style="display:flex;align-items:center;gap:12px;padding:20px 28px 14px;background:linear-gradient(to right,transparent,var(--color-divider) 48px,var(--color-divider) calc(100% - 48px),transparent) no-repeat bottom/100% 1px"><span style="font-size:18px;font-weight:500">编辑 Agent · 夜枭</span><span class="tag tag-neutral" style="font-family:ui-monospace,Menlo,monospace">a_3f9c1e2b</span><span style="margin-left:auto;color:var(--color-neutral-500)">✕</span></div>
+    <div style="display:flex;flex-direction:column;gap:22px;padding:20px 28px;overflow:hidden;min-height:0">
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <span style="font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--color-accent)">1 · 基本</span>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+          <div class="field"><label>名字 *</label><div class="input" style="display:flex;align-items:center;justify-content:space-between">夜枭<span style="font-size:10.5px;color:#34C38F">✓ 唯一</span></div></div>
+          <div class="field"><label>模型</label><div class="input" style="display:flex;align-items:center;font-family:ui-monospace,Menlo,monospace;font-size:12.5px">ollama/qwen2.5:14b</div></div>
+          <div class="field"><label>发言模型（可选）</label><div class="input" style="display:flex;align-items:center;color:var(--color-neutral-500)">同模型</div></div>
+          <div class="field"><label>反思模型（可选）</label><div class="input" style="display:flex;align-items:center;color:var(--color-neutral-500)">同模型</div></div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr auto;gap:20px;align-items:center">
+          <div class="field" style="display:flex;flex-direction:column;gap:6px"><label style="margin:0">温度 <span style="color:var(--color-neutral-300)">0.3</span></label><div style="position:relative;height:4px;border-radius:2px;background:var(--color-neutral-800)"><span style="position:absolute;left:0;top:0;height:100%;width:15%;background:var(--color-accent);border-radius:2px"></span><span style="position:absolute;left:15%;top:-5px;width:14px;height:14px;border-radius:50%;background:var(--color-accent);transform:translateX(-50%)"></span></div></div>
+          <div style="display:flex;align-items:center;gap:8px;font-size:13px">thinking<span style="width:34px;height:20px;border-radius:10px;background:var(--color-accent-800);position:relative;box-shadow:inset 0 0 0 1px var(--color-accent-600)"><span style="position:absolute;right:2px;top:2px;width:16px;height:16px;border-radius:50%;background:var(--color-accent)"></span></span></div>
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <div style="display:flex;align-items:center;justify-content:space-between"><span style="font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--color-accent)">2 · 技能 · 已选 4</span><span style="font-size:12px;color:var(--color-neutral-400);display:flex;align-items:center;gap:8px">全部（*）<span style="width:34px;height:20px;border-radius:10px;background:var(--color-neutral-800);position:relative"><span style="position:absolute;left:2px;top:2px;width:16px;height:16px;border-radius:50%;background:var(--color-neutral-500)"></span></span></span></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+          <sc-for list="{{ skills }}" as="k" hint-placeholder-count="10">
+            <div style="display:grid;grid-template-columns:14px 1fr;gap:8px;padding:7px 10px;border-radius:var(--radius-sm);background:{{ k.bg }};box-shadow:{{ k.ring }}">
+              <span style="width:12px;height:12px;border-radius:3px;border:1px solid var(--color-neutral-600);background:{{ k.dot }};margin-top:3px"></span>
+              <div style="display:flex;flex-direction:column;gap:2px"><span style="font-size:12.5px;font-family:ui-monospace,Menlo,monospace">{{ k.name }}</span><span style="font-size:11px;color:var(--color-neutral-400)">{{ k.desc }} · {{ k.roles }} · {{ k.phases }}</span></div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 200px;gap:20px">
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <span style="font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--color-accent)">3 · 人格</span>
+          <div class="field"><label>描述 <span style="float:right">86 / 300</span></label><div class="input" style="min-height:56px;font-size:13px;line-height:1.5;color:var(--color-neutral-200)">话少，只在有逻辑链时开口。倾向相信查验而非情绪；被质疑时不急于自证。</div></div>
+          <div style="display:flex;gap:4px;flex-wrap:wrap"><sc-for list="{{ traitChips }}" as="c" hint-placeholder-count="15"><span style="padding:2px 9px;border-radius:6px;font-size:11.5px;background:{{ c.bg }};color:{{ c.fg }};box-shadow:{{ c.ring }}">{{ c.t }}</span></sc-for><span style="padding:2px 9px;border-radius:6px;font-size:11.5px;color:var(--color-neutral-500);box-shadow:inset 0 0 0 1px var(--color-divider)">+ 自定义</span></div>
+          <div style="display:flex;flex-direction:column;gap:6px">
+            <sc-for list="{{ traitSliders }}" as="s" hint-placeholder-count="3">
+              <div style="display:grid;grid-template-columns:44px 1fr 28px;gap:10px;align-items:center;font-size:12px"><span>{{ s.t }}</span><div style="position:relative;height:4px;border-radius:2px;background:var(--color-neutral-800)"><span style="position:absolute;left:0;top:0;height:100%;width:{{ s.pct }}%;background:var(--color-accent-600);border-radius:2px"></span><span style="position:absolute;left:{{ s.pct }}%;top:-4px;width:12px;height:12px;border-radius:50%;background:var(--color-accent);transform:translateX(-50%)"></span></div><span style="color:var(--color-neutral-400);font-family:ui-monospace,Menlo,monospace">{{ s.v }}</span></div>
+            </sc-for>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+            <span class="seg"><span class="seg-opt" style="padding:4px 10px;color:var(--color-neutral-500)">无预设</span><span class="seg-opt" style="padding:4px 10px;color:var(--color-accent);box-shadow:inset 0 0 0 1px var(--color-accent)">MBTI</span><span class="seg-opt" style="padding:4px 10px;color:var(--color-neutral-500)">Big Five</span></span>
+            <sc-for list="{{ mbti }}" as="m" hint-placeholder-count="4"><span class="seg"><span class="seg-opt" style="padding:4px 9px;{{ m.aStyle }}">{{ m.a }}</span><span class="seg-opt" style="padding:4px 9px;{{ m.bStyle }}">{{ m.b }}</span></span></sc-for>
+          </div>
+          <div class="field"><label>说话风格 <span style="float:right">18 / 100</span></label><div class="input" style="font-size:13px;display:flex;align-items:center">短句，少形容词，先结论后理由</div></div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:6px;padding:12px;border-radius:var(--radius-md);background:var(--color-bg);font-size:11.5px;line-height:1.6;color:var(--color-neutral-300)">
+          <span style="font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--color-neutral-500)">预览 · render_personality</span>
+          <span>你是 INTJ 型人格。你的特质：冷静（0.9）、逻辑（0.8）、多疑（0.7）。话少，只在有逻辑链时开口……说话风格：短句，少形容词，先结论后理由。</span>
+          <span style="margin-top:auto;font-size:10.5px;color:var(--color-neutral-600)">只读预览，最终文案以后端为准</span>
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <span style="font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--color-accent)">4 · 记忆</span>
+        <div style="display:grid;grid-template-columns:1fr auto;gap:8px;align-items:end">
+          <div class="field"><label>memory_id（可选）</label><div class="input" style="display:flex;align-items:center;justify-content:space-between;font-family:ui-monospace,Menlo,monospace;font-size:12.5px">night-owl<span style="font-size:10.5px;color:#34C38F;font-family:Inter,system-ui">✓ 唯一</span></div></div>
+          <span class="btn btn-secondary">按名字生成</span>
+        </div>
+        <span style="font-size:11.5px;color:var(--color-neutral-500)">同一 memory_id 的 Agent 跨局累积经验；改 id 不迁移已有经验文件。</span>
+      </div>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;padding:14px 28px 20px;background:linear-gradient(to right,transparent,var(--color-divider) 48px,var(--color-divider) calc(100% - 48px),transparent) no-repeat top/100% 1px">
+      <span style="font-size:12px;color:#E5484D">护栏：描述含「无视规则」— 保存将被后端 422 拒绝</span>
+      <span class="btn btn-ghost" style="margin-left:auto">取消</span><span class="btn btn-primary">保存</span>
+    </div>
+  </div>
+</div></div>
+
+<!-- 2d states -->
+<div class="dv-opt" id="2d"><div class="dv-olabel"><a class="dv-oid" href="#2d">2d</a>档案库辅助态 — 空态 · 删除确认 · 步骤 1 preset 卡片（选中态）</div>
+<div style="display:flex;gap:20px;align-items:flex-start">
+  <div class="dv-card" style="width:380px;height:300px;display:grid;place-items:center;text-align:center;padding:24px"><div style="display:flex;flex-direction:column;gap:8px;align-items:center"><div style="width:72px;height:72px;border-radius:50%;border:1px dashed var(--color-neutral-700);display:grid;place-items:center;color:var(--color-neutral-600);font-size:26px;margin-bottom:6px">?</div><span style="font-size:16px;font-weight:500">还没有 Agent</span><span style="font-size:12.5px;color:var(--color-neutral-500)">先建一个：名字、模型、人格、技能与记忆标识。</span><span class="btn btn-primary" style="margin-top:8px">+ 新建 Agent</span></div></div>
+  <div class="dv-card" style="width:380px;height:300px;display:grid;place-items:center;padding:24px;background:color-mix(in srgb,var(--color-neutral-900) 50%,#161826)">
+    <div class="dialog" style="width:100%;padding:var(--space-6)"><div class="dialog-title" style="font-size:17px">删除「铁齿」？</div><div class="dialog-body">档案文件将被移除。不会删除该记忆（<code>iron-teeth</code>）的经验文件，另一档案仍可复用。</div><div class="dialog-actions"><span class="btn btn-ghost">取消</span><span class="btn btn-primary" style="color:#E5484D;border-color:#E5484D">删除</span></div></div>
+  </div>
+  <div class="dv-card" style="width:380px;padding:var(--space-6);display:flex;flex-direction:column;gap:var(--space-3)">
+    <span style="font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--color-accent)">步骤 1 · 选择对局</span>
+    <sc-for list="{{ presets }}" as="p" hint-placeholder-count="4">
+      <div class="card" style="gap:6px;padding:var(--space-3) var(--space-4);box-shadow:{{ p.ring }}">
+        <div style="display:flex;align-items:baseline;justify-content:space-between"><span style="font-size:14px">{{ p.zh }}</span><span class="tag tag-neutral" style="font-size:10px">{{ p.win }}</span></div>
+        <div style="display:flex;align-items:center;gap:8px"><div style="display:flex;gap:4px"><sc-for list="{{ p.roles }}" as="r" hint-placeholder-count="0"><span style="width:20px;height:20px;border-radius:50%;border:1.5px solid {{ r.col }};background:{{ r.tint }};color:{{ r.col }};font-size:9.5px;display:grid;place-items:center">{{ r.a }}</span></sc-for></div><span style="font-size:11px;color:var(--color-neutral-500);font-family:ui-monospace,Menlo,monospace">{{ p.id }}</span></div>
+      </div>
+    </sc-for>
+    <div class="field" style="margin-top:4px"><label>seed</label><div class="input" style="display:flex;align-items:center;color:var(--color-neutral-500);min-height:32px">随机</div></div>
+  </div>
+</div></div>
+
+</div>
+<p class="dv-next">下一步可试：「<a class="dv-oid" href="#2a">2a</a> 座位表改成座位环拖放」 · 「<a class="dv-oid" href="#2c">2c</a> 改为独立页而非抽屉」 · 「<a class="dv-oid" href="#2b">2b</a> 卡片加上局数 / 胜率（M4）」</p>
+</section>
+<section class="dv-turn" id="t1">
+<div class="dv-thd"><a class="dv-tid" href="#t1">1</a><span class="dv-tname">AgentHowl M3 · 上帝视角直播 + 回放 — 界面稿</span></div>
+<p class="dv-note">依据设计文档 §7 与 Nocturne 设计系统。假设：阵营色按文档原色（狼 #E5484D / 神职 #F5B041 / 村民 #9AA4B2），交互强调色改用 Nocturne 紫（取代文档蓝），夜间连线色沿用文档（守蓝 / 救绿 / 毒紫 / 查黄）。文案取自 <code>render.py</code>。桌面 1180px 三栏；座位 0 号在顶部顺时针。</p>
+<div class="dv-opts">
+
+<!-- 1c GM night -->
+<div class="dv-opt" id="1c"><div class="dv-olabel"><a class="dv-oid" href="#1c">1c</a>GamePage · GM 直播 · 夜晚（12 人 · 第 2 夜 · 女巫行动）— 遮罩 + 连线 + NightSummary</div>
+<div class="dv-card" style="width:1180px;height:760px;position:relative;display:grid;grid-template-rows:48px minmax(0,1fr) 52px">
+  <div style="display:flex;align-items:center;gap:var(--space-4);padding:0 var(--space-6);background:linear-gradient(to right,transparent,var(--color-divider) 48px,var(--color-divider) calc(100% - 48px),transparent) no-repeat bottom/100% 1px">
+    <span style="font-size:15px;font-weight:500;letter-spacing:-.01em">AgentHowl</span>
+    <span style="font-size:11px;color:var(--color-neutral-600);font-family:ui-monospace,Menlo,monospace">g_7f3a…c21</span>
+    <span class="tag tag-neutral">第 2 轮</span>
+    <span style="font-size:15px;font-weight:500">夜晚 · 女巫行动</span>
+    <span style="display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--color-neutral-300)"><span style="width:8px;height:8px;border-radius:50%;background:#E5484D;animation:ah-pulse 1.6s infinite"></span>直播</span>
+    <span style="margin-left:auto;font-size:12px;color:var(--color-neutral-500)">已连接 · seq 128</span>
+    <span class="seg"><span class="seg-opt" style="color:var(--color-accent);box-shadow:inset 0 0 0 1px var(--color-accent)">上帝</span><span class="seg-opt">观众</span></span>
+  </div>
+  <div style="display:grid;grid-template-columns:320px minmax(0,1fr) 320px;min-height:0">
+    <div style="display:flex;flex-direction:column;align-items:center;gap:var(--space-4);padding:var(--space-6) var(--space-4);background:linear-gradient(to bottom,transparent,var(--color-divider) 48px,var(--color-divider) calc(100% - 48px),transparent) no-repeat right/1px 100%">
+      <div style="position:relative;width:280px;height:280px">
+        <svg viewBox="0 0 100 100" preserveAspectRatio="none" style="position:absolute;inset:0;width:100%;height:100%;overflow:visible">
+          <sc-for list="{{ lines12N }}" as="l" hint-placeholder-count="5"><line x1="{{ l.x1 }}" y1="{{ l.y1 }}" x2="{{ l.x2 }}" y2="{{ l.y2 }}" stroke="{{ l.color }}" stroke-width="0.9" stroke-dasharray="{{ l.dash }}" stroke-linecap="round" opacity="0.9"></line></sc-for>
+        </svg>
+        <sc-for list="{{ seats12N }}" as="s" hint-placeholder-count="12">
+        <div style="position:absolute;left:{{ s.x }}%;top:{{ s.y }}%;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;gap:3px;opacity:{{ s.opacity }}">
+          <div style="position:relative;width:44px;height:44px;border-radius:50%;background:{{ s.tint }};border:1.5px solid {{ s.col }};display:grid;place-items:center;box-shadow:{{ s.ring }}">
+            <span style="font-size:13px;font-weight:500;color:{{ s.col }}">{{ s.abbr }}</span>
+            <sc-if value="{{ s.sheriff }}" hint-placeholder-val="{{ false }}"><span style="position:absolute;top:-6px;right:-6px;width:16px;height:16px;border-radius:50%;background:#F5B041;color:#161826;font-size:10px;display:grid;place-items:center">★</span></sc-if>
+            <sc-if value="{{ s.dead }}" hint-placeholder-val="{{ false }}"><span style="position:absolute;inset:0;display:grid;place-items:center;font-size:22px;color:var(--color-neutral-200);background:rgba(22,24,38,.55);border-radius:50%">✕</span></sc-if>
+          </div>
+          <span style="font-size:10.5px;line-height:1;color:var(--color-neutral-400);white-space:nowrap">{{ s.num }} {{ s.name }}</span>
+        </div>
+        </sc-for>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px 12px;justify-content:center;font-size:10.5px;color:var(--color-neutral-400)">
+        <span style="display:inline-flex;align-items:center;gap:5px"><span style="width:14px;border-top:2px dashed #E5484D"></span>狼刀</span>
+        <span style="display:inline-flex;align-items:center;gap:5px"><span style="width:14px;border-top:2px solid #3B82F6"></span>守护</span>
+        <span style="display:inline-flex;align-items:center;gap:5px"><span style="width:14px;border-top:2px solid #34C38F"></span>解药</span>
+        <span style="display:inline-flex;align-items:center;gap:5px"><span style="width:14px;border-top:2px solid #A855F7"></span>毒药</span>
+        <span style="display:inline-flex;align-items:center;gap:5px"><span style="width:14px;border-top:2px solid #EAB308"></span>查验</span>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:var(--space-2);width:100%;margin-top:auto;font-size:11px;color:var(--color-neutral-400)">
+        <div class="card" style="padding:var(--space-2) var(--space-3);gap:1px"><span>存活</span><span style="font-size:17px;color:var(--color-text)">10<span style="font-size:11px;color:var(--color-neutral-500)">/12</span></span></div>
+        <div class="card" style="padding:var(--space-2) var(--space-3);gap:1px"><span>狼 / 好人</span><span style="font-size:17px;color:var(--color-text)"><span style="color:#E5484D">3</span> / 7</span></div>
+        <div class="card" style="padding:var(--space-2) var(--space-3);gap:1px"><span>警长</span><span style="font-size:17px;color:var(--color-text)">2号</span></div>
+      </div>
+    </div>
+    <div style="display:flex;flex-direction:column;min-height:0;position:relative">
+      <div style="display:flex;flex-direction:column;justify-content:flex-end;gap:2px;flex:1;min-height:0;overflow:hidden;padding:var(--space-4) var(--space-6)">
+        <sc-for list="{{ feedNight }}" as="it" hint-placeholder-count="8">
+          <sc-if value="{{ it.isSys }}" hint-placeholder-val="{{ false }}"><div style="text-align:center;font-size:11.5px;color:var(--color-neutral-500);padding:8px 0 4px;letter-spacing:.02em">{{ it.text }}</div></sc-if>
+          <sc-if value="{{ it.isGm }}" hint-placeholder-val="{{ false }}"><div style="display:flex;gap:10px;align-items:baseline;padding:6px 10px;border-radius:var(--radius-sm);background:color-mix(in srgb,var(--color-neutral-800) 55%,transparent);font-size:12.5px;color:var(--color-neutral-300)"><span style="font-family:ui-monospace,Menlo,monospace;font-size:10.5px;color:var(--color-neutral-500);letter-spacing:.04em">[GM]</span><span>{{ it.text }}</span></div></sc-if>
+          <sc-if value="{{ it.isSp }}" hint-placeholder-val="{{ false }}"><div style="display:grid;grid-template-columns:58px minmax(0,1fr);gap:10px;padding:8px 10px;border-radius:var(--radius-md);background:{{ it.bg }};box-shadow:{{ it.ring }}">
+            <div style="display:flex;flex-direction:column;gap:2px"><span style="font-size:13px;font-weight:500;color:{{ it.col }}">{{ it.seat }}</span><span style="font-size:10.5px;color:var(--color-neutral-500)">{{ it.name }}</span></div>
+            <div style="display:flex;flex-direction:column;gap:5px"><div style="display:flex;gap:6px;flex-wrap:wrap;min-height:0"><sc-for list="{{ it.tags }}" as="tg" hint-placeholder-count="0"><span class="tag" style="background:{{ tg.bg }};color:{{ tg.fg }};padding:1px 8px;font-size:10.5px">{{ tg.t }}</span></sc-for></div><p style="margin:0;font-size:13.5px;line-height:1.55;color:var(--color-text);text-wrap:pretty">{{ it.text }}</p></div>
+          </div></sc-if>
+        </sc-for>
+      </div>
+      <div style="position:absolute;inset:0;background:rgba(10,12,24,.38);display:grid;place-items:center;pointer-events:none">
+        <div style="text-align:center;display:flex;flex-direction:column;gap:6px;padding:18px 32px;border-radius:var(--radius-lg);background:rgba(22,24,38,.72);box-shadow:var(--shadow-sm)">
+          <span style="font-size:22px;font-weight:500;letter-spacing:.12em">天黑请闭眼</span>
+          <span style="font-size:13px;color:#A855F7">女巫请睁眼</span>
+        </div>
+      </div>
+    </div>
+    <div style="padding:var(--space-6) var(--space-6);display:flex;flex-direction:column;gap:var(--space-4);background:linear-gradient(to bottom,transparent,var(--color-divider) 48px,var(--color-divider) calc(100% - 48px),transparent) no-repeat left/1px 100%">
+      <div style="display:flex;align-items:baseline;justify-content:space-between"><span style="font-size:13px;font-weight:500">本夜行动</span><span style="font-size:11px;color:var(--color-neutral-500)">第 2 夜 · GM</span></div>
+      <sc-for list="{{ nightRows }}" as="r" hint-placeholder-count="5">
+        <div style="display:grid;grid-template-columns:8px minmax(0,1fr);gap:10px;align-items:start;opacity:{{ r.op }}">
+          <span style="width:8px;height:8px;border-radius:50%;background:{{ r.col }};margin-top:6px"></span>
+          <div style="display:flex;flex-direction:column;gap:2px"><span style="font-size:11px;color:var(--color-neutral-500)">{{ r.role }}</span><span style="font-size:13px;line-height:1.45;color:var(--color-text)">{{ r.text }}</span></div>
+        </div>
+      </sc-for>
+      <div style="margin-top:auto;padding-top:var(--space-4);font-size:11.5px;color:var(--color-neutral-500);border-top:1px solid var(--color-divider)">结算于天亮 · 当前预计出局：无（9号已被救）</div>
+    </div>
+  </div>
+  <div style="display:flex;align-items:center;gap:var(--space-4);padding:0 var(--space-6);background:linear-gradient(to right,transparent,var(--color-divider) 48px,var(--color-divider) calc(100% - 48px),transparent) no-repeat top/100% 1px">
+    <span style="display:inline-flex;gap:2px;color:var(--color-neutral-400);font-size:13px"><span class="btn btn-icon" style="width:30px;height:30px">⏮</span><span class="btn btn-icon" style="width:30px;height:30px">◀</span><span class="btn btn-icon" style="width:30px;height:30px;opacity:.45">▶</span><span class="btn btn-icon" style="width:30px;height:30px">▶▶</span></span>
+    <div style="flex:1;position:relative;height:6px;display:flex;border-radius:3px;overflow:hidden">
+      <sc-for list="{{ ticks }}" as="t" hint-placeholder-count="6"><span style="width:{{ t.w }}%;background:{{ t.bg }}"></span></sc-for>
+      <span style="position:absolute;left:0;top:0;height:100%;width:100%;background:color-mix(in srgb,var(--color-accent) 35%,transparent)"></span>
+      <span style="position:absolute;right:-1px;top:-4px;width:14px;height:14px;border-radius:50%;background:var(--color-accent);box-shadow:0 0 0 3px var(--color-bg)"></span>
+    </div>
+    <span style="font-family:ui-monospace,Menlo,monospace;font-size:11.5px;color:var(--color-neutral-400)">seq 128/128</span>
+    <span class="btn btn-secondary" style="padding:4px 10px;font-size:12px">1× ▾</span>
+    <span class="btn btn-primary" style="padding:4px 12px;font-size:12px;opacity:.45">回到直播</span>
+  </div>
+</div></div>
+
+<!-- 1d GM day -->
+<div class="dv-opt" id="1d"><div class="dv-olabel"><a class="dv-oid" href="#1d">1d</a>GamePage · GM 直播 · 白天发言（9 人 · 第 2 轮）— 当前发言高亮、自称/警徽流徽标、右栏 PlayerStatusPanel</div>
+<div class="dv-card" style="width:1180px;height:760px;position:relative;display:grid;grid-template-rows:48px minmax(0,1fr) 52px">
+  <div style="display:flex;align-items:center;gap:var(--space-4);padding:0 var(--space-6);background:linear-gradient(to right,transparent,var(--color-divider) 48px,var(--color-divider) calc(100% - 48px),transparent) no-repeat bottom/100% 1px">
+    <span style="font-size:15px;font-weight:500;letter-spacing:-.01em">AgentHowl</span>
+    <span style="font-size:11px;color:var(--color-neutral-600);font-family:ui-monospace,Menlo,monospace">g_2b91…e07</span>
+    <span class="tag tag-neutral">第 2 轮</span>
+    <span style="font-size:15px;font-weight:500">白天 · 发言</span>
+    <span style="display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--color-neutral-300)"><span style="width:8px;height:8px;border-radius:50%;background:#E5484D;animation:ah-pulse 1.6s infinite"></span>直播</span>
+    <span style="margin-left:auto;font-size:12px;color:var(--color-neutral-500)">已连接 · seq 96</span>
+    <span class="seg"><span class="seg-opt" style="color:var(--color-accent);box-shadow:inset 0 0 0 1px var(--color-accent)">上帝</span><span class="seg-opt">观众</span></span>
+  </div>
+  <div style="display:grid;grid-template-columns:320px minmax(0,1fr) 320px;min-height:0">
+    <div style="display:flex;flex-direction:column;align-items:center;gap:var(--space-4);padding:var(--space-6) var(--space-4);background:linear-gradient(to bottom,transparent,var(--color-divider) 48px,var(--color-divider) calc(100% - 48px),transparent) no-repeat right/1px 100%">
+      <div style="position:relative;width:280px;height:280px">
+        <sc-for list="{{ seats9D }}" as="s" hint-placeholder-count="9">
+        <div style="position:absolute;left:{{ s.x }}%;top:{{ s.y }}%;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;gap:3px;opacity:{{ s.opacity }}">
+          <div style="position:relative;width:46px;height:46px;border-radius:50%;background:{{ s.tint }};border:1.5px solid {{ s.col }};display:grid;place-items:center;box-shadow:{{ s.ring }}">
+            <span style="font-size:13px;font-weight:500;color:{{ s.col }}">{{ s.abbr }}</span>
+            <sc-if value="{{ s.sheriff }}" hint-placeholder-val="{{ false }}"><span style="position:absolute;top:-6px;right:-6px;width:16px;height:16px;border-radius:50%;background:#F5B041;color:#161826;font-size:10px;display:grid;place-items:center">★</span></sc-if>
+            <sc-if value="{{ s.dead }}" hint-placeholder-val="{{ false }}"><span style="position:absolute;inset:0;display:grid;place-items:center;font-size:22px;color:var(--color-neutral-200);background:rgba(22,24,38,.55);border-radius:50%">✕</span></sc-if>
+          </div>
+          <span style="font-size:10.5px;line-height:1;color:var(--color-neutral-400);white-space:nowrap">{{ s.num }} {{ s.name }}</span>
+        </div>
+        </sc-for>
+        <div style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);text-align:center;display:flex;flex-direction:column;gap:2px"><span style="font-size:10px;letter-spacing:.1em;color:var(--color-neutral-500)">发言中</span><span style="font-size:20px;font-weight:500;color:var(--color-accent-300)">5号</span></div>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px 12px;justify-content:center;font-size:10.5px;color:var(--color-neutral-400)">
+        <span style="display:inline-flex;align-items:center;gap:5px"><span style="width:10px;height:10px;border-radius:50%;border:1.5px solid #E5484D"></span>狼人</span>
+        <span style="display:inline-flex;align-items:center;gap:5px"><span style="width:10px;height:10px;border-radius:50%;border:1.5px solid #F5B041"></span>神职</span>
+        <span style="display:inline-flex;align-items:center;gap:5px"><span style="width:10px;height:10px;border-radius:50%;border:1.5px solid #9AA4B2"></span>村民</span>
+        <span style="display:inline-flex;align-items:center;gap:5px"><span style="color:#F5B041">★</span>警长</span>
+        <span style="display:inline-flex;align-items:center;gap:5px"><span style="width:10px;height:10px;border-radius:50%;box-shadow:0 0 0 2px var(--color-accent)"></span>当前发言</span>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:var(--space-2);width:100%;margin-top:auto;font-size:11px;color:var(--color-neutral-400)">
+        <div class="card" style="padding:var(--space-2) var(--space-3);gap:1px"><span>存活</span><span style="font-size:17px;color:var(--color-text)">7<span style="font-size:11px;color:var(--color-neutral-500)">/9</span></span></div>
+        <div class="card" style="padding:var(--space-2) var(--space-3);gap:1px"><span>狼 / 好人</span><span style="font-size:17px;color:var(--color-text)"><span style="color:#E5484D">3</span> / 4</span></div>
+        <div class="card" style="padding:var(--space-2) var(--space-3);gap:1px"><span>警长</span><span style="font-size:17px;color:var(--color-text)">2号</span></div>
+      </div>
+    </div>
+    <div style="display:flex;flex-direction:column;min-height:0;position:relative">
+      <div style="display:flex;flex-direction:column;justify-content:flex-end;gap:2px;flex:1;min-height:0;overflow:hidden;padding:var(--space-4) var(--space-6)">
+        <sc-for list="{{ feedDay }}" as="it" hint-placeholder-count="8">
+          <sc-if value="{{ it.isSys }}" hint-placeholder-val="{{ false }}"><div style="text-align:center;font-size:11.5px;color:var(--color-neutral-500);padding:8px 0 4px;letter-spacing:.02em">{{ it.text }}</div></sc-if>
+          <sc-if value="{{ it.isGm }}" hint-placeholder-val="{{ false }}"><div style="display:flex;gap:10px;align-items:baseline;padding:6px 10px;border-radius:var(--radius-sm);background:color-mix(in srgb,var(--color-neutral-800) 55%,transparent);font-size:12.5px;color:var(--color-neutral-300)"><span style="font-family:ui-monospace,Menlo,monospace;font-size:10.5px;color:var(--color-neutral-500);letter-spacing:.04em">[GM]</span><span>{{ it.text }}</span></div></sc-if>
+          <sc-if value="{{ it.isSp }}" hint-placeholder-val="{{ false }}"><div style="display:grid;grid-template-columns:58px minmax(0,1fr);gap:10px;padding:8px 10px;border-radius:var(--radius-md);background:{{ it.bg }};box-shadow:{{ it.ring }}">
+            <div style="display:flex;flex-direction:column;gap:2px"><span style="font-size:13px;font-weight:500;color:{{ it.col }}">{{ it.seat }}</span><span style="font-size:10.5px;color:var(--color-neutral-500)">{{ it.name }}</span></div>
+            <div style="display:flex;flex-direction:column;gap:5px"><div style="display:flex;gap:6px;flex-wrap:wrap"><sc-for list="{{ it.tags }}" as="tg" hint-placeholder-count="0"><span class="tag" style="background:{{ tg.bg }};color:{{ tg.fg }};padding:1px 8px;font-size:10.5px">{{ tg.t }}</span></sc-for></div><p style="margin:0;font-size:13.5px;line-height:1.55;color:var(--color-text);text-wrap:pretty">{{ it.text }}</p></div>
+          </div></sc-if>
+        </sc-for>
+      </div>
+      <span class="btn btn-secondary" style="position:absolute;bottom:14px;left:50%;transform:translateX(-50%);padding:4px 12px;font-size:12px;background:var(--color-surface);box-shadow:var(--shadow-md)">↓ 有 2 条新消息</span>
+    </div>
+    <div style="padding:var(--space-6) var(--space-6);display:flex;flex-direction:column;gap:var(--space-4);background:linear-gradient(to bottom,transparent,var(--color-divider) 48px,var(--color-divider) calc(100% - 48px),transparent) no-repeat left/1px 100%">
+      <div style="display:flex;align-items:baseline;justify-content:space-between"><span style="font-size:13px;font-weight:500">发言顺序</span><span style="font-size:11px;color:var(--color-neutral-500)">警长 2号 · 从 7号 顺时针</span></div>
+      <div style="display:flex;flex-direction:column;gap:4px">
+        <sc-for list="{{ order9 }}" as="o" hint-placeholder-count="7">
+          <div style="display:grid;grid-template-columns:36px 1fr auto;align-items:center;gap:10px;padding:6px 10px;border-radius:var(--radius-sm);background:{{ o.bg }};color:{{ o.fg }};font-size:12.5px"><span style="font-weight:500">{{ o.seat }}</span><span style="color:var(--color-neutral-400)">{{ o.name }}</span><span style="font-size:11px;color:{{ o.stCol }}">{{ o.st }}</span></div>
+        </sc-for>
+      </div>
+      <div style="display:flex;align-items:baseline;justify-content:space-between;margin-top:var(--space-2)"><span style="font-size:13px;font-weight:500">公开警徽流</span></div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap"><span class="tag tag-neutral">2号：5 → 8</span><span class="tag tag-neutral">4号：8 → 0</span></div>
+      <div style="margin-top:auto;padding-top:var(--space-4);font-size:11.5px;color:var(--color-neutral-500);border-top:1px solid var(--color-divider)">GM 备注：2号 真预言家 · 4号 狼人悍跳</div>
+    </div>
+  </div>
+  <div style="display:flex;align-items:center;gap:var(--space-4);padding:0 var(--space-6);background:linear-gradient(to right,transparent,var(--color-divider) 48px,var(--color-divider) calc(100% - 48px),transparent) no-repeat top/100% 1px">
+    <span style="display:inline-flex;gap:2px;color:var(--color-neutral-400);font-size:13px"><span class="btn btn-icon" style="width:30px;height:30px">⏮</span><span class="btn btn-icon" style="width:30px;height:30px">◀</span><span class="btn btn-icon" style="width:30px;height:30px;opacity:.45">▶</span><span class="btn btn-icon" style="width:30px;height:30px">▶▶</span></span>
+    <div style="flex:1;position:relative;height:6px;display:flex;border-radius:3px;overflow:hidden">
+      <sc-for list="{{ ticks }}" as="t" hint-placeholder-count="6"><span style="width:{{ t.w }}%;background:{{ t.bg }}"></span></sc-for>
+      <span style="position:absolute;left:0;top:0;height:100%;width:100%;background:color-mix(in srgb,var(--color-accent) 35%,transparent)"></span>
+      <span style="position:absolute;right:-1px;top:-4px;width:14px;height:14px;border-radius:50%;background:var(--color-accent);box-shadow:0 0 0 3px var(--color-bg)"></span>
+    </div>
+    <span style="font-family:ui-monospace,Menlo,monospace;font-size:11.5px;color:var(--color-neutral-400)">seq 96/96</span>
+    <span class="btn btn-secondary" style="padding:4px 10px;font-size:12px">1× ▾</span>
+    <span class="btn btn-primary" style="padding:4px 12px;font-size:12px;opacity:.45">回到直播</span>
+  </div>
+</div></div>
+
+<!-- 1g replay -->
+<div class="dv-opt" id="1g"><div class="dv-olabel"><a class="dv-oid" href="#1g">1g</a>GamePage · 终局回放（9 人 · 好人胜）— 终局横幅、ReplayBar 拖到 seq 143/190、2× 播放中</div>
+<div class="dv-card" style="width:1180px;height:760px;position:relative;display:grid;grid-template-rows:48px 40px minmax(0,1fr) 52px">
+  <div style="display:flex;align-items:center;gap:var(--space-4);padding:0 var(--space-6);background:linear-gradient(to right,transparent,var(--color-divider) 48px,var(--color-divider) calc(100% - 48px),transparent) no-repeat bottom/100% 1px">
+    <span style="font-size:15px;font-weight:500;letter-spacing:-.01em">AgentHowl</span>
+    <span style="font-size:11px;color:var(--color-neutral-600);font-family:ui-monospace,Menlo,monospace">g_2b91…e07</span>
+    <span class="tag tag-neutral">第 3 轮</span>
+    <span style="font-size:15px;font-weight:500">白天 · 投票</span>
+    <span style="display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--color-neutral-400)"><span style="font-size:11px">▶</span>回放</span>
+    <span style="margin-left:auto;font-size:12px;color:var(--color-neutral-500)">已结束 · 190 条事件</span>
+    <span class="seg"><span class="seg-opt" style="color:var(--color-accent);box-shadow:inset 0 0 0 1px var(--color-accent)">上帝</span><span class="seg-opt">观众</span></span>
+  </div>
+  <div style="display:flex;align-items:center;justify-content:center;gap:var(--space-4);background:linear-gradient(to right,transparent,color-mix(in srgb,#F5B041 10%,transparent) 30%,color-mix(in srgb,#F5B041 10%,transparent) 70%,transparent);font-size:13px">
+    <span style="color:#F5B041">═══</span><span>游戏结束：<span style="color:#F5B041;font-weight:500">好人阵营胜</span><span style="color:var(--color-neutral-500)">（GOOD）</span></span><span style="color:#F5B041">═══</span><span style="font-size:11.5px;color:var(--color-neutral-500)">回放显示到 seq 143 · 第 3 轮投票中</span>
+  </div>
+  <div style="display:grid;grid-template-columns:320px minmax(0,1fr) 320px;min-height:0">
+    <div style="display:flex;flex-direction:column;align-items:center;gap:var(--space-4);padding:var(--space-6) var(--space-4);background:linear-gradient(to bottom,transparent,var(--color-divider) 48px,var(--color-divider) calc(100% - 48px),transparent) no-repeat right/1px 100%">
+      <div style="position:relative;width:280px;height:280px">
+        <sc-for list="{{ seats9V }}" as="s" hint-placeholder-count="9">
+        <div style="position:absolute;left:{{ s.x }}%;top:{{ s.y }}%;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;gap:3px;opacity:{{ s.opacity }}">
+          <div style="position:relative;width:46px;height:46px;border-radius:50%;background:{{ s.tint }};border:1.5px solid {{ s.col }};display:grid;place-items:center;box-shadow:{{ s.ring }}">
+            <span style="font-size:13px;font-weight:500;color:{{ s.col }}">{{ s.abbr }}</span>
+            <sc-if value="{{ s.sheriff }}" hint-placeholder-val="{{ false }}"><span style="position:absolute;top:-6px;right:-6px;width:16px;height:16px;border-radius:50%;background:#F5B041;color:#161826;font-size:10px;display:grid;place-items:center">★</span></sc-if>
+            <sc-if value="{{ s.dead }}" hint-placeholder-val="{{ false }}"><span style="position:absolute;inset:0;display:grid;place-items:center;font-size:22px;color:var(--color-neutral-200);background:rgba(22,24,38,.55);border-radius:50%">✕</span></sc-if>
+            <sc-if value="{{ s.votes }}" hint-placeholder-val="{{ false }}"><span style="position:absolute;bottom:-6px;right:-8px;min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:var(--color-accent);color:var(--color-bg);font-size:10.5px;font-weight:600;display:grid;place-items:center">{{ s.votes }}</span></sc-if>
+          </div>
+          <span style="font-size:10.5px;line-height:1;color:var(--color-neutral-400);white-space:nowrap">{{ s.num }} {{ s.name }}</span>
+        </div>
+        </sc-for>
+        <div style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);text-align:center;display:flex;flex-direction:column;gap:2px"><span style="font-size:10px;letter-spacing:.1em;color:var(--color-neutral-500)">投票中</span><span style="font-size:20px;font-weight:500;color:var(--color-accent-300)">4/5</span></div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:var(--space-2);width:100%;margin-top:auto;font-size:11px;color:var(--color-neutral-400)">
+        <div class="card" style="padding:var(--space-2) var(--space-3);gap:1px"><span>存活</span><span style="font-size:17px;color:var(--color-text)">5<span style="font-size:11px;color:var(--color-neutral-500)">/9</span></span></div>
+        <div class="card" style="padding:var(--space-2) var(--space-3);gap:1px"><span>狼 / 好人</span><span style="font-size:17px;color:var(--color-text)"><span style="color:#E5484D">1</span> / 4</span></div>
+        <div class="card" style="padding:var(--space-2) var(--space-3);gap:1px"><span>警长</span><span style="font-size:17px;color:var(--color-text)">2号</span></div>
+      </div>
+    </div>
+    <div style="display:flex;flex-direction:column;min-height:0;position:relative">
+      <div style="display:flex;flex-direction:column;justify-content:flex-end;gap:2px;flex:1;min-height:0;overflow:hidden;padding:var(--space-4) var(--space-6)">
+        <sc-for list="{{ feedVote }}" as="it" hint-placeholder-count="8">
+          <sc-if value="{{ it.isSys }}" hint-placeholder-val="{{ false }}"><div style="text-align:center;font-size:11.5px;color:var(--color-neutral-500);padding:8px 0 4px;letter-spacing:.02em">{{ it.text }}</div></sc-if>
+          <sc-if value="{{ it.isGm }}" hint-placeholder-val="{{ false }}"><div style="display:flex;gap:10px;align-items:baseline;padding:6px 10px;border-radius:var(--radius-sm);background:color-mix(in srgb,var(--color-neutral-800) 55%,transparent);font-size:12.5px;color:var(--color-neutral-300)"><span style="font-family:ui-monospace,Menlo,monospace;font-size:10.5px;color:var(--color-neutral-500);letter-spacing:.04em">[GM]</span><span>{{ it.text }}</span></div></sc-if>
+          <sc-if value="{{ it.isSp }}" hint-placeholder-val="{{ false }}"><div style="display:grid;grid-template-columns:58px minmax(0,1fr);gap:10px;padding:8px 10px;border-radius:var(--radius-md);background:{{ it.bg }};box-shadow:{{ it.ring }}">
+            <div style="display:flex;flex-direction:column;gap:2px"><span style="font-size:13px;font-weight:500;color:{{ it.col }}">{{ it.seat }}</span><span style="font-size:10.5px;color:var(--color-neutral-500)">{{ it.name }}</span></div>
+            <div style="display:flex;flex-direction:column;gap:5px"><div style="display:flex;gap:6px;flex-wrap:wrap"><sc-for list="{{ it.tags }}" as="tg" hint-placeholder-count="0"><span class="tag" style="background:{{ tg.bg }};color:{{ tg.fg }};padding:1px 8px;font-size:10.5px">{{ tg.t }}</span></sc-for></div><p style="margin:0;font-size:13.5px;line-height:1.55;color:var(--color-text);text-wrap:pretty">{{ it.text }}</p></div>
+          </div></sc-if>
+        </sc-for>
+        <div style="text-align:center;font-size:11px;color:var(--color-neutral-600);padding-top:6px">— 之后 47 条事件在回放游标之后 —</div>
+      </div>
+    </div>
+    <div style="padding:var(--space-6) var(--space-6);display:flex;flex-direction:column;gap:var(--space-4);background:linear-gradient(to bottom,transparent,var(--color-divider) 48px,var(--color-divider) calc(100% - 48px),transparent) no-repeat left/1px 100%">
+      <div style="display:flex;align-items:baseline;justify-content:space-between"><span style="font-size:13px;font-weight:500">投票 · 第 3 轮</span><span style="font-size:11px;color:var(--color-neutral-500)">已投 4/5 · 警长 1.5 票</span></div>
+      <div style="display:flex;flex-direction:column;gap:4px">
+        <sc-for list="{{ votesR3 }}" as="v" hint-placeholder-count="5">
+          <div style="display:grid;grid-template-columns:40px 16px 1fr;align-items:center;gap:8px;font-size:12.5px;padding:4px 10px;border-radius:var(--radius-sm);opacity:{{ v.op }}"><span style="color:{{ v.vc }}">{{ v.voter }}</span><span style="color:var(--color-neutral-600)">→</span><span style="color:{{ v.tc }}">{{ v.target }}</span></div>
+        </sc-for>
+      </div>
+      <div style="font-size:11px;color:var(--color-neutral-500);letter-spacing:.06em;text-transform:uppercase;margin-top:var(--space-2)">实时计票</div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <sc-for list="{{ tallyR3 }}" as="b" hint-placeholder-count="3">
+          <div style="display:grid;grid-template-columns:40px 1fr 32px;align-items:center;gap:10px;font-size:12.5px"><span style="color:{{ b.col }}">{{ b.seat }}</span><span style="height:8px;border-radius:4px;background:var(--color-neutral-900);overflow:hidden;display:block"><span style="display:block;height:100%;width:{{ b.pct }}%;background:{{ b.col }};border-radius:4px"></span></span><span style="text-align:right;color:var(--color-neutral-300);font-family:ui-monospace,Menlo,monospace">{{ b.n }}</span></div>
+        </sc-for>
+      </div>
+      <div style="margin-top:auto;padding-top:var(--space-4);border-top:1px solid var(--color-divider);font-size:12.5px;color:var(--color-neutral-400)">等待 8号 投票…</div>
+    </div>
+  </div>
+  <div style="display:flex;align-items:center;gap:var(--space-4);padding:0 var(--space-6);background:linear-gradient(to right,transparent,var(--color-divider) 48px,var(--color-divider) calc(100% - 48px),transparent) no-repeat top/100% 1px">
+    <span style="display:inline-flex;gap:2px;color:var(--color-neutral-300);font-size:13px"><span class="btn btn-icon" style="width:30px;height:30px">⏮</span><span class="btn btn-icon" style="width:30px;height:30px">◀</span><span class="btn btn-icon" style="width:30px;height:30px;color:var(--color-accent);border-color:var(--color-accent)">❚❚</span><span class="btn btn-icon" style="width:30px;height:30px">▶▶</span></span>
+    <div style="flex:1;position:relative;height:6px;display:flex;border-radius:3px;overflow:hidden">
+      <sc-for list="{{ ticks }}" as="t" hint-placeholder-count="6"><span style="width:{{ t.w }}%;background:{{ t.bg }}"></span></sc-for>
+      <span style="position:absolute;left:0;top:0;height:100%;width:75.3%;background:color-mix(in srgb,var(--color-accent) 45%,transparent)"></span>
+      <span style="position:absolute;left:calc(75.3% - 7px);top:-4px;width:14px;height:14px;border-radius:50%;background:var(--color-accent);box-shadow:0 0 0 3px var(--color-bg),0 0 14px color-mix(in srgb,var(--color-accent) 70%,transparent)"></span>
+    </div>
+    <span style="font-family:ui-monospace,Menlo,monospace;font-size:11.5px;color:var(--color-neutral-300)">seq 143/190</span>
+    <span class="btn btn-secondary" style="padding:4px 10px;font-size:12px;color:var(--color-accent)">2× ▾</span>
+    <span class="btn btn-primary" style="padding:4px 12px;font-size:12px;opacity:.45">回到直播</span>
+    <span style="font-size:10.5px;color:var(--color-neutral-600)">空格 播放/暂停 · ←/→ 步进</span>
+  </div>
+</div></div>
+
+<!-- 1h spectator -->
+<div class="dv-opt" id="1h"><div class="dv-olabel"><a class="dv-oid" href="#1h">1h</a>观众视角对比 · 同一页面同一时刻（对照 <a class="dv-oid" href="#1c">1c</a>）— 角色牌背面、无连线、无 GM 行、右栏「夜晚进行中…」</div>
+<div class="dv-card" style="width:1180px;height:760px;position:relative;display:grid;grid-template-rows:48px minmax(0,1fr) 52px">
+  <div style="display:flex;align-items:center;gap:var(--space-4);padding:0 var(--space-6);background:linear-gradient(to right,transparent,var(--color-divider) 48px,var(--color-divider) calc(100% - 48px),transparent) no-repeat bottom/100% 1px">
+    <span style="font-size:15px;font-weight:500;letter-spacing:-.01em">AgentHowl</span>
+    <span style="font-size:11px;color:var(--color-neutral-600);font-family:ui-monospace,Menlo,monospace">g_7f3a…c21</span>
+    <span class="tag tag-neutral">第 2 轮</span>
+    <span style="font-size:15px;font-weight:500">夜晚 · 女巫行动</span>
+    <span style="display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--color-neutral-300)"><span style="width:8px;height:8px;border-radius:50%;background:#E5484D;animation:ah-pulse 1.6s infinite"></span>直播</span>
+    <span style="margin-left:auto;font-size:12px;color:var(--color-neutral-500)">已连接 · seq 71</span>
+    <span class="seg"><span class="seg-opt">上帝</span><span class="seg-opt" style="color:var(--color-accent);box-shadow:inset 0 0 0 1px var(--color-accent)">观众</span></span>
+  </div>
+  <div style="display:grid;grid-template-columns:320px minmax(0,1fr) 320px;min-height:0">
+    <div style="display:flex;flex-direction:column;align-items:center;gap:var(--space-4);padding:var(--space-6) var(--space-4);background:linear-gradient(to bottom,transparent,var(--color-divider) 48px,var(--color-divider) calc(100% - 48px),transparent) no-repeat right/1px 100%">
+      <div style="position:relative;width:280px;height:280px">
+        <sc-for list="{{ seats12S }}" as="s" hint-placeholder-count="12">
+        <div style="position:absolute;left:{{ s.x }}%;top:{{ s.y }}%;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;gap:3px;opacity:{{ s.opacity }}">
+          <div style="position:relative;width:44px;height:44px;border-radius:50%;background:{{ s.tint }};border:1.5px solid {{ s.col }};display:grid;place-items:center;box-shadow:{{ s.ring }}">
+            <span style="font-size:13px;font-weight:500;color:{{ s.col }}">{{ s.abbr }}</span>
+            <sc-if value="{{ s.sheriff }}" hint-placeholder-val="{{ false }}"><span style="position:absolute;top:-6px;right:-6px;width:16px;height:16px;border-radius:50%;background:#F5B041;color:#161826;font-size:10px;display:grid;place-items:center">★</span></sc-if>
+            <sc-if value="{{ s.dead }}" hint-placeholder-val="{{ false }}"><span style="position:absolute;inset:0;display:grid;place-items:center;font-size:22px;color:var(--color-neutral-200);background:rgba(22,24,38,.55);border-radius:50%">✕</span></sc-if>
+          </div>
+          <span style="font-size:10.5px;line-height:1;color:var(--color-neutral-400);white-space:nowrap">{{ s.num }} {{ s.name }}</span>
+        </div>
+        </sc-for>
+      </div>
+      <div style="font-size:11px;color:var(--color-neutral-500);text-align:center">出局者身份在天亮后公开：3号 村民 · 7号 狼人</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:var(--space-2);width:100%;margin-top:auto;font-size:11px;color:var(--color-neutral-400)">
+        <div class="card" style="padding:var(--space-2) var(--space-3);gap:1px"><span>存活</span><span style="font-size:17px;color:var(--color-text)">10<span style="font-size:11px;color:var(--color-neutral-500)">/12</span></span></div>
+        <div class="card" style="padding:var(--space-2) var(--space-3);gap:1px"><span>警长</span><span style="font-size:17px;color:var(--color-text)">2号</span></div>
+      </div>
+    </div>
+    <div style="display:flex;flex-direction:column;min-height:0;position:relative">
+      <div style="display:flex;flex-direction:column;justify-content:flex-end;gap:2px;flex:1;min-height:0;overflow:hidden;padding:var(--space-4) var(--space-6)">
+        <sc-for list="{{ feedSpec }}" as="it" hint-placeholder-count="6">
+          <sc-if value="{{ it.isSys }}" hint-placeholder-val="{{ false }}"><div style="text-align:center;font-size:11.5px;color:var(--color-neutral-500);padding:8px 0 4px;letter-spacing:.02em">{{ it.text }}</div></sc-if>
+          <sc-if value="{{ it.isSp }}" hint-placeholder-val="{{ false }}"><div style="display:grid;grid-template-columns:58px minmax(0,1fr);gap:10px;padding:8px 10px;border-radius:var(--radius-md);background:{{ it.bg }};box-shadow:{{ it.ring }}">
+            <div style="display:flex;flex-direction:column;gap:2px"><span style="font-size:13px;font-weight:500;color:{{ it.col }}">{{ it.seat }}</span><span style="font-size:10.5px;color:var(--color-neutral-500)">{{ it.name }}</span></div>
+            <div style="display:flex;flex-direction:column;gap:5px"><div style="display:flex;gap:6px;flex-wrap:wrap"><sc-for list="{{ it.tags }}" as="tg" hint-placeholder-count="0"><span class="tag" style="background:{{ tg.bg }};color:{{ tg.fg }};padding:1px 8px;font-size:10.5px">{{ tg.t }}</span></sc-for></div><p style="margin:0;font-size:13.5px;line-height:1.55;color:var(--color-text);text-wrap:pretty">{{ it.text }}</p></div>
+          </div></sc-if>
+        </sc-for>
+      </div>
+      <div style="position:absolute;inset:0;background:rgba(10,12,24,.7);display:grid;place-items:center;pointer-events:none">
+        <div style="text-align:center;display:flex;flex-direction:column;gap:6px">
+          <span style="font-size:22px;font-weight:500;letter-spacing:.12em">天黑请闭眼</span>
+          <span style="font-size:13px;color:var(--color-neutral-400)">女巫请睁眼</span>
+        </div>
+      </div>
+    </div>
+    <div style="padding:var(--space-6) var(--space-6);display:flex;flex-direction:column;gap:var(--space-4);background:linear-gradient(to bottom,transparent,var(--color-divider) 48px,var(--color-divider) calc(100% - 48px),transparent) no-repeat left/1px 100%">
+      <div style="display:flex;align-items:baseline;justify-content:space-between"><span style="font-size:13px;font-weight:500">夜晚</span><span style="font-size:11px;color:var(--color-neutral-500)">第 2 夜</span></div>
+      <div style="flex:1;display:grid;place-items:center;text-align:center;color:var(--color-neutral-500);font-size:13px;line-height:1.7">
+        <div><div style="width:28px;height:28px;margin:0 auto 10px;border-radius:50%;border:2px solid var(--color-neutral-800);border-top-color:var(--color-neutral-400);animation:ah-spin 1.2s linear infinite"></div>夜晚进行中…<br><span style="font-size:11.5px;color:var(--color-neutral-600)">夜间行动仅上帝视角可见</span></div>
+      </div>
+    </div>
+  </div>
+  <div style="display:flex;align-items:center;gap:var(--space-4);padding:0 var(--space-6);background:linear-gradient(to right,transparent,var(--color-divider) 48px,var(--color-divider) calc(100% - 48px),transparent) no-repeat top/100% 1px">
+    <span style="display:inline-flex;gap:2px;color:var(--color-neutral-400);font-size:13px"><span class="btn btn-icon" style="width:30px;height:30px">⏮</span><span class="btn btn-icon" style="width:30px;height:30px">◀</span><span class="btn btn-icon" style="width:30px;height:30px;opacity:.45">▶</span><span class="btn btn-icon" style="width:30px;height:30px">▶▶</span></span>
+    <div style="flex:1;position:relative;height:6px;display:flex;border-radius:3px;overflow:hidden">
+      <sc-for list="{{ ticks }}" as="t" hint-placeholder-count="6"><span style="width:{{ t.w }}%;background:{{ t.bg }}"></span></sc-for>
+      <span style="position:absolute;left:0;top:0;height:100%;width:100%;background:color-mix(in srgb,var(--color-accent) 35%,transparent)"></span>
+      <span style="position:absolute;right:-1px;top:-4px;width:14px;height:14px;border-radius:50%;background:var(--color-accent);box-shadow:0 0 0 3px var(--color-bg)"></span>
+    </div>
+    <span style="font-family:ui-monospace,Menlo,monospace;font-size:11.5px;color:var(--color-neutral-400)">seq 71/71</span>
+    <span class="btn btn-secondary" style="padding:4px 10px;font-size:12px">1× ▾</span>
+    <span class="btn btn-primary" style="padding:4px 12px;font-size:12px;opacity:.45">回到直播</span>
+  </div>
+</div></div>
+
+<!-- 1e vote panels -->
+<div class="dv-opt" id="1e"><div class="dv-olabel"><a class="dv-oid" href="#1e">1e</a>右栏 · VotePanel — 投票中 / PK 结果</div>
+<div style="display:flex;gap:20px">
+<div class="dv-card" style="width:320px;height:520px;padding:var(--space-6);display:flex;flex-direction:column;gap:var(--space-4)">
+  <div style="display:flex;align-items:baseline;justify-content:space-between"><span style="font-size:13px;font-weight:500">投票 · 第 2 轮</span><span style="font-size:11px;color:var(--color-neutral-500)">已投 5/7</span></div>
+  <div style="display:flex;flex-direction:column;gap:2px">
+    <sc-for list="{{ votesR2 }}" as="v" hint-placeholder-count="7">
+      <div style="display:grid;grid-template-columns:40px 16px 1fr auto;align-items:center;gap:8px;font-size:12.5px;padding:5px 10px;border-radius:var(--radius-sm);opacity:{{ v.op }}"><span style="color:{{ v.vc }}">{{ v.voter }}</span><span style="color:var(--color-neutral-600)">→</span><span style="color:{{ v.tc }}">{{ v.target }}</span><span style="font-size:10.5px;color:var(--color-neutral-500)">{{ v.w }}</span></div>
+    </sc-for>
+  </div>
+  <div style="font-size:11px;color:var(--color-neutral-500);letter-spacing:.06em;text-transform:uppercase;margin-top:var(--space-2)">实时计票（警长 1.5 票）</div>
+  <div style="display:flex;flex-direction:column;gap:8px">
+    <sc-for list="{{ tallyR2 }}" as="b" hint-placeholder-count="3">
+      <div style="display:grid;grid-template-columns:40px 1fr 32px;align-items:center;gap:10px;font-size:12.5px"><span style="color:{{ b.col }}">{{ b.seat }}</span><span style="height:8px;border-radius:4px;background:var(--color-neutral-900);overflow:hidden;display:block"><span style="display:block;height:100%;width:{{ b.pct }}%;background:{{ b.col }};border-radius:4px"></span></span><span style="text-align:right;color:var(--color-neutral-300);font-family:ui-monospace,Menlo,monospace">{{ b.n }}</span></div>
+    </sc-for>
+  </div>
+  <div style="margin-top:auto;padding-top:var(--space-4);border-top:1px solid var(--color-divider);font-size:12.5px;color:var(--color-neutral-400)">等待 0号、8号 投票…</div>
+</div>
+<div class="dv-card" style="width:320px;height:520px;padding:var(--space-6);display:flex;flex-direction:column;gap:var(--space-4)">
+  <div style="display:flex;align-items:baseline;justify-content:space-between"><span style="font-size:13px;font-weight:500">PK 投票 · 第 2 轮</span><span class="tag tag-accent" style="font-size:10px">PK</span></div>
+  <div style="font-size:11.5px;color:var(--color-neutral-400);line-height:1.5">首轮平票：<span style="color:#E5484D">4号</span>、<span style="color:#F5B041">8号</span> — PK 发言完毕，其余 5 人投票</div>
+  <div style="display:flex;gap:8px">
+    <div style="flex:1;padding:10px;border-radius:var(--radius-md);background:color-mix(in srgb,#E5484D 14%,transparent);border:1px solid #E5484D;display:flex;flex-direction:column;gap:2px"><span style="font-size:10px;letter-spacing:.08em;color:var(--color-neutral-400)">候选</span><span style="font-size:16px;font-weight:500;color:#E5484D">4号 若溪</span><span style="font-size:11px;color:var(--color-neutral-400)">3.5 票</span></div>
+    <div style="flex:1;padding:10px;border-radius:var(--radius-md);background:color-mix(in srgb,#F5B041 10%,transparent);border:1px solid var(--color-divider);display:flex;flex-direction:column;gap:2px"><span style="font-size:10px;letter-spacing:.08em;color:var(--color-neutral-400)">候选</span><span style="font-size:16px;font-weight:500;color:#F5B041">8号 知远</span><span style="font-size:11px;color:var(--color-neutral-400)">1.5 票</span></div>
+  </div>
+  <div style="display:flex;flex-direction:column;gap:2px">
+    <sc-for list="{{ votesPK }}" as="v" hint-placeholder-count="5">
+      <div style="display:grid;grid-template-columns:40px 16px 1fr auto;align-items:center;gap:8px;font-size:12.5px;padding:5px 10px;border-radius:var(--radius-sm);opacity:{{ v.op }}"><span style="color:{{ v.vc }}">{{ v.voter }}</span><span style="color:var(--color-neutral-600)">→</span><span style="color:{{ v.tc }}">{{ v.target }}</span><span style="font-size:10.5px;color:var(--color-neutral-500)">{{ v.w }}</span></div>
+    </sc-for>
+  </div>
+  <div style="margin-top:auto;padding:10px 12px;border-radius:var(--radius-md);background:var(--color-surface);box-shadow:var(--shadow-sm);font-size:13px;line-height:1.5">【计票】<span style="color:#E5484D">4号</span>得票最高，出局<br><span style="font-size:11.5px;color:var(--color-neutral-500)">【放逐】4号被票出 · 身份翻牌：狼人</span></div>
+</div>
+</div></div>
+
+<!-- 1f election panel -->
+<div class="dv-opt" id="1f"><div class="dv-olabel"><a class="dv-oid" href="#1f">1f</a>右栏 · ElectionPanel — 警下投票 / 公布结果与发言方向</div>
+<div style="display:flex;gap:20px">
+<div class="dv-card" style="width:320px;height:560px;padding:var(--space-6);display:flex;flex-direction:column;gap:var(--space-4)">
+  <div style="display:flex;align-items:baseline;justify-content:space-between"><span style="font-size:13px;font-weight:500">警长竞选</span><span style="font-size:11px;color:var(--color-neutral-500)">第 1 轮</span></div>
+  <div style="display:flex;flex-direction:column;gap:0">
+    <sc-for list="{{ stagesVote }}" as="st" hint-placeholder-count="5">
+      <div style="display:grid;grid-template-columns:14px 1fr;gap:10px;align-items:center;font-size:12px;color:{{ st.fg }};padding:4px 0"><span style="width:8px;height:8px;border-radius:50%;background:{{ st.dot }};box-shadow:{{ st.ring }};margin-left:3px"></span><span>{{ st.t }}</span></div>
+    </sc-for>
+  </div>
+  <div style="font-size:11px;color:var(--color-neutral-500);letter-spacing:.06em;text-transform:uppercase">上警名单</div>
+  <div style="display:flex;gap:6px;flex-wrap:wrap">
+    <span class="tag" style="background:color-mix(in srgb,#F5B041 18%,transparent);color:#F5B041">2号 婉清</span>
+    <span class="tag" style="background:color-mix(in srgb,#E5484D 18%,transparent);color:#E5484D">4号 若溪</span>
+    <span class="tag tag-neutral" style="text-decoration:line-through;opacity:.6">8号 知远 · 退水</span>
+    <span class="tag tag-neutral" style="text-decoration:line-through;opacity:.6">1号 子墨 · 退水</span>
+  </div>
+  <div style="font-size:11px;color:var(--color-neutral-500);letter-spacing:.06em;text-transform:uppercase;margin-top:var(--space-2)">警下投票 · 5/5</div>
+  <div style="display:flex;flex-direction:column;gap:8px">
+    <div style="display:grid;grid-template-columns:40px 1fr 32px;align-items:center;gap:10px;font-size:12.5px"><span style="color:#F5B041">2号</span><span style="height:8px;border-radius:4px;background:var(--color-neutral-900);overflow:hidden;display:block"><span style="display:block;height:100%;width:60%;background:#F5B041;border-radius:4px"></span></span><span style="text-align:right;color:var(--color-neutral-300);font-family:ui-monospace,Menlo,monospace">3</span></div>
+    <div style="display:grid;grid-template-columns:40px 1fr 32px;align-items:center;gap:10px;font-size:12.5px"><span style="color:#E5484D">4号</span><span style="height:8px;border-radius:4px;background:var(--color-neutral-900);overflow:hidden;display:block"><span style="display:block;height:100%;width:40%;background:#E5484D;border-radius:4px"></span></span><span style="text-align:right;color:var(--color-neutral-300);font-family:ui-monospace,Menlo,monospace">2</span></div>
+  </div>
+  <div style="display:flex;flex-direction:column;gap:2px;font-size:12px;color:var(--color-neutral-400)">
+    <span>3号 → 2号 · 5号 → 2号 · 6号 → 4号</span><span>7号 → 4号 · 0号 → 2号</span>
+  </div>
+  <div style="margin-top:auto;padding:10px 12px;border-radius:var(--radius-md);background:var(--color-surface);box-shadow:var(--shadow-sm);font-size:13px;line-height:1.5"><span style="color:#F5B041">★</span> 【警长】<span style="color:#F5B041">2号</span>当选警长</div>
+</div>
+<div class="dv-card" style="width:320px;height:560px;padding:var(--space-6);display:flex;flex-direction:column;gap:var(--space-4)">
+  <div style="display:flex;align-items:baseline;justify-content:space-between"><span style="font-size:13px;font-weight:500">警长竞选</span><span style="font-size:11px;color:var(--color-neutral-500)">第 1 轮</span></div>
+  <div style="display:flex;flex-direction:column;gap:0">
+    <sc-for list="{{ stagesDone }}" as="st" hint-placeholder-count="5">
+      <div style="display:grid;grid-template-columns:14px 1fr;gap:10px;align-items:center;font-size:12px;color:{{ st.fg }};padding:4px 0"><span style="width:8px;height:8px;border-radius:50%;background:{{ st.dot }};box-shadow:{{ st.ring }};margin-left:3px"></span><span>{{ st.t }}</span></div>
+    </sc-for>
+  </div>
+  <div style="display:flex;align-items:center;gap:12px;padding:12px;border-radius:var(--radius-md);background:color-mix(in srgb,#F5B041 10%,transparent)">
+    <span style="width:40px;height:40px;border-radius:50%;background:color-mix(in srgb,#F5B041 22%,transparent);border:1.5px solid #F5B041;display:grid;place-items:center;color:#F5B041;font-weight:500">预</span>
+    <div style="display:flex;flex-direction:column;gap:1px"><span style="font-size:14px;font-weight:500">2号 婉清 <span style="color:#F5B041">★</span></span><span style="font-size:11.5px;color:var(--color-neutral-400)">当选警长 · 3 票 vs 2 票</span></div>
+  </div>
+  <div style="font-size:11px;color:var(--color-neutral-500);letter-spacing:.06em;text-transform:uppercase">发言方向</div>
+  <div style="display:flex;gap:8px">
+    <span class="seg" style="flex:1"><span class="seg-opt" style="flex:1;justify-content:center;color:var(--color-accent);box-shadow:inset 0 0 0 1px var(--color-accent)">从 3号 顺时针 ↻</span><span class="seg-opt" style="flex:1;justify-content:center;color:var(--color-neutral-500)">从 1号 逆时针</span></span>
+  </div>
+  <div style="font-size:12px;color:var(--color-neutral-400);line-height:1.6">顺序：3号 → 4号 → 5号 → 6号 → 7号 → 8号 → 0号 → 1号 → 2号</div>
+  <div style="font-size:11px;color:var(--color-neutral-500);letter-spacing:.06em;text-transform:uppercase;margin-top:var(--space-2)">警徽流失（示例）</div>
+  <div style="padding:10px 12px;border-radius:var(--radius-md);background:color-mix(in srgb,var(--color-neutral-800) 55%,transparent);font-size:12.5px;line-height:1.5;color:var(--color-neutral-300)">2号移交警徽给 5号<br><span style="font-size:11.5px;color:var(--color-neutral-500)">原因：警长夜间出局 · 遗言中移交</span></div>
+  <div style="margin-top:auto;font-size:11.5px;color:var(--color-neutral-500)">【竞选】竞选环节结束</div>
+</div>
+</div></div>
+
+<!-- 1a Lobby -->
+<div class="dv-opt" id="1a"><div class="dv-olabel"><a class="dv-oid" href="#1a">1a</a>Lobby · 创建并开始一局全 AI 对局</div>
+<div class="dv-card" style="width:1180px;height:680px;display:grid;grid-template-rows:56px 1fr">
+  <div class="nav" style="padding:0 var(--space-8);background:linear-gradient(to right,transparent,var(--color-divider) 48px,var(--color-divider) calc(100% - 48px),transparent) no-repeat bottom/100% 1px"><span class="nav-brand">AgentHowl</span><a href="#1a">文档</a><a href="#1a">GitHub</a></div>
+  <div style="display:grid;grid-template-columns:480px 1fr;gap:64px;padding:48px var(--space-8) 40px 72px">
+    <div style="display:flex;flex-direction:column;gap:var(--space-6)">
+      <div><h2 style="font-size:28px;margin-bottom:6px">新的一局</h2><p class="text-muted" style="font-size:13.5px;margin:0">全 AI 对局。创建后自动开始，你以上帝视角实时观看。</p></div>
+      <div class="field"><label>板子 preset</label><div class="input" style="display:flex;align-items:center;justify-content:space-between"><span>std_12_yn_hunter_guard · 12 人预女猎守</span><span style="color:var(--color-neutral-500)">▾</span></div></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:var(--space-4)">
+        <div class="field"><label>seed</label><div class="input" style="display:flex;align-items:center;color:var(--color-neutral-500)">随机</div></div>
+        <div class="field"><label>ai_model</label><div class="input" style="display:flex;align-items:center;color:var(--color-neutral-500)">例：ollama/qwen2.5:7b</div></div>
+      </div>
+      <p class="text-muted" style="font-size:11.5px;margin:-6px 0 0">留空 = 全随机 bot（零 LLM）。</p>
+      <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--color-neutral-400)"><span style="font-size:10px">▸</span>高级：agents JSON</div>
+      <div style="display:flex;gap:var(--space-3);align-items:center;margin-top:var(--space-2)"><span class="btn btn-primary" style="padding:8px 18px">创建并开始</span><span style="font-size:11.5px;color:var(--color-neutral-500)">POST /games → /start → #/g/{id}?gm=…</span></div>
+      <div style="font-size:12px;color:#E5484D;padding:8px 10px;border-radius:var(--radius-sm);background:color-mix(in srgb,#E5484D 10%,transparent)">422 · agents.seats.13: seat 超出 num_players 范围</div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:var(--space-3)">
+      <span style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--color-neutral-500)">内置板子</span>
+      <sc-for list="{{ presets }}" as="p" hint-placeholder-count="4">
+        <div class="card" style="flex-direction:row;align-items:center;gap:var(--space-4);padding:var(--space-3) var(--space-4);box-shadow:{{ p.ring }}">
+          <div style="display:flex;flex-direction:column;gap:2px;flex:1"><span style="font-family:ui-monospace,Menlo,monospace;font-size:12px;color:var(--color-neutral-300)">{{ p.id }}</span><span style="font-size:13.5px">{{ p.zh }}</span></div>
+          <div style="display:flex;gap:4px"><sc-for list="{{ p.roles }}" as="r" hint-placeholder-count="0"><span style="width:22px;height:22px;border-radius:50%;border:1.5px solid {{ r.col }};background:{{ r.tint }};color:{{ r.col }};font-size:10px;display:grid;place-items:center">{{ r.a }}</span></sc-for></div>
+          <span class="tag tag-neutral">{{ p.win }}</span>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+</div></div>
+
+<!-- 1b share -->
+<div class="dv-opt" id="1b"><div class="dv-olabel"><a class="dv-oid" href="#1b">1b</a>分享卡片 · 建局成功后弹出</div>
+<div class="dv-card" style="width:560px;padding:40px;display:grid;place-items:center;background:color-mix(in srgb,var(--color-neutral-900) 50%,#161826)">
+  <div class="dialog" style="width:100%">
+    <div class="dialog-title">对局已创建</div>
+    <div class="dialog-body" style="display:flex;flex-direction:column;gap:var(--space-4)">
+      <div class="field"><label>上帝视角链接 · GM</label><div style="display:flex;gap:6px"><div class="input" style="font-family:ui-monospace,Menlo,monospace;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center">/#/g/g_7f3ac21?gm=eyJhbGciOiJIUzI1NiJ9…</div><span class="btn btn-secondary" style="flex:none">复制</span></div></div>
+      <div class="field"><label>观众链接 · 仅公开信息</label><div style="display:flex;gap:6px"><div class="input" style="font-family:ui-monospace,Menlo,monospace;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center">/#/g/g_7f3ac21?spec=eyJhbGciOiJIUzI1NiJ9…</div><span class="btn btn-secondary" style="flex:none">复制</span></div></div>
+      <div style="display:flex;gap:8px;align-items:flex-start;font-size:12px;color:#F5B041;line-height:1.5"><span>⚠</span><span>上帝视角链接含全部身份信息，勿分享给玩家。token 只存在于链接中，关闭页面后需重新打开链接。</span></div>
+    </div>
+    <div class="dialog-actions"><span class="btn btn-ghost">稍后</span><span class="btn btn-primary">进入上帝视角 →</span></div>
+  </div>
+</div></div>
+
+<!-- 1i error states -->
+<div class="dv-opt" id="1i"><div class="dv-olabel"><a class="dv-oid" href="#1i">1i</a>空 / 错误态 — 4404 · 4409 · 重连中 · 4401</div>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
+  <div class="dv-card" style="width:400px;height:240px;display:grid;place-items:center;text-align:center;padding:24px"><div style="display:flex;flex-direction:column;gap:6px"><span style="font-family:ui-monospace,Menlo,monospace;font-size:11px;color:var(--color-neutral-600)">4404</span><span style="font-size:18px;font-weight:500">对局不存在</span><span style="font-size:12.5px;color:var(--color-neutral-500)">链接可能已失效，或对局尚未创建。</span><span class="btn btn-primary" style="margin:10px auto 0">返回 Lobby</span></div></div>
+  <div class="dv-card" style="width:400px;height:240px;display:grid;place-items:center;text-align:center;padding:24px"><div style="display:flex;flex-direction:column;gap:6px;align-items:center"><div style="width:28px;height:28px;border-radius:50%;border:2px solid var(--color-neutral-800);border-top-color:var(--color-accent);animation:ah-spin 1.2s linear infinite;margin-bottom:6px"></div><span style="font-family:ui-monospace,Menlo,monospace;font-size:11px;color:var(--color-neutral-600)">4409</span><span style="font-size:18px;font-weight:500">等待开局</span><span style="font-size:12.5px;color:var(--color-neutral-500)">对局尚未开始 · 每 2 秒重试 · 第 6 次</span></div></div>
+  <div class="dv-card" style="width:400px;height:240px;display:grid;grid-template-rows:48px 1fr"><div style="display:flex;align-items:center;gap:var(--space-4);padding:0 var(--space-4);background:linear-gradient(to right,transparent,var(--color-divider) 48px,var(--color-divider) calc(100% - 48px),transparent) no-repeat bottom/100% 1px"><span class="tag tag-neutral">第 2 轮</span><span style="font-size:14px;font-weight:500">白天 · 发言</span><span style="margin-left:auto;display:inline-flex;align-items:center;gap:6px;font-size:12px;color:#F5B041"><span style="width:8px;height:8px;border-radius:50%;border:1.5px solid #F5B041"></span>重连中 · 4s 后重试（第 3 次）</span></div><div style="display:grid;place-items:center;font-size:12.5px;color:var(--color-neutral-500);text-align:center;line-height:1.6">连接已断开，正在从 seq 97 补发。<br>页面内容保持可读，指数退避 1s → 8s。</div></div>
+  <div class="dv-card" style="width:400px;height:240px;display:grid;place-items:center;text-align:center;padding:24px"><div style="display:flex;flex-direction:column;gap:6px"><span style="font-family:ui-monospace,Menlo,monospace;font-size:11px;color:var(--color-neutral-600)">4401 / 4403</span><span style="font-size:18px;font-weight:500">token 无效</span><span style="font-size:12.5px;color:var(--color-neutral-500)">该 token 无权观战。请向建局者索取新链接。</span></div></div>
+</div></div>
+
+<!-- 1j mobile stack -->
+<div class="dv-opt" id="1j"><div class="dv-olabel"><a class="dv-oid" href="#1j">1j</a>&lt;900px 纵向堆叠（760px · 9 人白天）— ReplayBar 固定底部</div>
+<div class="dv-card" style="width:760px;height:1180px;position:relative;display:grid;grid-template-rows:48px minmax(0,1fr) 52px">
+  <div style="display:flex;align-items:center;gap:var(--space-3);padding:0 var(--space-4);background:linear-gradient(to right,transparent,var(--color-divider) 48px,var(--color-divider) calc(100% - 48px),transparent) no-repeat bottom/100% 1px">
+    <span style="font-size:14px;font-weight:500">AgentHowl</span>
+    <span class="tag tag-neutral">第 2 轮</span>
+    <span style="font-size:14px;font-weight:500">白天 · 发言</span>
+    <span style="display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--color-neutral-300)"><span style="width:8px;height:8px;border-radius:50%;background:#E5484D;animation:ah-pulse 1.6s infinite"></span>直播</span>
+    <span class="seg" style="margin-left:auto"><span class="seg-opt" style="padding:4px 9px;color:var(--color-accent);box-shadow:inset 0 0 0 1px var(--color-accent)">上帝</span><span class="seg-opt" style="padding:4px 9px">观众</span></span>
+  </div>
+  <div style="display:flex;flex-direction:column;min-height:0;overflow:hidden">
+    <div style="display:grid;grid-template-columns:260px 1fr;gap:var(--space-4);padding:var(--space-4);align-items:center;background:linear-gradient(to right,transparent,var(--color-divider) 48px,var(--color-divider) calc(100% - 48px),transparent) no-repeat bottom/100% 1px">
+      <div style="position:relative;width:240px;height:240px;margin:0 auto">
+        <sc-for list="{{ seats9D }}" as="s" hint-placeholder-count="9">
+        <div style="position:absolute;left:{{ s.x }}%;top:{{ s.y }}%;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;gap:3px;opacity:{{ s.opacity }}">
+          <div style="position:relative;width:40px;height:40px;border-radius:50%;background:{{ s.tint }};border:1.5px solid {{ s.col }};display:grid;place-items:center;box-shadow:{{ s.ring }}">
+            <span style="font-size:12px;font-weight:500;color:{{ s.col }}">{{ s.abbr }}</span>
+            <sc-if value="{{ s.sheriff }}" hint-placeholder-val="{{ false }}"><span style="position:absolute;top:-6px;right:-6px;width:16px;height:16px;border-radius:50%;background:#F5B041;color:#161826;font-size:10px;display:grid;place-items:center">★</span></sc-if>
+            <sc-if value="{{ s.dead }}" hint-placeholder-val="{{ false }}"><span style="position:absolute;inset:0;display:grid;place-items:center;font-size:20px;color:var(--color-neutral-200);background:rgba(22,24,38,.55);border-radius:50%">✕</span></sc-if>
+          </div>
+          <span style="font-size:10px;line-height:1;color:var(--color-neutral-400);white-space:nowrap">{{ s.num }}</span>
+        </div>
+        </sc-for>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:var(--space-3)">
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:var(--space-2);font-size:11px;color:var(--color-neutral-400)">
+          <div class="card" style="padding:var(--space-2) var(--space-3);gap:1px"><span>存活</span><span style="font-size:17px;color:var(--color-text)">7<span style="font-size:11px;color:var(--color-neutral-500)">/9</span></span></div>
+          <div class="card" style="padding:var(--space-2) var(--space-3);gap:1px"><span>狼 / 好人</span><span style="font-size:17px;color:var(--color-text)"><span style="color:#E5484D">3</span> / 4</span></div>
+          <div class="card" style="padding:var(--space-2) var(--space-3);gap:1px"><span>警长</span><span style="font-size:17px;color:var(--color-text)">2号</span></div>
+        </div>
+        <div style="display:flex;align-items:baseline;justify-content:space-between"><span style="font-size:12.5px;font-weight:500">发言顺序</span><span style="font-size:11px;color:var(--color-neutral-500)">从 7号 顺时针</span></div>
+        <div style="display:flex;gap:4px;flex-wrap:wrap">
+          <sc-for list="{{ order9 }}" as="o" hint-placeholder-count="7"><span style="padding:3px 9px;border-radius:var(--radius-sm);background:{{ o.bg }};color:{{ o.fg }};font-size:12px">{{ o.seat }}</span></sc-for>
+        </div>
+      </div>
+    </div>
+    <div style="display:flex;flex-direction:column;justify-content:flex-end;gap:2px;flex:1;min-height:0;overflow:hidden;padding:var(--space-4)">
+      <sc-for list="{{ feedDay }}" as="it" hint-placeholder-count="8">
+        <sc-if value="{{ it.isSys }}" hint-placeholder-val="{{ false }}"><div style="text-align:center;font-size:11.5px;color:var(--color-neutral-500);padding:8px 0 4px">{{ it.text }}</div></sc-if>
+        <sc-if value="{{ it.isGm }}" hint-placeholder-val="{{ false }}"><div style="display:flex;gap:10px;align-items:baseline;padding:6px 10px;border-radius:var(--radius-sm);background:color-mix(in srgb,var(--color-neutral-800) 55%,transparent);font-size:12.5px;color:var(--color-neutral-300)"><span style="font-family:ui-monospace,Menlo,monospace;font-size:10.5px;color:var(--color-neutral-500)">[GM]</span><span>{{ it.text }}</span></div></sc-if>
+        <sc-if value="{{ it.isSp }}" hint-placeholder-val="{{ false }}"><div style="display:grid;grid-template-columns:58px minmax(0,1fr);gap:10px;padding:8px 10px;border-radius:var(--radius-md);background:{{ it.bg }};box-shadow:{{ it.ring }}">
+          <div style="display:flex;flex-direction:column;gap:2px"><span style="font-size:13px;font-weight:500;color:{{ it.col }}">{{ it.seat }}</span><span style="font-size:10.5px;color:var(--color-neutral-500)">{{ it.name }}</span></div>
+          <div style="display:flex;flex-direction:column;gap:5px"><div style="display:flex;gap:6px;flex-wrap:wrap"><sc-for list="{{ it.tags }}" as="tg" hint-placeholder-count="0"><span class="tag" style="background:{{ tg.bg }};color:{{ tg.fg }};padding:1px 8px;font-size:10.5px">{{ tg.t }}</span></sc-for></div><p style="margin:0;font-size:13.5px;line-height:1.55;color:var(--color-text);text-wrap:pretty">{{ it.text }}</p></div>
+        </div></sc-if>
+      </sc-for>
+    </div>
+  </div>
+  <div style="display:flex;align-items:center;gap:var(--space-3);padding:0 var(--space-4);background:var(--color-bg) linear-gradient(to right,transparent,var(--color-divider) 48px,var(--color-divider) calc(100% - 48px),transparent) no-repeat top/100% 1px">
+    <span style="display:inline-flex;gap:2px;color:var(--color-neutral-400);font-size:13px"><span class="btn btn-icon" style="width:30px;height:30px">◀</span><span class="btn btn-icon" style="width:30px;height:30px;opacity:.45">▶</span><span class="btn btn-icon" style="width:30px;height:30px">▶▶</span></span>
+    <div style="flex:1;position:relative;height:6px;display:flex;border-radius:3px;overflow:hidden">
+      <sc-for list="{{ ticks }}" as="t" hint-placeholder-count="6"><span style="width:{{ t.w }}%;background:{{ t.bg }}"></span></sc-for>
+      <span style="position:absolute;left:0;top:0;height:100%;width:100%;background:color-mix(in srgb,var(--color-accent) 35%,transparent)"></span>
+      <span style="position:absolute;right:-1px;top:-4px;width:14px;height:14px;border-radius:50%;background:var(--color-accent);box-shadow:0 0 0 3px var(--color-bg)"></span>
+    </div>
+    <span style="font-family:ui-monospace,Menlo,monospace;font-size:11.5px;color:var(--color-neutral-400)">96/96</span>
+    <span class="btn btn-secondary" style="padding:4px 10px;font-size:12px">1×</span>
+  </div>
+</div></div>
+
+</div>
+<p class="dv-next">下一步可试：「<a class="dv-oid" href="#1c">1c</a> 的连线改为环内弧线并加箭头」 · 「<a class="dv-oid" href="#1d">1d</a> 发言流加时间戳与折叠长发言」 · 「出一版座位环居中放大的布局方向」</p>
+</section>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  renderVals() {
+    const NAMES = ['沐阳','子墨','婉清','承宇','若溪','景行','云舒','星河','知远','明澈','岚风','亦安'];
+    const C = { WOLF: '#E5484D', GOD: '#F5B041', VIL: '#9AA4B2' };
+    const ROLE = { WEREWOLF: ['狼','WOLF','狼人'], SEER: ['预','GOD','预言家'], WITCH: ['巫','GOD','女巫'], HUNTER: ['猎','GOD','猎人'], GUARD: ['守','GOD','守卫'], IDIOT: ['痴','GOD','白痴'], VILLAGER: ['民','VIL','村民'] };
+    const tint = (c, p = 22) => `color-mix(in srgb, ${c} ${p}%, transparent)`;
+    const RING = '0 0 0 2px var(--color-accent), 0 0 18px color-mix(in srgb, var(--color-accent) 55%, transparent)';
+    const mk = (roles, o = {}) => roles.map((r, i) => {
+      const n = roles.length, a = (-90 + i * 360 / n) * Math.PI / 180;
+      const [abbr, f] = ROLE[r];
+      const dead = (o.dead || []).includes(i);
+      const hidden = o.hide && !dead;
+      const col = hidden ? 'var(--color-neutral-500)' : C[f];
+      return { i, num: i + '号', name: NAMES[i], x: +(50 + 41 * Math.cos(a)).toFixed(2), y: +(50 + 41 * Math.sin(a)).toFixed(2),
+        abbr: hidden ? '?' : abbr, col, tint: hidden ? 'var(--color-surface)' : tint(col), opacity: dead ? 0.42 : 1, dead,
+        sheriff: o.sheriff === i, ring: o.speaking === i ? RING : 'none', votes: (o.votes || {})[i] || '' };
+    });
+    const ln = (S, a, b, color, dash) => ({ x1: S[a].x, y1: S[a].y, x2: S[b].x, y2: S[b].y, color, dash });
+    const R12 = ['VILLAGER','WEREWOLF','SEER','VILLAGER','WEREWOLF','WITCH','VILLAGER','WEREWOLF','HUNTER','VILLAGER','WEREWOLF','GUARD'];
+    const R9 = ['VILLAGER','WEREWOLF','SEER','VILLAGER','WEREWOLF','WITCH','VILLAGER','WEREWOLF','HUNTER'];
+    const seats12N = mk(R12, { dead: [3, 7], sheriff: 2 });
+    const seats12S = mk(R12, { dead: [3, 7], sheriff: 2, hide: true });
+    const seats9D = mk(R9, { dead: [3, 6], sheriff: 2, speaking: 5 });
+    const seats9V = mk(R9, { dead: [1, 3, 6, 7], sheriff: 2, votes: { 4: '3.5', 8: '1' } });
+    const lines12N = [ln(seats12N, 1, 9, C.WOLF, '2 1.6'), ln(seats12N, 4, 9, C.WOLF, '2 1.6'), ln(seats12N, 10, 9, C.WOLF, '2 1.6'), ln(seats12N, 11, 2, '#3B82F6', 'none'), ln(seats12N, 5, 9, '#34C38F', 'none'), ln(seats12N, 2, 4, '#EAB308', 'none')];
+    const colOf = (i, roles) => C[ROLE[roles[i]][1]];
+    const sys = t => ({ isSys: true, text: t });
+    const gm = t => ({ isGm: true, text: t });
+    const T = { claim: { bg: tint(C.GOD, 20), fg: C.GOD }, badge: { bg: 'var(--color-neutral-800)', fg: 'var(--color-neutral-100)' }, now: { bg: 'var(--color-accent-800)', fg: 'var(--color-accent-100)' }, last: { bg: 'var(--color-neutral-800)', fg: 'var(--color-neutral-300)' } };
+    const sp = (roles, seat, text, tags = [], now = false) => ({ isSp: true, seat: seat + '号', name: NAMES[seat], col: colOf(seat, roles), text,
+      tags: tags.map(([t, k]) => ({ t, ...T[k] })), bg: now ? 'color-mix(in srgb, var(--color-accent) 9%, transparent)' : 'var(--color-surface)', ring: now ? 'inset 0 0 0 1px var(--color-accent)' : 'none' });
+    const feedNight = [
+      sp(R12, 9, '我站 2号 是真预言家，4号 悍跳的逻辑站不住——他给 8号 发金水却不敢报下家警徽流。今晚如果我被刀，请大家跟 2号 的查验走。'),
+      sys('【投票开始】'), sys('【计票】7号得票最高，出局'), sys('【放逐】7号被票出'),
+      sys('———— 第 2 轮 ————'), sys('【阶段】夜晚 · 守卫行动'), gm('守卫守护 2号'),
+      sys('【阶段】夜晚 · 狼人行动'), gm('1号狼提议刀 9号'), gm('4号狼提议刀 9号'), gm('10号狼提议刀 6号'),
+      gm('狼队第 1 轮意见不一致（1号→9号、4号→9号、10号→6号），重新提案'), gm('狼队决定刀 9号'),
+      sys('【阶段】夜晚 · 女巫行动'), gm('女巫使用解药救 9号'),
+    ];
+    const feedDay = [
+      sys('———— 第 2 轮 ————'), gm('狼队决定刀 6号'), gm('女巫未用药'), gm('预言家查验 4号：狼人'),
+      sys('【天亮】昨夜出局：6号'),
+      sp(R9, 6, '我是村民，昨天听发言 4号 和 7号 互相护，狼在那一边。警徽流请 2号 自己把握。', [['遗言', 'last']]),
+      sys('【阶段】白天 · 发言 · 从 7号 顺时针'),
+      sp(R9, 7, '6号 走了很可惜，但我认为 2号 昨天的金水给得太随意，4号 才是查杀狼的那个视角。'),
+      sp(R9, 8, '我是猎人，警徽流看 2号 的，4号 昨天发言全程站边不带逻辑。今天票 4号。'),
+      sp(R9, 2, '昨晚查验 4号 狼人。警徽流先 5号 再 8号。好人今天集火 4号，不要分票。', [['自称预言家', 'claim'], ['警徽流 5→8', 'badge']]),
+      sp(R9, 4, '2号 这是穿了我的查杀。我的警徽流 8号 → 0号，8号 是我的金水，他反水我很意外。', [['自称预言家', 'claim'], ['警徽流 8→0', 'badge']]),
+      sp(R9, 5, '我作为女巫昨晚没有用药——', [['发言中', 'now']], true),
+    ];
+    const feedVote = [
+      sys('———— 第 3 轮 ————'), sys('【天亮】昨夜出局：0号'),
+      sp(R9, 0, '好人加油，最后一狼在 4号 和 8号 里，我更倾向 4号。', [['遗言', 'last']]),
+      sp(R9, 2, '4号 查杀已经两天了，今天出他游戏结束。', [['自称预言家', 'claim']]),
+      sp(R9, 4, '你们出我就输了。8号 才是狼。'),
+      sys('【投票开始】'), gm('2号 警长票计 1.5'),
+    ];
+    const feedSpec = [
+      sp(R12, 9, '我站 2号 是真预言家，4号 悍跳的逻辑站不住——他给 8号 发金水却不敢报下家警徽流。今晚如果我被刀，请大家跟 2号 的查验走。'),
+      sys('【投票开始】'), sys('【计票】7号得票最高，出局'), sys('【放逐】7号被票出'),
+      sys('———— 第 2 轮 ————'), sys('【阶段】夜晚 · 守卫行动'), sys('【阶段】夜晚 · 狼人行动'), sys('【阶段】夜晚 · 女巫行动'),
+    ];
+    const nightRows = [
+      { role: '守卫 · 11号', text: '守护 2号', col: '#3B82F6', op: 1 },
+      { role: '狼队 · 1号 4号 10号', text: '第 1 轮提议不一致：1号→9号、4号→9号、10号→6号；第 2 轮一致，决定刀 9号', col: C.WOLF, op: 1 },
+      { role: '女巫 · 5号', text: '使用解药救 9号（毒药未用）', col: '#34C38F', op: 1 },
+      { role: '预言家 · 2号', text: '查验 4号：狼人', col: '#EAB308', op: 1 },
+      { role: '猎人 · 8号', text: '等待确认（首夜后直通）', col: 'var(--color-neutral-600)', op: 0.55 },
+    ];
+    const seatRow = (voter, target, roles, o = {}) => ({ voter: voter + '号', target: target == null ? '弃票' : target + '号', vc: colOf(voter, roles), tc: target == null ? 'var(--color-neutral-500)' : colOf(target, roles), w: o.w || '', op: o.pending ? 0.4 : 1 });
+    const votesR2 = [seatRow(7, 4, R9), seatRow(2, 4, R9, { w: '1.5' }), seatRow(1, 8, R9), seatRow(5, 4, R9), seatRow(4, 8, R9), { voter: '0号', target: '…', vc: 'var(--color-neutral-500)', tc: 'var(--color-neutral-600)', w: '', op: 0.4 }, { voter: '8号', target: '…', vc: 'var(--color-neutral-500)', tc: 'var(--color-neutral-600)', w: '', op: 0.4 }];
+    const tallyR2 = [{ seat: '4号', col: C.WOLF, n: '3.5', pct: 70 }, { seat: '8号', col: C.GOD, n: '2', pct: 40 }, { seat: '弃票', col: 'var(--color-neutral-600)', n: '0', pct: 0 }];
+    const votesPK = [seatRow(2, 4, R9, { w: '1.5' }), seatRow(5, 4, R9), seatRow(0, 4, R9), seatRow(7, 8, R9), seatRow(1, 8, R9)];
+    const votesR3 = [seatRow(2, 4, R9, { w: '1.5' }), seatRow(5, 4, R9), seatRow(4, 8, R9), seatRow(0, 4, R9), { voter: '8号', target: '…', vc: 'var(--color-neutral-500)', tc: 'var(--color-neutral-600)', w: '', op: 0.4 }];
+    const tallyR3 = [{ seat: '4号', col: C.WOLF, n: '3.5', pct: 78 }, { seat: '8号', col: C.GOD, n: '1', pct: 22 }];
+    const ORDER = [7, 8, 0, 1, 2, 4, 5];
+    const order9 = ORDER.map((s, k) => {
+      const done = k < 5, now = k === 5;
+      return { seat: s + '号', name: NAMES[s], bg: now ? 'var(--color-accent-900)' : 'transparent', fg: now ? 'var(--color-accent-200)' : done ? 'var(--color-neutral-500)' : 'var(--color-text)', st: now ? '发言中' : done ? '已发言' : '待发言', stCol: now ? 'var(--color-accent)' : 'var(--color-neutral-600)' };
+    });
+    const STG = ['上警报名', '上警发言', '退水确认', '警下投票', '公布结果'];
+    const stages = cur => STG.map((t, k) => ({ t, fg: k < cur ? 'var(--color-neutral-500)' : k === cur ? 'var(--color-text)' : 'var(--color-neutral-700)', dot: k < cur ? 'var(--color-neutral-600)' : k === cur ? 'var(--color-accent)' : 'var(--color-neutral-800)', ring: k === cur ? '0 0 0 3px var(--color-accent-900)' : 'none' }));
+    const ticks = [[12, 'n'], [26, 'd'], [9, 'n'], [30, 'd'], [8, 'n'], [15, 'd']].map(([w, k]) => ({ w, bg: k === 'n' ? '#2b2741' : '#3f424d' }));
+    const rolesOf = list => list.map(r => ({ a: ROLE[r][0], col: C[ROLE[r][1]], tint: tint(C[ROLE[r][1]]) }));
+    const presets = [
+      { id: 'std_9_kill_side', zh: '9 人屠边 · 预女猎 + 3 狼 + 3 民', roles: rolesOf(['WEREWOLF', 'SEER', 'WITCH', 'HUNTER', 'VILLAGER']), win: '屠边', ring: 'none' },
+      { id: 'std_9_kill_all', zh: '9 人屠城 · 预女猎 + 3 狼 + 3 民', roles: rolesOf(['WEREWOLF', 'SEER', 'WITCH', 'HUNTER', 'VILLAGER']), win: '屠城', ring: 'none' },
+      { id: 'std_12_yn_hunter_idiot', zh: '12 人预女猎白 · 4 狼 + 4 民', roles: rolesOf(['WEREWOLF', 'SEER', 'WITCH', 'HUNTER', 'IDIOT', 'VILLAGER']), win: '屠边', ring: 'none' },
+      { id: 'std_12_yn_hunter_guard', zh: '12 人预女猎守 · 4 狼 + 4 民', roles: rolesOf(['WEREWOLF', 'SEER', 'WITCH', 'HUNTER', 'GUARD', 'VILLAGER']), win: '屠边', ring: 'inset 0 0 0 1px var(--color-accent)' },
+    ];
+    const SK = [['seer-badge-flow', '预言家警徽流', ['预言家'], ['白天']], ['seer-vs-claim-jump', '预言家对跳应对', ['预言家'], ['白天']], ['wolf-charge', '狼人冲锋悍跳', ['狼人'], ['竞选', '白天']], ['side-taking', '站边逻辑', ['全部'], ['白天']], ['vote-discipline', '投票纪律', ['全部'], ['投票']], ['witch-potion-timing', '女巫用药时机', ['女巫'], ['夜晚']], ['hunter-shot-target', '猎人开枪目标', ['猎人'], ['开枪']], ['sheriff-herding', '警长归票', ['警长'], ['白天']], ['logic-chain', '逻辑链复盘', ['全部'], ['白天']], ['strategy-adaptation', '策略自适应', ['全部'], ['全局']]];
+    const skills = SK.map(([name, desc, roles, phases], k) => ({ name, desc, roles: roles.join(' / '), phases: phases.join(' / '), on: [0, 1, 3, 4].includes(k), bg: [0, 1, 3, 4].includes(k) ? 'var(--color-accent-900)' : 'transparent', ring: [0, 1, 3, 4].includes(k) ? 'inset 0 0 0 1px var(--color-accent-700)' : 'inset 0 0 0 1px var(--color-divider)', dot: [0, 1, 3, 4].includes(k) ? 'var(--color-accent)' : 'transparent' }));
+    const skillTags = (list, max = 3) => ({ tags: list.slice(0, max), more: list.length > max ? '+' + (list.length - max) : '' });
+    const AG = [
+      ['夜枭', 'ollama/qwen2.5:14b', '', ['seer-badge-flow', 'seer-vs-claim-jump', 'side-taking', 'vote-discipline', 'logic-chain'], 'INTJ · 冷静 0.9 · 多疑 0.7', 'night-owl', '2 小时前', 0.3, true],
+      ['铁齿', 'openai/gpt-4o-mini', '反思 ollama/qwen2.5:14b', ['wolf-charge', 'side-taking', 'vote-discipline'], '激进 0.9 · 煽动 0.8 · 直率', 'iron-teeth', '昨天', 0.7, false],
+      ['老好人', 'ollama/qwen2.5:7b', '', ['side-taking', 'vote-discipline'], 'Big Five · 宜人性 0.9', '', '3 天前', 0.3, false],
+      ['狐语', 'anthropic/claude-3-5-haiku', '发言 openai/gpt-4o', ['wolf-charge', 'strategy-adaptation', 'logic-chain', 'sheriff-herding'], '狡黠 0.8 · 幽默 0.6', 'fox', '上周', 0.5, true],
+      ['沉默者', 'ollama/qwen2.5:7b', '', ['vote-discipline'], '沉默 0.9 · 顺从 0.6', '', '上周', 0.2, false],
+      ['随机 Bot', '—', '', [], '内置 · 零 LLM', '', '', 0, false],
+    ];
+    const agents = AG.slice(0, 5).map(([name, model, sub, sk, per, mem, upd, temp, thinking]) => ({ name, model, sub, ...skillTags(sk), skN: sk.length, per, mem: mem ? '记忆 ' + mem : '', hasMem: !!mem, upd, temp: 'T=' + temp, thinking }));
+    const seatAssign = [['夜枭', 'a'], ['铁齿', 'a'], ['随机 bot', 'r'], ['狐语', 'a'], ['老好人', 'a'], ['老好人', 'a'], ['随机 bot', 'r'], ['随机 bot', 'r'], ['沉默者', 'a'], ['老好人 · 填满（*）', 's'], ['老好人 · 填满（*）', 's'], ['老好人 · 填满（*）', 's']].map(([v, k], i) => ({ seat: i + '号', v, fg: k === 'r' ? 'var(--color-neutral-500)' : k === 's' ? 'var(--color-neutral-400)' : 'var(--color-text)', bg: k === 'a' ? 'var(--color-surface)' : 'transparent', ring: k === 'a' ? 'inset 0 0 0 1px var(--color-divider)' : 'inset 0 0 0 1px var(--color-neutral-900)', dot: k === 'a' ? 'var(--color-accent)' : k === 's' ? 'var(--color-neutral-600)' : 'transparent', warn: i === 3 ? '记忆 fox 仅此一座' : '' }));
+    const TRAITS = ['激进', '谨慎', '多疑', '直率', '冷静', '煽动', '逻辑', '情绪化', '忠诚', '狡黠', '沉默', '强势', '顺从', '幽默', '记仇'];
+    const chosen = { 冷静: 0.9, 多疑: 0.7, 逻辑: 0.8 };
+    const traitChips = TRAITS.map(t => ({ t, on: t in chosen, bg: t in chosen ? 'var(--color-accent-900)' : 'transparent', fg: t in chosen ? 'var(--color-accent-200)' : 'var(--color-neutral-400)', ring: t in chosen ? 'inset 0 0 0 1px var(--color-accent-700)' : 'inset 0 0 0 1px var(--color-divider)' }));
+    const traitSliders = Object.entries(chosen).map(([t, v]) => ({ t, v: v.toFixed(1), pct: v * 100 }));
+    const mbti = [['E', 'I', 1], ['S', 'N', 1], ['T', 'F', 0], ['J', 'P', 0]].map(([a, b, sel]) => ({ a, b, aOn: sel === 0, bOn: sel === 1, aStyle: sel === 0 ? 'color:var(--color-accent);box-shadow:inset 0 0 0 1px var(--color-accent)' : 'color:var(--color-neutral-500)', bStyle: sel === 1 ? 'color:var(--color-accent);box-shadow:inset 0 0 0 1px var(--color-accent)' : 'color:var(--color-neutral-500)' }));
+    const steps = [['选择对局', '12 人预女猎守 · seed 随机', 'done'], ['分配座位', '进行中', 'now'], ['创建并开始', '', 'todo']].map(([t, sub, k], i) => ({ n: i + 1, t, sub, fg: k === 'todo' ? 'var(--color-neutral-600)' : 'var(--color-text)', dot: k === 'now' ? 'var(--color-accent)' : k === 'done' ? 'var(--color-neutral-600)' : 'var(--color-neutral-800)', nfg: k === 'now' ? 'var(--color-bg)' : 'var(--color-neutral-300)', ring: k === 'now' ? '0 0 0 4px var(--color-accent-900)' : 'none' }));
+    const ST = { ok: ['#34C38F', '连通 · 142 ms'], bad: ['#E5484D', '失败 · 401'], none: ['var(--color-neutral-600)', '未测试'] };
+    const providers = [
+      ['本地 Ollama', 'Ollama', 'http://localhost:11434', '', 'qwen2.5:14b', 'ok', '夜枭、老好人、沉默者', 3],
+      ['OpenAI', 'OpenAI', '默认地址', '····ab12', 'gpt-4o-mini', 'ok', '铁齿', 1],
+      ['Anthropic', 'Anthropic', '默认地址', '····9f3e', 'claude-3-5-haiku', 'bad', '狐语', 1],
+      ['公司网关', 'OpenAI 兼容', 'https://llm.internal/v1', '····77c0', 'qwen-max', 'none', '', 0],
+    ].map(([name, kind, base, key, model, st, refs, n]) => ({ name, kind, base, key: key ? '已配置 ' + key : '未配置', keyFg: key ? 'var(--color-neutral-200)' : 'var(--color-neutral-500)', model, stCol: ST[st][0], stTxt: ST[st][1], refs: n ? n + ' 个 Agent 引用：' + refs : '未被引用', canDel: n === 0, delOp: n ? 0.45 : 1 }));
+    const kinds = ['Ollama', 'OpenAI', 'Anthropic', 'OpenAI 兼容', 'Gemini', 'DeepSeek'].map((k, i) => ({ k, style: i === 0 ? 'color:var(--color-accent);box-shadow:inset 0 0 0 1px var(--color-accent)' : 'color:var(--color-neutral-400)' }));
+    const models = [['qwen2.5:14b', '9.0 GB', true], ['qwen2.5:7b', '4.7 GB', false], ['deepseek-r1:8b', '4.9 GB', false], ['llama3.1:8b', '4.9 GB', false], ['gemma2:9b', '5.4 GB', false]].map(([m, s, on]) => ({ m, s, bg: on ? 'var(--color-accent-900)' : 'transparent', fg: on ? 'var(--color-accent-200)' : 'var(--color-text)', mark: on ? '✓' : '' }));
+    const provOpts = [['本地 Ollama', 'ollama · qwen2.5:14b', true], ['OpenAI', 'openai · gpt-4o-mini', false], ['Anthropic', 'anthropic · 最近测试失败', false], ['公司网关', 'openai_compatible', false], ['未配置——直接写 LiteLLM 模型串', 'provider 为空 · 走环境变量', false]].map(([t, s, on], i) => ({ t, s, bg: on ? 'var(--color-accent-900)' : 'transparent', fg: i === 4 ? 'var(--color-neutral-400)' : on ? 'var(--color-accent-200)' : 'var(--color-text)', sep: i === 4 ? '1px solid var(--color-divider)' : 'none' }));
+    return { providers, kinds, models, provOpts, skills, agents, seatAssign, traitChips, traitSliders, mbti, steps, seats12N, seats12S, seats9D, seats9V, lines12N, feedNight, feedDay, feedVote, feedSpec, nightRows, votesR2, tallyR2, votesPK, votesR3, tallyR3, order9, stagesVote: stages(3), stagesDone: stages(4), ticks, presets };
+  }
+}
+</script>
+</body>
+</html>

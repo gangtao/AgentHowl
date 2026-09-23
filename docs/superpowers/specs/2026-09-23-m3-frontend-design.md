@@ -114,7 +114,7 @@ python -m app.cli.export_fixture --preset std_9_kill_side --seed 3 --out ../fron
                     AgentCard, AgentEditor, PersonalityEditor, SkillPicker, SeatAssignment,
                     ProviderCard, ProviderEditor, ModelSelect}/
     src/pages/{Lobby, AgentLibrary, Providers, GamePage}.tsx
-    src/styles/{tokens.css, global.css}
+    src/styles/{tokens.css（= docs/design/nocturne.css + 语义色）, global.css}
   ```
 - `vite.config.ts`：`server.proxy = {"/api": {target: "http://localhost:8000", ws: true, changeOrigin: true}}`；`build.outDir = "dist"`。
 - `package.json` scripts：`dev`、`build`、`preview`、`lint`、`typecheck`（`tsc --noEmit`）、`test`（vitest run）、`check`（lint && typecheck && test）。
@@ -209,6 +209,28 @@ python -m app.cli.export_fixture --preset std_9_kill_side --seed 3 --out ../fron
 - 深色主题为主（夜晚遮罩自然融合）；阵营色：狼 `#E5484D`、好人 / 神职 `#F5B041`、村民 `#9AA4B2`；状态色：存活白、出局 40% 灰；强调色蓝 `#3B82F6`（当前发言 / 交互）。
 - 中文界面；座位号统一「N号」；文案沿用后端叙述口径（不自创规则用语）。
 - 组件自适应：座位环按容器最小边缩放；发言流固定高度滚动；ReplayBar 固定底部。
+
+### 7.5 设计定稿（Claude Design 项目「AgentHowl UI Mockups」，`docs/design/m3-ui-mockups.html` + `docs/design/nocturne.css`）
+
+实现以设计稿为准；设计稿中的可复用 HTML/内联样式可直接转成 JSX + CSS Modules。与本文 §7.2–7.4 文字稿不同处以此节为准：
+
+- **设计系统 Nocturne**：`src/styles/tokens.css` = `docs/design/nocturne.css` 原样（Inter、`--color-*` 阶梯、`--space-*` 0.7× 密度、`--radius-*`、`--shadow-*`、`.btn/.input/.field/.seg/.card/.tag/.nav/.dialog` 类）。交互强调色用 Nocturne 紫 `--color-accent`（取代 §7.4 的蓝）；主按钮是描边不填充。分隔线用「两端 48px 渐隐」渐变（`background: linear-gradient(to right, transparent, var(--color-divider) 48px, var(--color-divider) calc(100% - 48px), transparent) no-repeat bottom/100% 1px`）。
+- **语义色**（tokens.css 追加）：狼 `--ah-wolf: #E5484D`、神职 `--ah-god: #F5B041`、村民 `--ah-villager: #9AA4B2`；夜间连线：狼刀 `#E5484D` 虚线 `2 1.6`、守护 `#3B82F6`、解药 `#34C38F`、毒药 `#A855F7`、查验 `#EAB308`；成功 `#34C38F`、警告 `#F5B041`、错误 `#E5484D`；`tint(c, p=22)` = `color-mix(in srgb, c p%, transparent)`。
+- **导航**：`.nav` 56px，品牌「AgentHowl」+ 链接「新的一局」「Agent 档案库」「模型服务」（当前页 `aria-current="page"`）；页面容器 `padding: 36px var(--space-8) 32px 56px`。
+- **GamePage**：`grid-template-rows: 48px [终局横幅 40px] minmax(0,1fr) 52px`；三栏 `320px minmax(0,1fr) 320px`；顶栏：品牌 / `game_id` 缩略（等宽字体、neutral-600）/ 轮次 `.tag-neutral` / 阶段中文（15px 500）/ 模式（直播 = 红点 `ah-pulse` 1.6s；回放 = ▶ 灰）/ 右侧「已连接 · seq N」+ 视角 `.seg`（上帝 | 观众，只读标签）。
+  - **SeatCircle**：280×280 容器，座位 `left/top = 50 + 41·cos/sin(-90° + i·360°/n)` %，0 号顶部顺时针；座位圆 44–46px，`border 1.5px` 阵营色、背景 `tint(阵营色)`，圆内角色缩写（狼 / 预 / 巫 / 猎 / 守 / 痴 / 民），观众视角为 `?` + neutral；警长 ★ 徽章（16px，`#F5B041` 底 `#161826` 字，右上 -6px）；出局：整体 `opacity .42` + 圆内 ✕ 遮罩；当前发言 `box-shadow: 0 0 0 2px var(--color-accent), 0 0 18px …55%`；投票时右下票数小标（accent 底）；座位下方「N号 名字」10.5px neutral-400。圆心文字：发言中 / 投票中 + 大号数值。图例行；底部三卡：存活 / 狼·好人（观众视角无此卡）/ 警长。夜间 GM 视角 SVG `viewBox 0 0 100 100` 画连线（`stroke-width .9`）。
+  - **SpeechFeed**：`justify-content:flex-end` 底部对齐、自动滚动；三种条目：系统行（居中 11.5px neutral-500）、GM 行（`[GM]` 等宽前缀，背景 `color-mix(neutral-800 55%)`）、发言卡（`grid 58px minmax(0,1fr)`，左列「N号」阵营色 + 名字，右列 tag 行 + 13.5px 正文；当前发言者卡片背景 `accent 9%` + 内描边；tags：自称 = `tint(god,20)`/金，警徽流 = neutral-800，发言中 = accent-800/100，遗言 = neutral-800/300）；「↓ 有 N 条新消息」胶囊固定底部居中；回放游标之后显示「— 之后 N 条事件在回放游标之后 —」。
+  - **NightOverlay**：GM 视角 `rgba(10,12,24,.38)` + 中央卡「天黑请闭眼」+ 当前角色（角色色）；观众视角 `.7` 遮罩、无卡片背景。
+  - **右栏**：NightSummary（GM：每行 8px 色点 + 角色·座位 + 文本；底部「结算于天亮 · 当前预计出局」）/ 观众夜间「夜晚进行中…」旋转圈 + 「夜间行动仅上帝视角可见」；PlayerStatusPanel（发言顺序列表：已发言 neutral-500 / 发言中 accent-900 底 / 待发言；公开警徽流 tag 列表；GM 备注行）；VotePanel（voter → target 列表 + 权重、实时计票条形 8px、等待 X 投票…；PK 变体：两张候选卡 + 结果卡「【计票】…」「【放逐】… · 身份翻牌」）；ElectionPanel（子阶段进度点列 上警报名 / 上警发言 / 退水确认 / 警下投票 / 公布结果；上警名单 tags（退水划线）；警下投票计票；当选卡 + 发言方向 `.seg` + 顺序；警徽流失卡）。
+  - **终局横幅**：40px 行，金色渐变底「═══ 游戏结束：好人阵营胜（GOOD）═══ · 回放显示到 seq N」。
+  - **ReplayBar**：52px；按钮组 ⏮ ◀ ▶/❚❚ ▶▶（30px `.btn-icon`）；轨道 6px：按轮次分段底色（夜 `#2b2741` / 天 `#3f424d`）+ accent 35% 进度 + 14px 圆点（回放中加发光）；`seq X/Y` 等宽；速度按钮「1× ▾」（0.5/1/2/4/8）；「回到直播」主按钮（不可用时 `.45`）；键盘提示「空格 播放/暂停 · ←/→ 步进」。
+  - **错误 / 空态**：4404「对局不存在」+ 返回 Lobby；4409「等待开局 · 每 2 秒重试 · 第 N 次」旋转圈；重连中在顶栏显示 `#F5B041` 空心点「重连中 · 4s 后重试（第 3 次）」且内容保持可读；4401/4403「token 无效」。
+  - **<900px**：座位环 240px 与图例并排在顶部条，发言流在下，ReplayBar 固定底部。
+- **Lobby 三步**（1180 宽）：左列 220px 步骤指示（圆点：完成 neutral-600 / 进行中 accent + 3px accent-900 光圈 / 待办 neutral-800）+ 底部「汇总」卡（`agents` 映射预览、主按钮）；右侧标题 + `grid 300px 1fr`：档案库侧栏（搜索框 + AgentCard 精简版 + 「+ 新建 Agent」）与座位表（两列，每行 `34px 1fr`：座位号 + 下拉行——Agent 白字 surface 底、随机 bot neutral-500、填满(*) neutral-400；同 memory_id 冲突行下方 `#F5B041` 提示）；工具行三按钮；图例文案。步骤 1 preset 卡片：名称 + 胜利条件 tag + 角色圆点组（角色缩写、阵营色描边）+ `config_id` 等宽；选中态 `inset 0 0 0 1px var(--color-accent)`；seed 输入「随机」。
+- **AgentLibrary**：网格 3 列 `.card.elev-sm`：名字 20px、模型等宽 11.5px、副行（发言/反思模型）、`T=` 右上、技能 tag ≤3 +n、性格摘要 neutral-300、`记忆 id` accent-300、`card-meta` 更新时间 + 编辑/复制/删除 ghost 按钮；末尾虚线「+ 新建 Agent」占位卡；空态图标圈 + 文案；删除确认 `.dialog`（删除按钮红描边）。
+- **AgentEditor 抽屉**：右侧 620px，`grid-rows auto 1fr auto`，头部标题 + `a_xxxx` tag + ✕；四组小标题 `10px letter-spacing .1em uppercase accent`：1·基本（名字 + ✓ 唯一；`ModelSelect`：模型服务下拉（选项含副标题、末项兼容模式 neutral-400）+ 模型下拉（等宽）；发言 / 反思模型「同模型」占位；温度滑块 4px 轨道 accent + 14px 圆点；thinking 开关 34×20）；2·技能（标题右侧「全部（*）」开关；两列复选卡：选中 accent-900 底 + accent-700 描边）；3·人格（描述 textarea + 计数；15 个特质 chips 点选（选中 accent-900/200）+ 「+ 自定义」；每个选中特质一条滑块 `44px 1fr 28px`；预设 `.seg` 无预设 | MBTI | Big Five，MBTI 四组两项 `.seg`；说话风格 + 计数；右侧 200px 只读预览卡「预览 · render_personality」）；4·记忆（`memory_id` 等宽 + ✓ 唯一 + 「按名字生成」）；底部：护栏红字提示（左）+ 取消 / 保存。
+- **Providers**：两列 `.card.elev-sm`：名字 18px + 类型 `.tag-accent` + 右侧连通点（`#34C38F` 连通 · 142 ms / `#E5484D` 失败 · 401 / neutral-600 未测试）；`72px 1fr` 键值网格（地址 / 密钥「已配置 ····ab12」或「未配置」/ 默认模型，等宽）；`card-meta`：引用文案 + 测试连接 / 编辑 / 删除（被引用时 `.45`）。**ProviderEditor** 抽屉 560px：名字 + ✓ 唯一；类型 chips 六项（Ollama / OpenAI / Anthropic / OpenAI 兼容 / Gemini / DeepSeek，选中 accent 描边）；API 地址（等宽，选类型自动填）+ 说明行；API 密钥（占位「保留现有密钥（留空即不改）」+ 「清除」）；默认模型（标签右侧「↻ 拉取模型列表」；下拉面板 `background: var(--color-bg)` + `shadow-md`，首行「GET /api/tags · N 个模型 · 可手输」，每项 模型名 / 大小 / ✓）；测试连接结果条（绿 10% 底「连通 · 142 ms」或红「失败 · 318 ms」+ 等宽错误原文块）；底部「被 N 个 Agent 引用」+ 取消 / 保存；空态；删除被引用 `.dialog`「无法删除「本地 Ollama」仍被 3 个 Agent 引用：…」。
+- **示例数据**（设计稿脚本）里的名字（沐阳、子墨、婉清…）、技能名与文案可直接用于 Storybook/测试假数据；技能名以 `backend/skills/` 为准。
 
 ## 8. 开发 / 部署集成
 
