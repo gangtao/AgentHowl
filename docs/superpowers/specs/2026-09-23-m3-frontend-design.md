@@ -68,8 +68,7 @@
 
 **接入调用链**
 - `AgentProfile.provider: str | None = None`（provider_id；`extra=forbid` 不变）。`validate_profiles(..., providers=None)`：给了 provider 集合时校验引用存在（未知 → 400）。
-- `AgentConfig` 增加 `api_base: str | None`、`api_key: str | None`；`to_agent_config(profile, game_config, provider=None)` 用 `resolve_model` 填 `model` / `model_speech` / `reflection_model`（三者共用同一 provider）与凭据。
-- `LiteLLMInstructorClient.complete_structured(..., api_base=None, api_key=None)`：非空时随调用透传给 `litellm`（LiteLLM 支持按次传参）；`AgentPlayerPort` 从 `AgentConfig` 取。`memory.reflect` 与 `reflect_on_game` 同样透传。
+- `to_agent_config(profile, game_config, provider=None)` 用 `resolve_model` 填 `model` / `model_speech` / `reflection_model`（三者共用同一 provider）。**凭据绑定在每个端口的 `LiteLLMInstructorClient(api_base=, api_key=)` 实例上**（实现期附注：`build_agent_port` 本就为每个端口新建客户端，因此 `AgentConfig` / `complete_structured` / `memory.reflect` / `reflect_on_game` 签名零改动，`ScriptedLLMClient` 不受影响）。
 - registry / CLI 建端口时按 `profile.provider` 从 `ProviderStore` 取 provider（registry 在 `start()`；CLI `--providers-dir`，默认 `data/providers`）；`GameRegistry(provider_store=)`。
 - **隔离**：`GameMeta.agents` 记录的 `AgentProfile` 只含 `provider` id 与模型名，**永不含密钥**；日志（logger）不得打印 `api_key`；`/meta`、建局回显同理。
 
