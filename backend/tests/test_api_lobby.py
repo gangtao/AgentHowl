@@ -393,3 +393,55 @@ def test_events_endpoint_filters_skills_meta_from_spectators_but_replay_not() ->
             if f["type"] == "game_event":
                 frames.append(f["event"])
     assert all("skills" not in e["meta"] for e in frames)
+
+
+def test_gm_token_reads_full_state_events_and_cannot_act_or_start() -> None:
+    """issue #26：GM token 读全量（GM_ONLY/WOLVES/ROLE_SELF、meta.skills）；不能行动/开局。"""
+    import time as _t
+
+    from app.runtime.player_port import BotPlayerPort
+
+    class _Skilled(BotPlayerPort):
+        last_skills_used = ("wolf-claim-jump",)
+
+    app = create_app(
+        store=InMemoryEventStore(),
+        timeouts=RunnerTimeouts(speech_sec=5.0, action_sec=5.0),
+        agent_port_factory=lambda seat, h: _Skilled(state_provider=h.live_state),
+    )
+    client = TestClient(app)
+    body = {
+        "preset": "std_9_kill_side",
+        "config_override": {"seed": 5},
+        "agents": {"*": {"model": "m"}},
+    }
+    created = client.post("/api/v1/games", json=body).json()
+    gid = created["game_id"]
+    host, gm, spec = created["host_token"], created["gm_token"], created["spectator_token"]
+    assert gm and gm != host and gm != spec
+    r_start_gm = client.post(f"/api/v1/games/{gid}/start", json={}, headers=_auth(gm))
+    assert r_start_gm.status_code == 403
+    r_start_host = client.post(f"/api/v1/games/{gid}/start", json={}, headers=_auth(host))
+    assert r_start_host.status_code == 200
+    handle = client.app.state.games.get(gid)  # type: ignore[attr-defined]
+    deadline = _t.time() + 30
+    while not (handle.task is not None and handle.task.done()) and _t.time() < deadline:
+        _t.sleep(0.05)
+    state = client.get(f"/api/v1/games/{gid}/state", headers=_auth(gm)).json()
+    roles = {p["role"] for p in state["players"]}
+    assert state["phase"] == "GAME_OVER" and roles >= {"WEREWOLF", "SEER"}
+    assert "state_version" in state and "sheriff_confirmed" in state
+    events = client.get(f"/api/v1/games/{gid}/events", headers=_auth(gm)).json()
+    vis = {e["visibility"] for e in events}
+    assert {"PUBLIC", "GM_ONLY", "WOLVES", "ROLE_SELF"} <= vis
+    assert any(e["meta"].get("skills") == "wolf-claim-jump" for e in events)
+    spec_events = client.get(f"/api/v1/games/{gid}/events", headers=_auth(spec)).json()
+    assert all(e["visibility"] == "PUBLIC" and "skills" not in e["meta"] for e in spec_events)
+    assert client.get(f"/api/v1/games/{gid}/speeches", headers=_auth(gm)).status_code == 200
+    assert client.get(f"/api/v1/games/{gid}/replay", headers=_auth(gm)).status_code == 200
+    assert client.get(f"/api/v1/games/{gid}/meta", headers=_auth(gm)).status_code == 200
+    r = client.post(
+        f"/api/v1/games/{gid}/actions", json={"tool": "vote", "arguments": {}}, headers=_auth(gm)
+    )
+    assert r.status_code == 403
+    assert client.get(f"/api/v1/games/{gid}/my-turn", headers=_auth(gm)).status_code == 403

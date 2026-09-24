@@ -234,3 +234,21 @@ async def test_dead_sender_task_still_unsubscribes() -> None:
 
     # 断言：订阅必须被摘除
     assert len(manager._subs) == 0
+
+
+def test_ws_gm_stream_is_unfiltered(client: TestClient) -> None:
+    created = client.post(
+        "/api/v1/games", json={"preset": "std_9_kill_side", "config_override": {"seed": 7}}
+    ).json()
+    gid, host, gm = created["game_id"], created["host_token"], created["gm_token"]
+    r_start = client.post(f"/api/v1/games/{gid}/start", json={}, headers=_auth(host))
+    assert r_start.status_code == 200
+    vis: set[str] = set()
+    with client.websocket_connect(f"/api/v1/ws?token={gm}") as ws:
+        while True:
+            frame = ws.receive_json()
+            if frame["type"] == "game_event":
+                vis.add(frame["event"]["visibility"])
+            if frame["type"] == "game_over":
+                break
+    assert {"PUBLIC", "GM_ONLY"} <= vis

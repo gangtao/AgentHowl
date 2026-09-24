@@ -74,10 +74,12 @@ def create_game_endpoint(
         if req.allow_spectators
         else None
     )
+    gm_token = tokens.issue(TokenInfo(game_id=handle.game_id, seat=None, kind="GM"))
     return CreateGameResponse(
         game_id=handle.game_id,
         host_token=host_token,
         spectator_token=spectator_token,
+        gm_token=gm_token,
         config=config.model_dump(mode="json"),
         agents=handle.agents,
     )
@@ -115,6 +117,13 @@ def _handle_for(games: GameRegistry, game_id: str) -> GameHandle:
     return handle
 
 
+def _viewer_for(info: TokenInfo) -> Any:
+    """token → 可见性 viewer：座位号 / "SPECTATOR" / "GM"（GM 全量，issue #26）。"""
+    if info.kind == "PLAYER":
+        return info.seat
+    return "GM" if info.kind == "GM" else "SPECTATOR"
+
+
 def games_store_events(games: GameRegistry, game_id: str) -> list[Event]:
     return games.store.load_events(game_id)
 
@@ -126,11 +135,13 @@ def state_endpoint(
     games: GameRegistry = Depends(get_games),
 ) -> dict[str, Any]:
     handle = _handle_for(games, game_id)
-    require_kind(info, game_id, "PLAYER", "SPECTATOR")
+    require_kind(info, game_id, "PLAYER", "SPECTATOR", "GM")
     live = handle.live_state()  # 未开局 → LobbyError(409)
     if info.kind == "PLAYER":
         assert info.seat is not None
         return build_observation(live, info.seat).model_dump(mode="json")
+    if info.kind == "GM":
+        return live.model_dump(mode="json")
     return SpectatorView(
         game_id=game_id,
         phase=str(live.phase),
@@ -159,7 +170,7 @@ def speeches_endpoint(
     games: GameRegistry = Depends(get_games),
 ) -> list[SpeechItem]:
     handle = _handle_for(games, game_id)
-    require_kind(info, game_id, "PLAYER", "SPECTATOR")
+    require_kind(info, game_id, "PLAYER", "SPECTATOR", "GM")
     if not handle.started:
         return []
     # 服务端以 GM 视角扫描以计算 round/phase（返回的两类事件本身是 PUBLIC）
@@ -217,10 +228,10 @@ def events_endpoint(
     games: GameRegistry = Depends(get_games),
 ) -> list[dict[str, Any]]:
     handle = _handle_for(games, game_id)
-    require_kind(info, game_id, "PLAYER", "SPECTATOR")
+    require_kind(info, game_id, "PLAYER", "SPECTATOR", "GM")
     if not handle.started:
         return []
-    viewer: Any = info.seat if info.kind == "PLAYER" else "SPECTATOR"
+    viewer: Any = _viewer_for(info)
     events = games.store.load_events(game_id, from_seq=from_seq)
     visible = visible_events(handle.live_state(), events, viewer)
     return [event_json_for_viewer(e, viewer) for e in visible]
@@ -233,7 +244,7 @@ def replay_endpoint(
     games: GameRegistry = Depends(get_games),
 ) -> list[dict[str, Any]]:
     handle = _handle_for(games, game_id)
-    require_kind(info, game_id, "PLAYER", "SPECTATOR", "HOST")
+    require_kind(info, game_id, "PLAYER", "SPECTATOR", "HOST", "GM")
     if not handle.started or handle.live_state().phase != Phase.GAME_OVER:
         raise HTTPException(status_code=403, detail="对局未结束，上帝视角回放未开放")
     return [event_to_json(e) for e in games.store.load_events(game_id)]
@@ -250,7 +261,7 @@ def meta_endpoint(
     与 /replay 同一门槛：终局后才开放——档案含模型与技能等 GM 层信息，不经 observation 暴露。
     """
     handle = _handle_for(games, game_id)
-    require_kind(info, game_id, "PLAYER", "SPECTATOR", "HOST")
+    require_kind(info, game_id, "PLAYER", "SPECTATOR", "HOST", "GM")
     if not handle.started or handle.live_state().phase != Phase.GAME_OVER:
         raise HTTPException(status_code=403, detail="对局未结束，对局元数据未开放")
     return games.store.load_meta(game_id)

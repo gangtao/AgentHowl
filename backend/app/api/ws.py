@@ -82,7 +82,7 @@ async def ws_endpoint(
     if info is None:
         await ws.close(code=4401)
         return
-    if info.kind not in ("PLAYER", "SPECTATOR"):
+    if info.kind not in ("PLAYER", "SPECTATOR", "GM"):
         # HOST 无读流权限，与 REST require_kind 同口径（issue #30 复审 Important #2）
         await ws.close(code=4403)
         return
@@ -96,7 +96,9 @@ async def ws_endpoint(
         return
     await ws.accept()
 
-    viewer: Any = info.seat if info.kind == "PLAYER" else "SPECTATOR"
+    viewer: Any = (
+        info.seat if info.kind == "PLAYER" else ("GM" if info.kind == "GM" else "SPECTATOR")
+    )
     out_q: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
 
     async def on_events(events: list[Event]) -> None:
