@@ -424,3 +424,50 @@ async def test_meta_agents_empty_without_profiles() -> None:
     assert reg.store.load_meta(handle.game_id).agents == {}
     assert handle.task is not None
     handle.task.cancel()
+
+
+async def test_registry_passes_provider_to_agent_port_factory_context() -> None:
+    """registry 在 start() 时按 profile.provider 取 provider 并放到 handle.providers 供工厂使用。"""
+    from app.agent.profile import AgentProfile
+    from app.agent.provider import Provider
+    from app.runtime.player_port import BotPlayerPort
+    from app.runtime.provider_store import InMemoryProviderStore
+
+    ps = InMemoryProviderStore()
+    ps.put(
+        Provider(
+            provider_id="p_1",
+            name="o",
+            kind="ollama",
+            api_base="http://x",
+            api_key="k",
+            default_model=None,
+            created_at="t",
+            updated_at="t",
+        )
+    )
+    seen: dict[int, object] = {}
+
+    def factory(seat: int, h: GameHandle) -> PlayerPort:
+        seen[seat] = h.providers.get(seat)
+        return BotPlayerPort(state_provider=h.live_state)
+
+    reg = GameRegistry(
+        InMemoryEventStore(),
+        RunnerTimeouts(speech_sec=5.0, action_sec=5.0),
+        agent_port_factory=factory,
+        provider_store=ps,
+    )
+    cfg = build_preset("std_9_kill_side").model_copy(update={"seed": 5})
+    agents = {"0": AgentProfile(model="q", provider="p_1"), "*": AgentProfile(model="ollama/z")}
+    handle = reg.create(cfg, allow_spectators=False, agents=agents)
+    reg.start(handle)
+    assert getattr(seen[0], "provider_id", None) == "p_1" and seen[1] is None
+    with pytest.raises(ValueError, match="provider"):
+        reg.create(
+            cfg,
+            allow_spectators=False,
+            agents={"0": AgentProfile(model="q", provider="p_missing")},
+        )
+    assert handle.task is not None
+    handle.task.cancel()

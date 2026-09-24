@@ -119,7 +119,7 @@ def test_main_ab_with_bot_ports_records_profiles_and_delta(tmp_path, capsys, mon
     holder: dict[str, object] = {}
 
     def fake_build_agent_port(
-        seat, game_config, profile, *, library=None, experience=None, opponents=None
+        seat, game_config, profile, *, library=None, experience=None, opponents=None, provider=None
     ):
         return BotPlayerPort(state_provider=lambda: holder["runner"].state)  # type: ignore[attr-defined]
 

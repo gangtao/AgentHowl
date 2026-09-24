@@ -352,7 +352,7 @@ def test_watch_game_with_memory_runs_postgame_and_persists(tmp_path, capsys, mon
     holder: dict[str, object] = {}
 
     def fake_build_agent_port(
-        seat, game_config, profile, *, library=None, experience=None, opponents=None
+        seat, game_config, profile, *, library=None, experience=None, opponents=None, provider=None
     ):
         def script(rm: type[BaseModel], system: str, user: str) -> BaseModel:
             if rm is ReflectionResult:

@@ -33,6 +33,7 @@ from app.runtime.experience_store import ExperienceStore, InMemoryExperienceStor
 from app.runtime.game_runner import GameRunner
 from app.runtime.player_port import HumanPlayerPort, NotYourTurnError
 from app.runtime.postgame import utc_now_iso
+from app.runtime.provider_store import ProviderStore
 from app.schemas.actions import ToolCall, ToolCallError, available_tools_for, parse_tool_call
 
 _HELP = (
@@ -99,12 +100,18 @@ async def run_play(
     read_line: ReadLine = default_read_line,
     on_wired: Callable[[GameRunner], None] | None = None,
     experience_store: ExperienceStore | None = None,
+    providers: ProviderStore | None = None,
 ) -> GameState:
     """真人座玩局：并发 runner + turn-loop，跑到 GAME_OVER。"""
     store = experience_store if experience_store is not None else InMemoryExperienceStore()
     experiences = load_experiences(agents or {}, config.num_players, store, human_seat=seat)
     runner, conns, ports = _wire_game(
-        config, human_seat=seat, agents=agents, library=library, experiences=experiences
+        config,
+        human_seat=seat,
+        agents=agents,
+        library=library,
+        experiences=experiences,
+        providers=providers,
     )
     port = ports[seat]
     assert isinstance(port, HumanPlayerPort)

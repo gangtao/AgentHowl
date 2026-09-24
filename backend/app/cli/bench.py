@@ -20,6 +20,7 @@ from app.engine.config import build_preset
 from app.eval.fingerprint import profile_fingerprint
 from app.eval.metrics import RANDOM_BOT_LABEL, aggregate, analyze_game, collect_profiles
 from app.eval.report import render_table, to_json
+from app.runtime.provider_store import JsonFileProviderStore, ProviderStore
 from app.store.event_store import EventStore, JsonFileEventStore, StoreError
 
 Printer = Callable[[str], None]
@@ -78,6 +79,7 @@ async def run_bench(
     library: SkillLibrary,
     store: EventStore,
     out: Printer = print,
+    providers: ProviderStore | None = None,
 ) -> None:
     base = build_preset(preset)
     for i in range(games):
@@ -85,7 +87,12 @@ async def run_bench(
         config = base.model_copy(update={"seed": s})
         agents = assign_seats(config.num_players, i, a, b)
         runner, _conns, _ports = _wire_game(
-            config, agents=agents, library=library, store=store, game_id=f"bench-{s}"
+            config,
+            agents=agents,
+            library=library,
+            store=store,
+            game_id=f"bench-{s}",
+            providers=providers,
         )
         state = await runner.run()
         out(f"seed={s} winner={state.winner or 'DRAW'} rounds={state.round}")
@@ -123,6 +130,11 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--out", default=None, help="事件日志目录（默认 data/bench/<时间戳>）")
     parser.add_argument("--json", default=None, help="把报告 JSON 写到该路径")
     parser.add_argument("--report-only", default=None, metavar="DIR", help="只分析已有日志目录")
+    parser.add_argument(
+        "--providers-dir",
+        default="data/providers",
+        help="模型服务 Provider 目录（每个 provider 一个 JSON；档案 provider 字段引用）",
+    )
     args = parser.parse_args(argv)
 
     if args.report_only is not None:
@@ -149,6 +161,7 @@ def main(argv: list[str] | None = None) -> None:
         parser.error("--agents-b 须与 --agents 同时给出")
     a: AgentProfiles = args.agents or {}
     b: AgentProfiles | None = args.agents_b
+    providers = JsonFileProviderStore(Path(args.providers_dir))
     try:
         library = (
             SkillLibrary.load([BUILTIN_SKILLS_DIR, Path(args.skills_dir)])
@@ -156,9 +169,10 @@ def main(argv: list[str] | None = None) -> None:
             else default_library()
         )
         n = build_preset(args.preset).num_players
-        validate_profiles(a, n, library)
+        provider_ids = {p.provider_id for p in providers.list()}
+        validate_profiles(a, n, library, providers=provider_ids)
         if b is not None:
-            validate_profiles(b, n, library)
+            validate_profiles(b, n, library, providers=provider_ids)
     except (ValueError, SkillError) as exc:
         parser.error(str(exc))
     shared = shared_fingerprints(a, b)
@@ -183,6 +197,7 @@ def main(argv: list[str] | None = None) -> None:
             b=b,
             library=library,
             store=store,
+            providers=providers,
         )
     )
     labels = label_map(a, b, args.label_a, args.label_b)

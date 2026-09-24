@@ -48,6 +48,7 @@ from app.engine.observation import PlayerObservation
 
 if TYPE_CHECKING:
     from app.agent.profile import AgentProfile
+    from app.agent.provider import Provider
     from app.agent.skills import SkillLibrary
 
 logger = logging.getLogger(__name__)
@@ -223,9 +224,10 @@ def build_agent_port(
     library: SkillLibrary | None = None,
     experience: AgentExperience | None = None,
     opponents: Mapping[str, int] | None = None,
+    provider: Provider | None = None,
 ) -> AgentPlayerPort:
     """registry / CLI 默认工厂：真实 LiteLLM 客户端 + 档案映射的 AgentConfig
-    （issue #56/#58/#59）。
+    （issue #56/#58/#59）。provider 非空时凭据绑定到本端口新建的客户端实例（issue #26）。
     """
     from app.agent.llm_client import LiteLLMInstructorClient
     from app.agent.profile import to_agent_config
@@ -241,8 +243,11 @@ def build_agent_port(
     return AgentPlayerPort(
         seat=seat,
         game_config=game_config,
-        agent_config=to_agent_config(profile, game_config),
-        client=LiteLLMInstructorClient(),
+        agent_config=to_agent_config(profile, game_config, provider=provider),
+        client=LiteLLMInstructorClient(
+            api_base=provider.api_base if provider else None,
+            api_key=provider.api_key if provider else None,
+        ),
         skills=skills,
         personality=profile.personality,
         experience=experience,

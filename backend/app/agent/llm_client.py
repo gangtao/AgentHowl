@@ -50,8 +50,12 @@ def _pick_mode(model: str, thinking: bool = False) -> instructor.Mode:
 
 
 class LiteLLMInstructorClient:
-    def __init__(self, max_retries: int = 2) -> None:
+    def __init__(
+        self, max_retries: int = 2, *, api_base: str | None = None, api_key: str | None = None
+    ) -> None:
         self._max_retries = max_retries
+        self._api_base = api_base  # 绑定到本端口的 Provider 凭据（issue #26）；空则走环境变量
+        self._api_key = api_key
         self._clients: dict[instructor.Mode, Any] = {}  # instructor 异步客户端按 mode 缓存
 
     def _client_for(self, mode: instructor.Mode) -> Any:
@@ -75,6 +79,10 @@ class LiteLLMInstructorClient:
         extra: dict[str, Any] = {}
         if model.startswith("ollama/"):
             extra["think"] = thinking
+        if self._api_base:
+            extra["api_base"] = self._api_base
+        if self._api_key:
+            extra["api_key"] = self._api_key
         result = await client.chat.completions.create(
             model=model,
             response_model=response_model,

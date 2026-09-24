@@ -8,12 +8,14 @@ extra="forbid" 保证未实现的键被拒绝而非静默忽略。
 
 from __future__ import annotations
 
+from collections.abc import Collection
 from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.agent.experience import MEMORY_ID_PATTERN
 from app.agent.personality import PersonalitySpec
+from app.agent.provider import Provider, resolve_model
 from app.agent.skills import SkillError
 from app.engine.config import GameConfig
 
@@ -40,6 +42,8 @@ class AgentProfile(BaseModel):
     personality: PersonalitySpec | None = None  # 任意性格特点（issue #57）
     # 跨局记忆标识（issue #59）：None=不持久化；同一局内须唯一，"*" 档案不得配置
     memory_id: str | None = Field(default=None, pattern=MEMORY_ID_PATTERN)
+    # 模型服务 id（issue #26）；None = model 含前缀、凭据走环境变量（现状不变）
+    provider: str | None = None
 
     @field_validator("name", mode="before")
     @classmethod
@@ -65,10 +69,13 @@ def profile_for(agents: AgentProfiles, seat: int) -> AgentProfile | None:
 
 
 def validate_profiles(
-    agents: AgentProfiles, num_players: int, library: SkillLibrary | None = None
+    agents: AgentProfiles,
+    num_players: int,
+    library: SkillLibrary | None = None,
+    providers: Collection[str] | None = None,
 ) -> None:
     """键只能是 "*" 或 0..num_players-1 的十进制座位号；给了 library 时连带校验技能名；
-    memory_id 须座位唯一且不得配在 "*"。
+    memory_id 须座位唯一且不得配在 "*"；给了 providers 时校验 profile.provider 存在。
     """
     for key in agents:
         if key == STAR:
@@ -93,6 +100,10 @@ def validate_profiles(
                 library.resolve(profile.skills)
             except SkillError as exc:
                 raise ValueError(str(exc)) from exc
+    if providers is not None:
+        for profile in agents.values():
+            if profile.provider is not None and profile.provider not in providers:
+                raise ValueError(f"档案引用的 provider 不存在：{profile.provider!r}")
 
 
 def legacy_to_profiles(
@@ -129,14 +140,27 @@ def merge_profiles(agents: AgentProfiles | None, legacy: AgentProfiles) -> Agent
     return agents
 
 
-def to_agent_config(profile: AgentProfile, game_config: GameConfig) -> AgentConfig:
-    """agent_seed 仍取 GameConfig.seed（候选洗牌本已按座位区分），其余字段逐项映射。"""
+def to_agent_config(
+    profile: AgentProfile, game_config: GameConfig, provider: Provider | None = None
+) -> AgentConfig:
+    """agent_seed 仍取 GameConfig.seed（候选洗牌本已按座位区分），其余字段逐项映射。
+
+    provider 非空时用 resolve_model 给三种模型名拼 LiteLLM 前缀（issue #26）。
+    """
     from app.agent.agent_player import AgentConfig  # 局部 import：见文件头 TYPE_CHECKING 注释
 
     return AgentConfig(
-        model=profile.model,
-        model_speech=profile.model_speech,
-        reflection_model=profile.reflection_model,
+        model=resolve_model(profile.model, provider),
+        model_speech=(
+            resolve_model(profile.model_speech, provider)
+            if profile.model_speech is not None
+            else None
+        ),
+        reflection_model=(
+            resolve_model(profile.reflection_model, provider)
+            if profile.reflection_model is not None
+            else None
+        ),
         thinking=profile.thinking,
         temperature=profile.temperature,
         agent_seed=game_config.seed if game_config.seed is not None else 0,
