@@ -137,7 +137,10 @@ function applyEvent(state: GameState, event: Event): Partial<GameState> {
       const roleBySeat = new Map((p as RolesAssignedPayload).assignments);
       const players = state.players.map((pl) => {
         const role = roleBySeat.get(pl.seat);
-        if (role === undefined) return pl;
+        if (role === undefined) {
+          // 对齐后端 dict[pl.seat] 的 KeyError：座位缺少角色分配是不可能状态，fail-loud。
+          throw new Error(`ROLES_ASSIGNED 缺少座位 ${pl.seat} 的角色`);
+        }
         return {
           ...pl,
           role,

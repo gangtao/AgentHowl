@@ -44,6 +44,17 @@ describe("reduce 与后端逐事件等价（金样）", () => {
     const bad = { ...fx.events[0]!, type: "NOPE" } as unknown as Event;
     expect(() => reduce(initialState(fx.meta), bad)).toThrow(/未知事件类型/);
   });
+  it("ROLES_ASSIGNED 缺座位时抛错", () => {
+    const fx = FIXTURES[0]!;
+    const rolesEvent = fx.events[2]!;
+    expect(rolesEvent.type).toBe("ROLES_ASSIGNED");
+    const payload = rolesEvent.payload as unknown as { assignments: [number, string][] };
+    const truncated = {
+      ...rolesEvent,
+      payload: { assignments: payload.assignments.slice(1) },
+    } as unknown as Event;
+    expect(() => reduce(initialState(fx.meta), truncated)).toThrow(/缺少座位/);
+  });
   it("normalizeState 幂等", () => {
     const st = FIXTURES[0]!.states[10]!;
     expect(normalizeState(normalizeState(st))).toEqual(normalizeState(st));

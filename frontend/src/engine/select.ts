@@ -105,7 +105,11 @@ export function voteTally(state: GameState, events: readonly Event[]): TallyResu
   return { votes, tally: tallyFromVotes(votes, weightOf) };
 }
 
-/** 警长选举计票：不加权（警徽此时未产生）。 */
+/**
+ * 警长选举计票：不加权。
+ * `state` 参数只为与 voteTally(state, events) 签名对称而保留——加权票要看「投票者是否已持有
+ * 警徽」，而选警长这一刻警徽本就还不存在（无在任警长），所以这里恒为等权 1，不需要读 state。
+ */
 export function sheriffVoteTally(state: GameState, events: readonly Event[]): TallyResult {
   void state;
   const votes = castsFrom(eventsAfterLast(events, "SHERIFF_VOTE_STARTED"), "SHERIFF_VOTE_CAST");
@@ -374,29 +378,35 @@ export interface RoundSegment {
   kind: "night" | "day";
 }
 
-/** 按 PHASE_CHANGED/ROUND_STARTED 把事件流切成夜/日连续段，供 ReplayBar 着色。 */
+/**
+ * 按 PHASE_CHANGED/ROUND_STARTED 把事件流切成夜/日连续段，供 ReplayBar 着色。
+ * 对局开局的 GAME_CREATED/ROLES_ASSIGNED/GAME_STARTED（首个 ROUND_STARTED 之前）没有
+ * 对应的夜/日阶段事件，按「白天」归段，保证 segments 从 events[0].seq 起连续覆盖到末尾——
+ * 不假设 seq 连续无洞：段的收尾 seq 取上一个事件的真实 seq，而非 e.seq - 1。
+ */
 export function roundSegments(events: readonly Event[]): RoundSegment[] {
+  if (events.length === 0) return [];
   const segments: RoundSegment[] = [];
-  let currentKind: "night" | "day" | null = null;
-  let fromSeq = 0;
-  let lastSeq = 0;
+  let currentKind: "night" | "day" = "day";
+  let fromSeq = events[0]!.seq;
+  let prevSeq: number | null = null;
+
   for (const e of events) {
-    lastSeq = e.seq;
+    let kind: "night" | "day" | null = null;
     if (e.type === "ROUND_STARTED") {
-      if (currentKind !== null) segments.push({ fromSeq, toSeq: e.seq - 1, kind: currentKind });
-      currentKind = "night";
-      fromSeq = e.seq;
-      continue;
+      kind = "night";
+    } else if (e.type === "PHASE_CHANGED") {
+      kind = isNight((e.payload as PhaseChangedPayload).to) ? "night" : "day";
     }
-    if (e.type === "PHASE_CHANGED") {
-      const kind = isNight((e.payload as PhaseChangedPayload).to) ? "night" : "day";
-      if (kind !== currentKind) {
-        if (currentKind !== null) segments.push({ fromSeq, toSeq: e.seq - 1, kind: currentKind });
-        currentKind = kind;
-        fromSeq = e.seq;
+    if (kind !== null && kind !== currentKind) {
+      if (prevSeq !== null) {
+        segments.push({ fromSeq, toSeq: prevSeq, kind: currentKind });
       }
+      currentKind = kind;
+      fromSeq = e.seq;
     }
+    prevSeq = e.seq;
   }
-  if (currentKind !== null) segments.push({ fromSeq, toSeq: lastSeq, kind: currentKind });
+  if (prevSeq !== null) segments.push({ fromSeq, toSeq: prevSeq, kind: currentKind });
   return segments;
 }
