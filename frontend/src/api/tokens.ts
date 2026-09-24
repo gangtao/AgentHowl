@@ -30,6 +30,8 @@ export function parseHash(hash: string = location.hash): ParsedHash {
     const query = new URLSearchParams(match[2] ?? "");
     const gm = query.get("gm");
     const spec = query.get("spec");
+    // 两者同时出现（不该发生，但不信任 URL）时 gm 优先：GM 视角权限更高，
+    // 不能被同时携带的 spec 参数意外降级成观众视角。
     if (gm) {
       return { route: "game", gameId, token: gm, viewer: "GM" };
     }

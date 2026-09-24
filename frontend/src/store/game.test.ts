@@ -71,6 +71,40 @@ describe("useGameStore", () => {
     expect(normalizeState(view!)).toEqual(normalizeState(useGameStore.getState().head!));
   });
 
+  it("load(meta, {mode:'replay'}) → mode==='replay'、cursor===0、viewState() 等于 initialState(meta)", () => {
+    useGameStore.getState().load(meta, { mode: "replay" });
+    const state = useGameStore.getState();
+    expect(state.mode).toBe("replay");
+    expect(state.cursor).toBe(0);
+    expect(normalizeState(state.viewState()!)).toEqual(normalizeState(initialState(meta)));
+  });
+
+  it("setMode() 可在直播中途切换（不影响 cursor）", () => {
+    useGameStore.getState().load(meta);
+    useGameStore.getState().setMode("replay");
+    expect(useGameStore.getState().mode).toBe("replay");
+  });
+
+  it("setCursor 钳制到 [0, lastSeq]：越界值分别夹到两端", () => {
+    useGameStore.getState().load(meta);
+    useGameStore.getState().appendEvents(events.slice(0, 60)); // lastSeq = 60
+
+    useGameStore.getState().setCursor(99999);
+    expect(useGameStore.getState().cursor).toBe(60);
+    expect(normalizeState(useGameStore.getState().viewState()!)).toEqual(
+      normalizeState(states[59]!),
+    );
+
+    useGameStore.getState().setCursor(-5);
+    expect(useGameStore.getState().cursor).toBe(0);
+    expect(normalizeState(useGameStore.getState().viewState()!)).toEqual(
+      normalizeState(initialState(meta)),
+    );
+
+    useGameStore.getState().setCursor(null);
+    expect(useGameStore.getState().cursor).toBeNull();
+  });
+
   it("检查点：追加全部事件后，cursor=121 的 viewState() 与 reduceAll(initial, events.slice(0,121)) 一致", () => {
     // fixture 只有 129 条事件（brief 示例用的 137 超出本金样长度，改用同性质的
     // 非检查点对齐游标 121：checkpoints 落在 seq=50/100，121 落在 100 之后，

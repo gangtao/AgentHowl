@@ -57,19 +57,34 @@ export const useAgentLibrary = create<AgentLibraryState>((set, get) => ({
   },
 
   async create(profile) {
-    const stored = await createAgent(profile);
-    set({ items: [stored, ...get().items] });
-    return stored;
+    try {
+      const stored = await createAgent(profile);
+      set({ items: [stored, ...get().items] });
+      return stored;
+    } catch (err) {
+      set({ error: messageOf(err) });
+      throw err; // 页面可能想自己 catch 再弹提示，这里只负责落 error，不吞异常
+    }
   },
 
   async update(agentId, profile) {
-    const stored = await updateAgent(agentId, profile);
-    set({ items: get().items.map((a) => (a.agent_id === agentId ? stored : a)) });
-    return stored;
+    try {
+      const stored = await updateAgent(agentId, profile);
+      set({ items: get().items.map((a) => (a.agent_id === agentId ? stored : a)) });
+      return stored;
+    } catch (err) {
+      set({ error: messageOf(err) });
+      throw err;
+    }
   },
 
   async remove(agentId) {
-    await deleteAgent(agentId);
-    set({ items: get().items.filter((a) => a.agent_id !== agentId) });
+    try {
+      await deleteAgent(agentId);
+      set({ items: get().items.filter((a) => a.agent_id !== agentId) });
+    } catch (err) {
+      set({ error: messageOf(err) });
+      throw err;
+    }
   },
 }));

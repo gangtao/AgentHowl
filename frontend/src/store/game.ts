@@ -21,6 +21,9 @@ export interface LoadOptions {
   gameId?: string;
   token?: string;
   viewer?: Viewer;
+  /** 默认 "live"；传 "replay" 时（如 GamePage 用 getReplay 一次性装入终局对局，规格 §6）
+   * `load()` 会把 `cursor` 置为 0（回放起点），而不是 `null`（跟随最新）。 */
+  mode?: PlaybackMode;
 }
 
 interface GameStoreState {
@@ -42,7 +45,9 @@ interface GameStoreState {
 
   load(meta: GameMeta, opts?: LoadOptions): void;
   appendEvents(batch: readonly Event[]): void;
+  /** seq === null → 跟随最新（head）；否则钳到 `[0, lastSeq]`（越界值不抛错，就近夹住）。 */
   setCursor(seq: number | null): void;
+  setMode(mode: PlaybackMode): void;
   viewState(): GameState | null;
   play(): void;
   pause(): void;
@@ -71,6 +76,21 @@ function clearPlayTimer(): void {
 
 function lastSeqOf(events: readonly Event[]): number {
   return events.length > 0 ? (events[events.length - 1] as Event).seq : 0;
+}
+
+/** play()/setSpeed() 共用的播放节拍：走到末尾（cur >= lastSeq）就 pause()，否则单步前进。
+ * 抽成模块级函数避免两处维护同一份逻辑（review Minor-5）。 */
+function makeTick(get: () => GameStoreState): () => void {
+  return () => {
+    const state = get();
+    const lastSeq = lastSeqOf(state.events);
+    const cur = state.cursor ?? lastSeq;
+    if (cur >= lastSeq) {
+      get().pause();
+      return;
+    }
+    get().stepForward();
+  };
 }
 
 /** 取 <= seq 的最近检查点（无则回退到初始状态）。 */
@@ -109,6 +129,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
   load(meta, opts) {
     clearPlayTimer();
     viewCache = null;
+    const mode = opts?.mode ?? "live";
     set({
       meta,
       gameId: opts?.gameId ?? get().gameId,
@@ -117,8 +138,11 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       events: [],
       head: initialState(meta),
       checkpoints: new Map(),
-      mode: "live",
-      cursor: null,
+      mode,
+      // replay 模式（如 getReplay 一次性装入终局对局）从头开始播放（规格 §6）；
+      // live 模式 cursor=null 跟随最新。
+      cursor: mode === "replay" ? 0 : null,
+      connection: "idle",
       gap: null,
       playing: false,
       error: null,
@@ -162,8 +186,15 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
   },
 
   setCursor(seq) {
-    if (get().cursor === seq) return;
-    set({ cursor: seq });
+    const clamped =
+      seq === null ? null : Math.min(Math.max(seq, 0), lastSeqOf(get().events));
+    if (get().cursor === clamped) return;
+    set({ cursor: clamped });
+  },
+
+  setMode(mode) {
+    if (get().mode === mode) return;
+    set({ mode });
   },
 
   viewState() {
@@ -189,18 +220,8 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
   play() {
     if (get().playing) return;
     set({ playing: true });
-    const tick = (): void => {
-      const state = get();
-      const lastSeq = lastSeqOf(state.events);
-      const cur = state.cursor ?? lastSeq;
-      if (cur >= lastSeq) {
-        get().pause();
-        return;
-      }
-      get().stepForward();
-    };
     clearPlayTimer();
-    playTimer = setInterval(tick, 1000 / get().speed);
+    playTimer = setInterval(makeTick(get), 1000 / get().speed);
   },
 
   pause() {
@@ -213,17 +234,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     if (get().playing) {
       // 重启计时器以套用新速度
       clearPlayTimer();
-      const tick = (): void => {
-        const state = get();
-        const lastSeq = lastSeqOf(state.events);
-        const cur = state.cursor ?? lastSeq;
-        if (cur >= lastSeq) {
-          get().pause();
-          return;
-        }
-        get().stepForward();
-      };
-      playTimer = setInterval(tick, 1000 / speed);
+      playTimer = setInterval(makeTick(get), 1000 / speed);
     }
   },
 

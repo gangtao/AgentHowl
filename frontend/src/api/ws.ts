@@ -77,7 +77,10 @@ export function useLiveEvents({ gameId, token, enabled }: UseLiveEventsArgs): vo
       const gap = useGameStore.getState().gap;
       if (gap !== null) {
         // store 记录了缺口：清掉本地已知的 lastSeq，从缺口起点重新拉取补发。
+        // 同时清空剩余缓冲——残留的都是断线前的陈旧事件，留着会在补发帧之前被下一次
+        // flush 消费，重新触发同一个缺口，白白多打几轮重连（review Minor-1）。
         useGameStore.getState().clearGap();
+        bufferRef.current = [];
         lastSeqRef.current = gap.expected - 1;
         reconnect();
         return;

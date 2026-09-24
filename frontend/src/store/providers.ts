@@ -50,27 +50,54 @@ export const useProviders = create<ProvidersState>((set, get) => ({
   },
 
   async create(body) {
-    const provider = await createProvider(body);
-    set({ items: [provider, ...get().items] });
-    return provider;
+    try {
+      const provider = await createProvider(body);
+      set({ items: [provider, ...get().items] });
+      return provider;
+    } catch (err) {
+      set({ error: messageOf(err) });
+      throw err; // 页面可能想自己 catch 再弹提示，这里只负责落 error，不吞异常
+    }
   },
 
   async update(providerId, body) {
-    const provider = await updateProvider(providerId, body);
-    set({ items: get().items.map((p) => (p.provider_id === providerId ? provider : p)) });
-    return provider;
+    try {
+      const provider = await updateProvider(providerId, body);
+      set({ items: get().items.map((p) => (p.provider_id === providerId ? provider : p)) });
+      return provider;
+    } catch (err) {
+      set({ error: messageOf(err) });
+      throw err;
+    }
   },
 
   async remove(providerId) {
-    await deleteProvider(providerId);
-    set({ items: get().items.filter((p) => p.provider_id !== providerId) });
+    try {
+      await deleteProvider(providerId);
+      set({ items: get().items.filter((p) => p.provider_id !== providerId) });
+    } catch (err) {
+      set({ error: messageOf(err) });
+      throw err;
+    }
   },
 
-  test(providerId, model) {
-    return testProvider(providerId, model);
+  async test(providerId, model) {
+    try {
+      return await testProvider(providerId, model);
+    } catch (err) {
+      // 注意：探测本身失败（模型不通等）由后端折进 {ok:false, error} 正常返回，
+      // 这里只处理请求层面的失败（如 provider 不存在 404）。
+      set({ error: messageOf(err) });
+      throw err;
+    }
   },
 
-  listModels(providerId) {
-    return apiListModels(providerId);
+  async listModels(providerId) {
+    try {
+      return await apiListModels(providerId);
+    } catch (err) {
+      set({ error: messageOf(err) });
+      throw err;
+    }
   },
 }));

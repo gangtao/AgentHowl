@@ -124,6 +124,42 @@ describe("useLiveEvents", () => {
     expect(FakeWebSocket.instances[1]!.url).toContain("from_seq=2");
   });
 
+  it("gap 分支清空 rAF 缓冲：残留陈旧事件不会在补发后触发第二次重连", () => {
+    renderHook(() => useLiveEvents({ gameId: "g1", token: "tok", enabled: true }));
+    const socket1 = FakeWebSocket.instances[0]!;
+
+    // 攒 202 条到 rAF 缓冲：前 150 条连续，之后跳号到 300 起再垫 52 条——
+    // flush 只 splice(0,200)，缺口（seq=151 缺失，出现 300）落在这 200 条以内，
+    // splice 之后仍残留 2 条陈旧事件（seq=350、351）留在缓冲区最前面。
+    for (let seq = 1; seq <= 150; seq++) {
+      socket1.emit({ type: "game_event", seq, event: makeEvent(seq) });
+    }
+    for (let seq = 300; seq <= 351; seq++) {
+      socket1.emit({ type: "game_event", seq, event: makeEvent(seq) });
+    }
+
+    vi.advanceTimersByTime(16); // 触发 flush：命中缺口 → clearGap + 清空剩余缓冲 + reconnect()
+
+    expect(useGameStore.getState().gap).toBeNull();
+    expect(useGameStore.getState().events).toHaveLength(150); // 缺口前缀已应用
+
+    vi.advanceTimersByTime(1000); // 退避到期，发起重连
+    expect(FakeWebSocket.instances).toHaveLength(2);
+    const socket2 = FakeWebSocket.instances[1]!;
+    expect(socket2.url).toContain("from_seq=151");
+
+    // 新连接从 151 开始补发：若缓冲没清干净，陈旧的 seq=350 会排在这些真事件前面，
+    // 立刻又判定一次假缺口，把这批真事件也丢掉。
+    for (let seq = 151; seq <= 160; seq++) {
+      socket2.emit({ type: "game_event", seq, event: makeEvent(seq) });
+    }
+    vi.advanceTimersByTime(16);
+
+    expect(useGameStore.getState().gap).toBeNull();
+    expect(useGameStore.getState().events).toHaveLength(160); // 150 + 10，无重复缺口
+    expect(FakeWebSocket.instances).toHaveLength(2); // 全程只重连过一次
+  });
+
   it("收到 game_over 后 close 不重连", () => {
     renderHook(() => useLiveEvents({ gameId: "g1", token: "tok", enabled: true }));
     const socket = FakeWebSocket.instances[0]!;
