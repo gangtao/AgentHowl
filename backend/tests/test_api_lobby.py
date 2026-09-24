@@ -446,3 +446,17 @@ def test_gm_token_reads_full_state_events_and_cannot_act_or_start() -> None:
     )
     assert r.status_code == 403
     assert client.get(f"/api/v1/games/{gid}/my-turn", headers=_auth(gm)).status_code == 403
+
+
+def test_frontend_dist_mounted_only_when_present(tmp_path) -> None:
+    from app.main import create_app
+    from app.store.event_store import InMemoryEventStore
+
+    c = TestClient(create_app(store=InMemoryEventStore(), frontend_dist=tmp_path / "nope"))
+    assert c.get("/").status_code == 404
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    (dist / "index.html").write_text("<h1>AgentHowl</h1>", encoding="utf-8")
+    c = TestClient(create_app(store=InMemoryEventStore(), frontend_dist=dist))
+    assert c.get("/").status_code == 200 and "AgentHowl" in c.get("/").text
+    assert c.get("/api/v1/presets").status_code == 200  # API 前缀不受影响

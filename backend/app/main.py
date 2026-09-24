@@ -41,6 +41,7 @@ def create_app(
     providers_dir: Path | None = None,
     provider_store: ProviderStore | None = None,
     provider_probe: ProviderProbe | None = None,
+    frontend_dist: Path | None = None,
 ) -> FastAPI:
     app = FastAPI(title="AgentHowl API", version="0.1.0")
     # 内置目录允许缺失（打包场景，容忍过滤）；显式指定的外部目录原样传给 load，
@@ -87,6 +88,16 @@ def create_app(
     # runner task 崩溃后 handle.ensure_healthy() 抛出裸 RuntimeError，需兜底为 500（否则落到
     # Starlette 默认异常页，客户端拿不到 JSON detail）——issue #30 Task 5 复审发现。
     app.add_exception_handler(RuntimeError, _handler(500))
+    # 前端产物（issue #26）：存在则整站挂到 /；API 路由已先注册，/api/v1 不受影响
+    dist = (
+        frontend_dist
+        if frontend_dist is not None
+        else Path(__file__).resolve().parents[2] / "frontend" / "dist"
+    )
+    if dist.is_dir():
+        from fastapi.staticfiles import StaticFiles
+
+        app.mount("/", StaticFiles(directory=str(dist), html=True), name="frontend")
     return app
 
 
