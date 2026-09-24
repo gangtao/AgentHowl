@@ -11,8 +11,9 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from app.agent.skills import BUILTIN_SKILLS_DIR, SkillLibrary
-from app.api import rest, ws
+from app.api import agents, rest, ws
 from app.api.deps import TokenRegistry
+from app.runtime.agent_library import AgentLibraryStore, JsonFileAgentLibrary
 from app.runtime.experience_store import ExperienceStore, JsonFileExperienceStore
 from app.runtime.game_runner import LobbyError, RunnerTimeouts
 from app.runtime.player_port import NotYourTurnError, PlayerPort
@@ -33,6 +34,8 @@ def create_app(
     skills_dir: Path | None = None,
     memory_dir: Path | None = None,
     experience_store: ExperienceStore | None = None,
+    agents_dir: Path | None = None,
+    agent_library: AgentLibraryStore | None = None,
 ) -> FastAPI:
     app = FastAPI(title="AgentHowl API", version="0.1.0")
     # 内置目录允许缺失（打包场景，容忍过滤）；显式指定的外部目录原样传给 load，
@@ -51,8 +54,12 @@ def create_app(
         or JsonFileExperienceStore(memory_dir or Path("data/agent_memory")),
     )
     app.state.tokens = TokenRegistry()
+    app.state.agent_library = agent_library or JsonFileAgentLibrary(
+        agents_dir or Path("data/agents")
+    )
     app.include_router(rest.router, prefix="/api/v1")
     app.include_router(ws.router, prefix="/api/v1")
+    app.include_router(agents.router, prefix="/api/v1")
 
     def _handler(status: int):  # type: ignore[no-untyped-def]
         async def h(request: Request, exc: Exception) -> JSONResponse:
