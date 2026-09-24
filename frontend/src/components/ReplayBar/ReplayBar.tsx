@@ -1,6 +1,6 @@
 // 回放条（设计稿 1c/1g/1j）：轮次分段着色的轨道 + 播放控制 + 倍速 + 「回到直播」+ 键盘。
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { RoundSegment } from "../../engine/select";
 import styles from "./ReplayBar.module.css";
 
@@ -50,28 +50,36 @@ export default function ReplayBar({
 }: ReplayBarProps): JSX.Element {
   const [speedOpen, setSpeedOpen] = useState(false);
   const at = cursor ?? total;
-  const pct = total > 0 ? (at / total) * 100 : 100;
+  // 进度圆点与分段共用同一套坐标：都以事件流首个 seq 为原点，长度为 span，
+  // 否则 firstSeq > 0 时圆点与分段边界会有系统性偏移。
   const firstSeq = segments.length > 0 ? (segments[0] as RoundSegment).fromSeq : 1;
   const span = Math.max(total - firstSeq + 1, 1);
+  const pct = total > 0 ? Math.min(Math.max(((at - firstSeq + 1) / span) * 100, 0), 100) : 100;
+
+  // 键盘回调存在 ref 里：GamePage 每次 render 都传新的箭头函数，直接进依赖会导致
+  // 每帧解绑/重绑 document 监听器。
+  const handlersRef = useRef({ playing, onPlay, onPause, onStep });
+  handlersRef.current = { playing, onPlay, onPause, onStep };
 
   useEffect(() => {
     const onKey = (ev: KeyboardEvent): void => {
       if (isTyping(ev.target)) return;
+      const h = handlersRef.current;
       if (ev.key === " ") {
         ev.preventDefault();
-        if (playing) onPause();
-        else onPlay();
+        if (h.playing) h.onPause();
+        else h.onPlay();
       } else if (ev.key === "ArrowLeft") {
         ev.preventDefault();
-        onStep(-1);
+        h.onStep(-1);
       } else if (ev.key === "ArrowRight") {
         ev.preventDefault();
-        onStep(1);
+        h.onStep(1);
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [playing, onPlay, onPause, onStep]);
+  }, []);
 
   return (
     <div className={styles.root}>

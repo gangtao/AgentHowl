@@ -105,7 +105,7 @@ export default function GamePage({ gameId, token, viewer }: GamePageProps): JSX.
     const fail = (err: unknown): boolean => {
       // 返回 true 表示已处理（终态），false 表示可继续退回 /state
       if (!(err instanceof ApiError)) {
-        setErrorKind("4404");
+        setErrorKind("error");
         setDetail(String(err));
         return true;
       }
@@ -163,8 +163,9 @@ export default function GamePage({ gameId, token, viewer }: GamePageProps): JSX.
           }, POLL_MS);
           return;
         }
-        setErrorKind("auth");
-        setDetail(err instanceof ApiError ? err.detail : String(err));
+        // 既不是 401/404/409（如后端 5xx、网络失败）：通用错误态原文展示，不要误报成 token 问题。
+        setErrorKind("error");
+        setDetail(err instanceof ApiError ? `${err.status} · ${err.detail}` : String(err));
       }
     };
 
@@ -217,12 +218,10 @@ export default function GamePage({ gameId, token, viewer }: GamePageProps): JSX.
     return Object.fromEntries(tally);
   }, [view, visibleEvents]);
 
+  // 零过滤：连线完全由事件派生——观众流没有 WOLF_KILL_* / SEER_CHECKED 等事件，nightLinks 自然返回 []。
   const lines = useMemo(
-    () =>
-      view !== null && viewer === "GM" && isNight(view.phase)
-        ? nightLinks(visibleEvents, view.round)
-        : [],
-    [view, visibleEvents, viewer],
+    () => (view !== null && isNight(view.phase) ? nightLinks(visibleEvents, view.round) : []),
+    [view, visibleEvents],
   );
 
   const nightRows = useMemo(
@@ -254,11 +253,11 @@ export default function GamePage({ gameId, token, viewer }: GamePageProps): JSX.
   const rightPanel = isNight(view.phase) ? (
     <NightSummary rows={nightRows} round={view.round} viewer={viewer} />
   ) : view.phase === "SHERIFF_ELECTION" || view.phase === "SHERIFF_PK" ? (
-    <ElectionPanel state={view} events={visibleEvents} viewer={viewer} />
+    <ElectionPanel state={view} events={visibleEvents} />
   ) : view.phase === "VOTE" || view.phase === "VOTE_PK" || view.phase === "EXILE" ? (
-    <VotePanel state={view} events={visibleEvents} viewer={viewer} />
+    <VotePanel state={view} events={visibleEvents} />
   ) : (
-    <PlayerStatusPanel state={view} viewer={viewer} speakingSeat={speaking} />
+    <PlayerStatusPanel state={view} speakingSeat={speaking} />
   );
 
   const store = useGameStore.getState();
@@ -292,23 +291,11 @@ export default function GamePage({ gameId, token, viewer }: GamePageProps): JSX.
 
       <div className={styles.body}>
         <div className={styles.left}>
-          <SeatCircle
-            state={view}
-            viewer={viewer}
-            speaking={speaking}
-            votes={votes}
-            nightLines={lines}
-          />
+          <SeatCircle state={view} speaking={speaking} votes={votes} nightLines={lines} />
         </div>
 
         <div className={styles.center}>
-          <SpeechFeed
-            items={items}
-            cursor={cursor}
-            players={view.players}
-            viewer={viewer}
-            speakingSeat={speaking}
-          />
+          <SpeechFeed items={items} cursor={cursor} state={view} speakingSeat={speaking} />
           <NightOverlay phase={view.phase} viewer={viewer} />
         </div>
 

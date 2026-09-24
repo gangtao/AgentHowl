@@ -1,28 +1,25 @@
-// 右栏 · 发言顺序 / 公开警徽流 / GM 备注（设计稿 1d）。
-// 零过滤：全部取自 state；GM 备注行的内容（狼人座位）在观众的 state 里本就不存在（服务端没发
-// ROLES_ASSIGNED），因此按数据是否存在决定是否渲染。
+// 右栏 · 发言顺序 / 公开警徽流 / 备注行（设计稿 1d）。
+// 零过滤：全部取自 state，且不看 viewer——备注行的狼人座位在没有角色数据时本就是空数组，
+// 空则不渲染，有则照实渲染。
 
 import { DIRECTION_ZH, factionColorVar } from "../../engine/phases";
 import { wolfSeats } from "../../engine/select";
 import type { GameState } from "../../engine/types";
-import type { Viewer } from "../../store/game";
 import styles from "./PlayerStatusPanel.module.css";
 
 export interface PlayerStatusPanelProps {
   state: GameState;
-  viewer: Viewer;
   speakingSeat: number | null;
 }
 
 export default function PlayerStatusPanel({
   state,
-  viewer,
   speakingSeat,
 }: PlayerStatusPanelProps): JSX.Element {
   const nameOf = new Map(state.players.map((p) => [p.seat, p.display_name]));
   const order = state.speech_order;
   const badgeFlows = Object.entries(state.badge_flow_claims);
-  const wolves = viewer === "GM" ? wolfSeats(state) : [];
+  const wolves = wolfSeats(state);
   const direction = state.sheriff_speech_direction;
 
   return (

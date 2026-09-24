@@ -1,22 +1,20 @@
 // 座位环（设计稿 1c/1d/1g/1h）：0 号在顶部顺时针，坐标 50 + 41·cos/sin(-90° + i·360°/n)。
-// 零过滤：渲染 state 里已有的东西；viewer 只决定「角色牌是否翻面」——观众的 state 本就没有角色
-// （服务端没发 ROLES_ASSIGNED），翻面是呈现层的诚实表达，不是隐藏服务端发来的数据。
+// 零过滤：角色牌是否翻面完全由 state 决定（是否已应用 ROLES_ASSIGNED），与 viewer 无关——
+// 观众的 state 通常没有角色，所以自然显示 ?；终局回放里服务端把全量事件也发给观众，就照实翻牌。
 
 import { ROLE_ABBR, factionColorVar } from "../../engine/phases";
-import { aliveSeats, wolfSeats } from "../../engine/select";
+import { aliveSeats, rolesKnown, wolfSeats } from "../../engine/select";
 import type { NightLink } from "../../engine/select";
 import type { GameState } from "../../engine/types";
-import type { Viewer } from "../../store/game";
 import styles from "./SeatCircle.module.css";
 
 export interface SeatCircleProps {
   state: GameState;
-  viewer: Viewer;
   /** 当前发言座位（无则 null）。 */
   speaking: number | null;
   /** 座位 → 当前得票数（空对象即不显示票数小标）。 */
   votes: Record<number, number>;
-  /** 夜间连线（仅上帝视角有数据）。 */
+  /** 夜间连线（观众流没有夜间事件，自然为空）。 */
   nightLines: NightLink[];
 }
 
@@ -40,7 +38,6 @@ function positions(seats: number[]): SeatPos[] {
 
 export default function SeatCircle({
   state,
-  viewer,
   speaking,
   votes,
   nightLines,
@@ -48,7 +45,7 @@ export default function SeatCircle({
   const players = [...state.players].sort((a, b) => a.seat - b.seat);
   const pos = positions(players.map((p) => p.seat));
   const posOf = new Map(pos.map((p) => [p.seat, p]));
-  const gm = viewer === "GM";
+  const known = rolesKnown(state);
   const alive = aliveSeats(state).length;
   const wolves = wolfSeats(state).length;
   // 分母取「当前有投票权的存活者」与「已投票数」的较大值：放逐已结算时存活数会小于
@@ -103,9 +100,9 @@ export default function SeatCircle({
         )}
         {players.map((p) => {
           const at = posOf.get(p.seat) as SeatPos;
-          const colorVar = gm ? factionColorVar(p.role) : null;
+          const colorVar = known ? factionColorVar(p.role) : null;
           const color = colorVar !== null ? `var(${colorVar})` : "var(--color-neutral-500)";
-          const abbr = gm ? ROLE_ABBR[p.role] : "?";
+          const abbr = known ? ROLE_ABBR[p.role] : "?";
           const isSpeaking = speaking === p.seat;
           const n = votes[p.seat];
           return (
@@ -127,7 +124,7 @@ export default function SeatCircle({
                 style={{
                   borderColor: color,
                   color,
-                  background: gm
+                  background: known
                     ? `color-mix(in srgb, ${color} 22%, transparent)`
                     : "var(--color-surface)",
                 }}
@@ -181,7 +178,7 @@ export default function SeatCircle({
         </div>
       ) : (
         <div className={styles.legend}>
-          {gm && (
+          {known && (
             <>
               <span className={styles.legendItem}>
                 <span className={styles.dotWolf} />
@@ -215,7 +212,7 @@ export default function SeatCircle({
             <span className={styles.statSub}>/{players.length}</span>
           </span>
         </div>
-        {gm && (
+        {known && (
           <div className={`card ${styles.statCard}`}>
             <span>狼 / 好人</span>
             <span className={styles.statValue}>

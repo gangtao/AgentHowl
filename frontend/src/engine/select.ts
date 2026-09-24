@@ -67,6 +67,17 @@ export function currentSpeaker(state: GameState): number | null {
   return state.speech_order[state.speech_idx] ?? null;
 }
 
+/**
+ * state 里是否已有真实角色（ROLES_ASSIGNED 已应用）——「角色牌是否翻面」的唯一依据。
+ *
+ * 零过滤（spec §1）：是否展示身份只看数据，永远不看 viewer。发牌后至少有一名 WOLF 阵营玩家；
+ * 未发牌、或服务端没把 ROLES_ASSIGNED 发给这个视角时，全员停留在 initialState 的
+ * VILLAGER/GOOD 默认值（reduce.ts::initialState），此时显示「民」等于捏造信息。
+ */
+export function rolesKnown(state: GameState): boolean {
+  return state.players.some((p) => p.faction === "WOLF");
+}
+
 // ---- 投票计票（对齐 backend engine.py::_tally_and_continue / resolver.count_votes） ----
 
 export interface TallyResult {

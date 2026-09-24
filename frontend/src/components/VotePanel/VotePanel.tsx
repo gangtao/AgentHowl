@@ -2,9 +2,8 @@
 // 零过滤：票箱与计票由 voteTally(state, events) 纯选择器算出，events 已按回放游标截断。
 
 import { ROLE_ZH } from "../../engine/phases";
-import { voteTally } from "../../engine/select";
+import { rolesKnown, voteTally } from "../../engine/select";
 import type { Event, GameState, PlayerExiledPayload, VoteResultPayload } from "../../engine/types";
-import type { Viewer } from "../../store/game";
 import { seatColor, seatName } from "../seatColor";
 import styles from "./VotePanel.module.css";
 
@@ -12,7 +11,6 @@ export interface VotePanelProps {
   state: GameState;
   /** 已按回放游标截断的事件流。 */
   events: Event[];
-  viewer: Viewer;
 }
 
 function lastOf(events: readonly Event[], type: string): Event | null {
@@ -24,7 +22,7 @@ function lastOf(events: readonly Event[], type: string): Event | null {
   return null;
 }
 
-export default function VotePanel({ state, events, viewer }: VotePanelProps): JSX.Element {
+export default function VotePanel({ state, events }: VotePanelProps): JSX.Element {
   const { votes, tally } = voteTally(state, events);
   const pk = state.phase === "VOTE_PK" || state.tie_round > 0;
   const voteWeight =
@@ -56,7 +54,7 @@ export default function VotePanel({ state, events, viewer }: VotePanelProps): JS
       {pk && candidates.length > 0 && (
         <div className={styles.candidates}>
           {candidates.map((seat) => {
-            const color = seatColor(state, seat, viewer);
+            const color = seatColor(state, seat);
             const got = tally.find(([t]) => t === seat)?.[1] ?? 0;
             return (
               <div
@@ -84,9 +82,9 @@ export default function VotePanel({ state, events, viewer }: VotePanelProps): JS
           const sheriff = state.players.find((p) => p.seat === voter)?.is_sheriff === true;
           return (
             <div className={styles.voteRow} key={voter}>
-              <span style={{ color: seatColor(state, voter, viewer) }}>{voter}号</span>
+              <span style={{ color: seatColor(state, voter) }}>{voter}号</span>
               <span className={styles.arrow}>→</span>
-              <span style={{ color: seatColor(state, target, viewer) }}>
+              <span style={{ color: seatColor(state, target) }}>
                 {target !== null ? `${target}号 ${seatName(state, target)}` : "弃票"}
               </span>
               <span className={styles.weight}>{sheriff ? `${voteWeight} 票` : ""}</span>
@@ -102,7 +100,7 @@ export default function VotePanel({ state, events, viewer }: VotePanelProps): JS
           </div>
           <div className={styles.bars}>
             {tally.map(([seat, n]) => {
-              const color = seatColor(state, seat, viewer);
+              const color = seatColor(state, seat);
               return (
                 <div className={styles.barRow} key={seat}>
                   <span style={{ color }}>{seat}号</span>
@@ -130,14 +128,14 @@ export default function VotePanel({ state, events, viewer }: VotePanelProps): JS
                 return (
                   <>
                     【计票】
-                    <span style={{ color: seatColor(state, vr.exiled, viewer) }}>
+                    <span style={{ color: seatColor(state, vr.exiled) }}>
                       {vr.exiled}号
                     </span>
                     得票最高，出局
                     {exiled !== null && (
                       <span className={styles.resultSub}>
                         【放逐】{(exiled.payload as PlayerExiledPayload).seat ?? "无人"}号被票出
-                        {viewer === "GM" && p ? ` · 身份翻牌：${ROLE_ZH[p.role]}` : ""}
+                        {p && rolesKnown(state) ? ` · 身份翻牌：${ROLE_ZH[p.role]}` : ""}
                       </span>
                     )}
                   </>

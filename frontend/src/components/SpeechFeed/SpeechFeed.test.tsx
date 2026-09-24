@@ -9,13 +9,13 @@ import SpeechFeed from "./SpeechFeed";
 
 const events = fixture.events as unknown as Event[];
 const states = fixture.states as unknown as GameState[];
-const players = (states[states.length - 1] as GameState).players;
+const finalState = states[states.length - 1] as GameState;
 const items = speechItems(events);
 
 describe("SpeechFeed", () => {
   it("渲染发言卡与 [GM] 行", () => {
     const { container } = render(
-      <SpeechFeed items={items} cursor={null} players={players} viewer="GM" speakingSeat={null} />,
+      <SpeechFeed items={items} cursor={null} state={finalState} speakingSeat={null} />,
     );
     const speeches = items.filter((it) => it.kind === "speech");
     expect(container.querySelectorAll('[data-kind="speech"]')).toHaveLength(speeches.length);
@@ -25,13 +25,7 @@ describe("SpeechFeed", () => {
   it("cursor 截断后条目数减少并提示剩余条数", () => {
     const cursor = items[Math.floor(items.length / 2)]!.seq;
     const { container } = render(
-      <SpeechFeed
-        items={items}
-        cursor={cursor}
-        players={players}
-        viewer="GM"
-        speakingSeat={null}
-      />,
+      <SpeechFeed items={items} cursor={cursor} state={finalState} speakingSeat={null} />,
     );
     const shown = container.querySelectorAll("[data-kind]");
     expect(shown.length).toBeLessThan(items.length);

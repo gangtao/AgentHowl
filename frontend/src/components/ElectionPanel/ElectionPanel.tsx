@@ -1,9 +1,8 @@
 // 右栏 · 警长竞选（设计稿 1f）：子阶段进度、上警名单（退水划线）、警下计票、当选 / 方向 / 警徽流失。
 
 import { BADGE_LOST_ZH, DIRECTION_ZH, ELECTION_STAGE_ZH, ROLE_ABBR } from "../../engine/phases";
-import { sheriffVoteTally } from "../../engine/select";
+import { rolesKnown, sheriffVoteTally } from "../../engine/select";
 import type { ElectionStage, Event, GameState, SheriffBadgeLostPayload } from "../../engine/types";
-import type { Viewer } from "../../store/game";
 import { seatColor, seatName } from "../seatColor";
 import styles from "./ElectionPanel.module.css";
 
@@ -11,7 +10,6 @@ export interface ElectionPanelProps {
   state: GameState;
   /** 已按回放游标截断的事件流。 */
   events: Event[];
-  viewer: Viewer;
 }
 
 /** 子阶段进度点列的顺序（与 engine 的 election_stage 取值一致）。 */
@@ -24,7 +22,7 @@ const STAGES: ElectionStage[] = [
   "announce",
 ];
 
-export default function ElectionPanel({ state, events, viewer }: ElectionPanelProps): JSX.Element {
+export default function ElectionPanel({ state, events }: ElectionPanelProps): JSX.Element {
   const { votes, tally } = sheriffVoteTally(state, events);
   const current = STAGES.indexOf(state.election_stage as ElectionStage);
   const candidates =
@@ -65,7 +63,7 @@ export default function ElectionPanel({ state, events, viewer }: ElectionPanelPr
           <div className={styles.tags}>
             {candidates.map((seat) => {
               const withdrew = state.sheriff_withdrawn.includes(seat);
-              const color = seatColor(state, seat, viewer);
+              const color = seatColor(state, seat);
               return (
                 <span
                   key={seat}
@@ -90,7 +88,7 @@ export default function ElectionPanel({ state, events, viewer }: ElectionPanelPr
           <div className={styles.kicker}>警下投票 · {Object.keys(votes).length} 票</div>
           <div className={styles.bars}>
             {tally.map(([seat, n]) => {
-              const color = seatColor(state, seat, viewer);
+              const color = seatColor(state, seat);
               return (
                 <div className={styles.barRow} key={seat}>
                   <span style={{ color }}>{seat}号</span>
@@ -120,12 +118,12 @@ export default function ElectionPanel({ state, events, viewer }: ElectionPanelPr
           <span
             className={styles.electedDisc}
             style={{
-              borderColor: seatColor(state, elected, viewer),
-              color: seatColor(state, elected, viewer),
-              background: `color-mix(in srgb, ${seatColor(state, elected, viewer)} 22%, transparent)`,
+              borderColor: seatColor(state, elected),
+              color: seatColor(state, elected),
+              background: `color-mix(in srgb, ${seatColor(state, elected)} 22%, transparent)`,
             }}
           >
-            {viewer === "GM" && electedPlayer ? ROLE_ABBR[electedPlayer.role] : "?"}
+            {electedPlayer && rolesKnown(state) ? ROLE_ABBR[electedPlayer.role] : "?"}
           </span>
           <div className={styles.electedBody}>
             <span className={styles.electedName}>

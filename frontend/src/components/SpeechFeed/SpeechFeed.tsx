@@ -2,18 +2,18 @@
 // 零过滤：items 是 store 里已有事件的全量映射；cursor 之后的条目按回放语义截断（不是信息隔离）。
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { ROLE_ZH, factionColorVar } from "../../engine/phases";
+import { ROLE_ZH } from "../../engine/phases";
 import type { SpeechItem } from "../../engine/select";
-import type { Player } from "../../engine/types";
-import type { Viewer } from "../../store/game";
+import type { GameState } from "../../engine/types";
+import { seatColor } from "../seatColor";
 import styles from "./SpeechFeed.module.css";
 
 export interface SpeechFeedProps {
   items: SpeechItem[];
   /** 回放游标：非 null 时只渲染 seq ≤ cursor 的条目。 */
   cursor: number | null;
-  players: Player[];
-  viewer: Viewer;
+  /** 当前视图状态：只用于取座位名字与阵营色（零过滤，见 seatColor.ts）。 */
+  state: GameState;
   speakingSeat: number | null;
 }
 
@@ -23,32 +23,33 @@ const STICK_PX = 48;
 export default function SpeechFeed({
   items,
   cursor,
-  players,
-  viewer,
+  state,
   speakingSeat,
 }: SpeechFeedProps): JSX.Element {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const [stick, setStick] = useState(true);
   const [unread, setUnread] = useState(0);
+  /** 上一次渲染的条目数：未读数按「新增了几条」累加，而不是「刷新了几次」。 */
+  const prevLenRef = useRef(0);
 
   const shown = cursor === null ? items : items.filter((it) => it.seq <= cursor);
   const hidden = items.length - shown.length;
-  const nameOf = new Map(players.map((p) => [p.seat, p.display_name]));
-  const colorOf = (seat: number | null): string => {
-    if (seat === null || viewer !== "GM") return "var(--color-neutral-300)";
-    const p = players.find((x) => x.seat === seat);
-    return p ? `var(${factionColorVar(p.role)})` : "var(--color-neutral-300)";
-  };
+  const nameOf = new Map(state.players.map((p) => [p.seat, p.display_name]));
+  const colorOf = (seat: number | null): string => seatColor(state, seat);
 
-  // 新条目到达：贴底则滚到底，否则累计未读数。
+  // 新条目到达：贴底则滚到底，否则按新增条数累计未读（WS 每帧最多批量刷 200 条，
+  // 按批次 +1 会把「涌入 30 条」显示成「有 1 条新消息」）。游标往回拖导致条目变少时不累加。
   useLayoutEffect(() => {
     const el = scrollRef.current;
+    const prev = prevLenRef.current;
+    const delta = shown.length - prev;
+    prevLenRef.current = shown.length;
     if (el === null) return;
     if (stick) {
       el.scrollTop = el.scrollHeight;
       setUnread(0);
-    } else {
-      setUnread((n) => n + 1);
+    } else if (delta > 0) {
+      setUnread((n) => n + delta);
     }
     // 只在条目数变化时触发（stick 变化由 onScroll 处理）
     // eslint-disable-next-line react-hooks/exhaustive-deps

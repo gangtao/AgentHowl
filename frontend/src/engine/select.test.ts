@@ -4,6 +4,7 @@ import {
   aliveSeats,
   nightSummary,
   roundSegments,
+  rolesKnown,
   speechItems,
   voteTally,
   wolfSeats,
@@ -33,6 +34,11 @@ describe("select 选择器（std_9_kill_side-3 金样）", () => {
 
   it("wolfSeats 为 3 个（该 preset 3 狼）", () => {
     expect(wolfSeats(finalState).length).toBe(3);
+  });
+
+  it("rolesKnown：发牌后为 true，发牌前（全员默认 VILLAGER/GOOD）为 false", () => {
+    expect(rolesKnown(finalState)).toBe(true);
+    expect(rolesKnown(FX.states[0]!)).toBe(false);
   });
 
   it("voteTally 与首个 VOTE_RESULT 的 tally 一致", () => {

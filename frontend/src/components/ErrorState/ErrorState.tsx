@@ -2,7 +2,7 @@
 
 import styles from "./ErrorState.module.css";
 
-export type ErrorKind = "4404" | "4409" | "auth" | "reconnecting";
+export type ErrorKind = "4404" | "4409" | "auth" | "reconnecting" | "error";
 
 export interface ErrorStateProps {
   kind: ErrorKind;
@@ -28,6 +28,23 @@ export default function ErrorState({ kind, attempt, detail }: ErrorStateProps): 
       </div>
     );
   }
+  if (kind === "error") {
+    // 兜底错误态：后端 5xx / 网络失败等既不是 404/401/409 的情况，原文展示 detail。
+    return (
+      <div className={styles.root} role="alert">
+        <div className={styles.box}>
+          <span className={styles.title}>载入对局失败</span>
+          <span className={styles.desc}>请稍后重试；若持续失败请检查服务端状态。</span>
+          {detail && <span className={styles.detail}>{detail}</span>}
+          <a className={`btn btn-primary ${styles.back}`} href="#/">
+            返回 Lobby
+          </a>
+        </div>
+      </div>
+    );
+  }
+  // 注：GamePage 走 spec §7.5 的「重连中在顶栏提示」（PhaseBar.reconnectHint），
+  // 目前不会把 kind 置为 "reconnecting"；本分支保留给整页重连提示（设计稿 1i 第三张）。
   if (kind === "reconnecting") {
     return (
       <div className={styles.root} role="status">
