@@ -225,3 +225,6 @@ frontend/node_modules/
 frontend/dist/
 # 顶层 lib/ 模式（Python 模板）会误吞前端源码目录，此处显式解禁
 !frontend/src/lib/
+
+# Playwright MCP 浏览器验收截图/追踪（issue #26 M3）
+.playwright-mcp/
