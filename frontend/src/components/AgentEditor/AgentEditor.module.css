@@ -1,0 +1,84 @@
+/* AgentEditor 抽屉（设计稿 2c）。 */
+
+.groups {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.err {
+  display: block;
+  margin-top: 4px;
+  font-size: 11.5px;
+  color: var(--ah-err);
+  line-height: 1.5;
+}
+
+.ok {
+  display: block;
+  margin-top: 4px;
+  font-size: 10.5px;
+  color: var(--ah-ok);
+}
+
+.hint {
+  font-size: 11.5px;
+  color: var(--color-neutral-500);
+  line-height: 1.5;
+}
+
+.guard {
+  min-width: 0;
+  flex: 1;
+}
+
+.tempRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 20px;
+  align-items: center;
+}
+
+.tempValue {
+  color: var(--color-neutral-300);
+}
+
+.range {
+  width: 100%;
+  accent-color: var(--color-accent);
+}
+
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.toggle input {
+  accent-color: var(--color-accent);
+}
+
+.toggleHint {
+  font-size: 10.5px;
+  color: var(--color-neutral-500);
+}
+
+.memRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: end;
+}
+
+.mono {
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 12.5px;
+}

@@ -1,0 +1,10 @@
+/* 危险操作按钮：红描边（设计稿 2d）。 */
+
+.danger {
+  color: var(--ah-err);
+  border-color: var(--ah-err);
+}
+
+.danger:hover {
+  background: color-mix(in srgb, var(--ah-err) 12%, transparent);
+}

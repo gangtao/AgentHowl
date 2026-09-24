@@ -4,7 +4,10 @@
 import { useEffect, useState } from "react";
 import { parseHash } from "./api/tokens";
 import type { ParsedHash } from "./api/tokens";
+import AgentLibrary from "./pages/AgentLibrary";
 import GamePage from "./pages/GamePage";
+import Lobby from "./pages/Lobby";
+import Providers from "./pages/Providers";
 
 const NAV = [
   { href: "#/", label: "新的一局", route: "lobby" as const },
@@ -46,14 +49,13 @@ export default function App(): JSX.Element {
           </a>
         ))}
       </nav>
-      {/* Lobby / AgentLibrary / Providers 页由 Task 8 实现，这里先占位。 */}
-      <main style={{ padding: "36px var(--space-8) 32px 56px" }}>
-        <h3>{NAV.find((n) => n.route === hash.route)?.label ?? "AgentHowl"}</h3>
-        <p className="text-muted" style={{ fontSize: 13 }}>
-          该页面尚未实现。打开对局链接（<code>#/g/&#123;gameId&#125;?gm=…</code> 或{" "}
-          <code>?spec=…</code>）即可观看直播与回放。
-        </p>
-      </main>
+      {hash.route === "agents" ? (
+        <AgentLibrary />
+      ) : hash.route === "providers" ? (
+        <Providers />
+      ) : (
+        <Lobby />
+      )}
     </div>
   );
 }
