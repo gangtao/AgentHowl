@@ -19,6 +19,13 @@ _STATIC_MODELS: dict[str, list[str]] = {
 }
 
 
+def _redact(msg: str, key: str | None) -> str:
+    """错误信息回给 UI 前脱敏：把明文密钥原样替换成 "****"（纯函数，无需 litellm 即可单测）。"""
+    if not key:
+        return msg
+    return msg.replace(key, "****")
+
+
 class LiteLLMProbe:
     async def test(self, provider: Provider, model: str | None) -> dict[str, Any]:
         import litellm  # 惰性
@@ -39,11 +46,11 @@ class LiteLLMProbe:
                 timeout=5,
                 **extra,
             )
-        except Exception as exc:  # 错误原文回给 UI
+        except Exception as exc:  # 错误原文回给 UI（脱敏后）
             return {
                 "ok": False,
                 "latency_ms": int((time.monotonic() - t0) * 1000),
-                "error": f"{type(exc).__name__}: {exc}",
+                "error": _redact(f"{type(exc).__name__}: {exc}", provider.api_key),
             }
         return {"ok": True, "latency_ms": int((time.monotonic() - t0) * 1000), "error": None}
 
@@ -70,4 +77,5 @@ class LiteLLMProbe:
                 r.raise_for_status()
                 return {"models": sorted(m["id"] for m in r.json().get("data", [])), "error": None}
         except Exception as exc:
-            return {"models": [], "error": f"{type(exc).__name__}: {exc}"}
+            msg = _redact(f"{type(exc).__name__}: {exc}", provider.api_key)
+            return {"models": [], "error": msg}

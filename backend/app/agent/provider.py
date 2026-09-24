@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 ProviderKind = Literal["ollama", "openai", "anthropic", "openai_compatible", "gemini", "deepseek"]
 
@@ -60,7 +60,9 @@ class Provider(BaseModel):
     name: str
     kind: ProviderKind
     api_base: str | None
-    api_key: str | None
+    # repr=False：日志/异常里裸打印 Provider（如 f"{provider!r}"）不会带出明文密钥；
+    # 不影响 model_dump_json（落盘仍完整持久化，见 provider_store 的 0600 权限约束）。
+    api_key: str | None = Field(default=None, repr=False)
     default_model: str | None
     created_at: str
     updated_at: str
@@ -81,13 +83,15 @@ class ProviderPublic(BaseModel):
 
     @classmethod
     def from_provider(cls, p: Provider) -> ProviderPublic:
+        # 短密钥（≤4 字符）不给提示：后 4 位即整串，等于把密钥原样回显
+        key_hint = p.api_key[-4:] if p.api_key and len(p.api_key) > 4 else None
         return cls(
             provider_id=p.provider_id,
             name=p.name,
             kind=p.kind,
             api_base=p.api_base,
             has_key=bool(p.api_key),
-            key_hint=p.api_key[-4:] if p.api_key else None,
+            key_hint=key_hint,
             default_model=p.default_model,
             created_at=p.created_at,
             updated_at=p.updated_at,

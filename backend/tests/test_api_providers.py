@@ -100,6 +100,9 @@ def test_provider_test_and_models_use_probe(env: tuple[TestClient, FakeProbe]) -
     r = client.post(f"/api/v1/providers/{pid}/test", json={})
     assert r.status_code == 200 and r.json() == {"ok": True, "latency_ms": 142, "error": None}
     assert probe.calls[-1] == ("test", "qwen2.5:14b")
+    r = client.post(f"/api/v1/providers/{pid}/test")  # 不带任何 JSON body（body 整体缺省）
+    assert r.status_code == 200 and r.json() == {"ok": True, "latency_ms": 142, "error": None}
+    assert probe.calls[-1] == ("test", "qwen2.5:14b")
     r = client.post(f"/api/v1/providers/{pid}/test", json={"model": "llama3.1:8b"})
     assert probe.calls[-1] == ("test", "llama3.1:8b")
     r = client.get(f"/api/v1/providers/{pid}/models")

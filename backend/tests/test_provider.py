@@ -3,6 +3,7 @@
 import os
 
 from app.agent.provider import Provider, ProviderPublic, resolve_model
+from app.runtime.provider_probe import _redact
 from app.runtime.provider_store import InMemoryProviderStore, JsonFileProviderStore
 
 
@@ -37,6 +38,21 @@ def test_public_view_hides_key() -> None:
     assert ProviderPublic.from_provider(_p()).key_hint is None
 
 
+def test_public_view_short_key_gets_no_hint() -> None:
+    """密钥长度 ≤4 时后 4 位即整串，不给提示，避免把短密钥原样回显。"""
+    short = ProviderPublic.from_provider(_p(api_key="abc"))
+    assert short.has_key is True and short.key_hint is None
+    long_ = ProviderPublic.from_provider(_p(api_key="sk-12345678"))
+    assert long_.has_key is True and long_.key_hint == "5678"
+
+
+def test_provider_repr_never_leaks_key() -> None:
+    provider = _p(api_key="sk-topsecret")
+    assert "sk-topsecret" not in repr(provider) and "sk-topsecret" not in str(provider)
+    # repr(Provider) 不含密钥不代表落盘不含：model_dump_json 仍完整持久化
+    assert "sk-topsecret" in provider.model_dump_json()
+
+
 def test_store_roundtrip_mode_and_corruption(tmp_path, caplog) -> None:
     d = tmp_path / "providers"
     store = JsonFileProviderStore(d)
@@ -55,3 +71,11 @@ def test_store_roundtrip_mode_and_corruption(tmp_path, caplog) -> None:
     assert mem.get("p_00000001") is not None
     assert mem.delete("p_00000001") and not mem.delete("p_00000001")
     os.chmod(path, 0o600)
+
+
+def test_redact_strips_api_key_from_probe_error_messages() -> None:
+    msg = "AuthenticationError: invalid key sk-topsecret for request"
+    assert _redact(msg, "sk-topsecret") == "AuthenticationError: invalid key **** for request"
+    assert _redact(msg, None) == msg  # 无密钥：原样返回
+    assert _redact(msg, "") == msg  # 空串：原样返回（避免 "" in msg 恒真的误替换）
+    assert _redact("no secret here", "sk-topsecret") == "no secret here"  # 不含密钥：原样

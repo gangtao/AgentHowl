@@ -93,6 +93,9 @@ def update_provider(
     body: ProviderInput,
     store: ProviderStore = Depends(get_provider_store),
 ) -> ProviderPublic:
+    """全量替换语义：`api_key` 省略=保留原密钥、`""`=清除；`api_base` 省略则按 kind 重置为默认值
+    （不像 api_key 那样"保留原值"——PUT 对其余字段一律整体覆盖）。
+    """
     existing = store.get(provider_id)
     if existing is None:
         raise HTTPException(status_code=404, detail=f"provider 不存在：{provider_id}")
@@ -133,14 +136,14 @@ def delete_provider(
 @router.post("/providers/{provider_id}/test")
 async def test_provider(
     provider_id: str,
-    body: _TestRequest,
+    body: _TestRequest | None = None,
     store: ProviderStore = Depends(get_provider_store),
     probe: ProviderProbe = Depends(get_provider_probe),
 ) -> dict[str, Any]:
     provider = store.get(provider_id)
     if provider is None:
         raise HTTPException(status_code=404, detail=f"provider 不存在：{provider_id}")
-    model = body.model or provider.default_model
+    model = (body.model if body is not None else None) or provider.default_model
     if not model:
         raise HTTPException(status_code=400, detail="未指定 model 且该 provider 没有 default_model")
     return await probe.test(provider, model)
