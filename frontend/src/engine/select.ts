@@ -3,31 +3,46 @@
 // （如 WITCH_SAVED/WITCH_POISONED/NIGHT_RESOLVED 等）render.py 本身也走通用回退，
 // 本文件在 nightSummary 中为它们写了更友好的专用文案——这是有意的偏离，详见 task-5-report。
 
-import { ELECTION_STAGE_ZH, ROLE_ZH, isNight } from "./phases";
+import {
+  BADGE_LOST_ZH,
+  DIRECTION_ZH,
+  ELECTION_STAGE_ZH,
+  PHASE_ZH,
+  ROLE_ZH,
+  isNight,
+} from "./phases";
 import type {
   BadgePassedPayload,
   DeathAnnouncedPayload,
   ElectionStageChangedPayload,
   Event,
+  GameCreatedPayload,
   GameOverPayload,
   GameState,
   GuardProtectedPayload,
   HunterShotPayload,
+  IdiotRevealedPayload,
   LastWordsPayload,
   NightResolvedPayload,
   PhaseChangedPayload,
   PlayerExiledPayload,
   PlayerSpokePayload,
+  RoleSkippedPayload,
   RoleType,
+  RolesAssignedPayload,
   RoundStartedPayload,
   SeerCheckedPayload,
+  SheriffBadgeLostPayload,
   SheriffCandidacyPayload,
+  SheriffDirectionSetPayload,
   SheriffElectedPayload,
   SheriffVoteCastPayload,
   SheriffVoteStartedPayload,
+  SheriffWithdrewPayload,
   VoteCastPayload,
   VoteResultPayload,
   WitchActedPayload,
+  WitchPotionConsumedPayload,
   WolfKillDecidedPayload,
   WolfKillProposedPayload,
   WolfKillRevotePayload,
@@ -231,6 +246,82 @@ export function nightSummary(events: readonly Event[], round: number): NightSumm
   return rows;
 }
 
+// ---- 夜间连线（SeatCircle 的 SVG 层）----
+
+export interface NightLink {
+  from: number;
+  to: number;
+  /** Nocturne tokens 中的 CSS 变量名（如 "--ah-wolf"），由组件层 var(...) 解析。 */
+  color: string;
+  dashed: boolean;
+}
+
+/**
+ * 本轮夜间的「谁→谁」连线：只从事件派生（狼刀取本夜提议过该目标的狼座位，
+ * 女巫解药连到狼刀目标）。观众视角收不到这些事件，自然得到空数组。
+ */
+export function nightLinks(events: readonly Event[], round: number): NightLink[] {
+  const slice = sliceRound(events, round);
+  const links: NightLink[] = [];
+  const proposals: [number, number | null][] = [];
+  let wolfTarget: number | null = null;
+
+  for (const e of slice) {
+    switch (e.type) {
+      case "WOLF_KILL_PROPOSED": {
+        const p = e.payload as WolfKillProposedPayload;
+        proposals.push([p.wolf_seat, p.target]);
+        break;
+      }
+      case "WOLF_KILL_DECIDED": {
+        wolfTarget = (e.payload as WolfKillDecidedPayload).target;
+        break;
+      }
+      case "GUARD_PROTECTED": {
+        const p = e.payload as GuardProtectedPayload;
+        if (e.actor_seat !== null && p.target !== null) {
+          links.push({ from: e.actor_seat, to: p.target, color: "--ah-line-guard", dashed: false });
+        }
+        break;
+      }
+      case "WITCH_POISONED": {
+        const p = e.payload as WitchActedPayload;
+        const target = p.poison_target ?? null;
+        if (e.actor_seat !== null && target !== null) {
+          links.push({ from: e.actor_seat, to: target, color: "--ah-line-poison", dashed: false });
+        }
+        break;
+      }
+      case "SEER_CHECKED": {
+        const p = e.payload as SeerCheckedPayload;
+        if (e.actor_seat !== null) {
+          links.push({ from: e.actor_seat, to: p.target, color: "--ah-line-seer", dashed: false });
+        }
+        break;
+      }
+      default:
+        break;
+    }
+  }
+
+  if (wolfTarget !== null) {
+    const target = wolfTarget;
+    for (const [wolf, t] of proposals) {
+      if (t === target && !links.some((l) => l.from === wolf && l.to === target)) {
+        links.push({ from: wolf, to: target, color: "--ah-wolf", dashed: true });
+      }
+    }
+  }
+
+  // 解药：女巫 → 本夜狼刀目标（WITCH_SAVED 本身不带目标）。
+  for (const e of slice) {
+    if (e.type === "WITCH_SAVED" && e.actor_seat !== null && wolfTarget !== null) {
+      links.push({ from: e.actor_seat, to: wolfTarget, color: "--ah-line-save", dashed: false });
+    }
+  }
+  return links;
+}
+
 // ---- 发言 / 遗言 / 系统 / GM 统一 feed ----
 
 export type SpeechItemKind = "speech" | "last_words" | "gm" | "system";
@@ -241,12 +332,21 @@ export interface SpeechItem {
   kind: SpeechItemKind;
   actor_seat: number | null;
   text: string;
+  /** 发言项的自称身份（PLAYER_SPOKE.claim_role），供发言卡渲染徽标。 */
+  claim?: RoleType | null;
+  /** 发言项公开的警徽流（PLAYER_SPOKE.badge_flow），供发言卡渲染徽标。 */
+  badgeFlow?: number[];
+  /** 发言 / 遗言的正文（不含「N号发言：」前缀），供发言卡正文渲染；`text` 仍是对齐 render.py 的整行。 */
+  content?: string;
 }
 
 function kindOf(e: Event): SpeechItemKind {
   if (e.type === "PLAYER_SPOKE") return "speech";
   if (e.type === "LAST_WORDS") return "last_words";
-  if (e.visibility === "GM_ONLY" || e.visibility === "WOLVES") return "gm";
+  // 轮次分隔线虽是 GM_ONLY，但按系统行渲染更贴近设计稿（观众端本就收不到这条事件）。
+  if (e.type === "ROUND_STARTED") return "system";
+  // 非 PUBLIC 的事件只有上帝视角收得到（GM_ONLY / WOLVES / ROLE_SELF），统一按 [GM] 行渲染。
+  if (e.visibility !== "PUBLIC") return "gm";
   return "system";
 }
 
@@ -256,8 +356,10 @@ function renderEventText(e: Event): string {
   switch (e.type) {
     case "ROUND_STARTED":
       return `———— 第 ${(e.payload as RoundStartedPayload).round} 轮 ————`;
-    case "PHASE_CHANGED":
-      return `【阶段】${(e.payload as PhaseChangedPayload).to}`;
+    case "PHASE_CHANGED": {
+      const to = (e.payload as PhaseChangedPayload).to;
+      return `【阶段】${PHASE_ZH[to] ?? to}`;
+    }
     case "PLAYER_SPOKE": {
       const sp = e.payload as PlayerSpokePayload;
       const claim = sp.claim_role ? `（自称${ROLE_ZH[sp.claim_role]}）` : "";
@@ -348,6 +450,55 @@ function renderEventText(e: Event): string {
         .join("、");
       return `[GM] 狼队第 ${wr.round_no} 轮意见不一致（${body}），重新提案`;
     }
+    // 以下分支 render.py 走通用回退（k=v 串），对前端可读性太差，这里给中文行；
+    // 语义与后端 payload 一致，不自创规则用语（task-7）。
+    case "GAME_CREATED":
+      return `【建局】${(e.payload as GameCreatedPayload).num_players} 人局`;
+    case "GAME_STARTED":
+      return "【开局】发牌完毕，游戏开始";
+    case "ROLES_ASSIGNED": {
+      const ra = e.payload as RolesAssignedPayload;
+      const body = ra.assignments.map(([seat, role]) => `${seat}号${ROLE_ZH[role]}`).join("、");
+      return `[GM] 发牌：${body}`;
+    }
+    case "ROLE_SKIPPED": {
+      const rs = e.payload as RoleSkippedPayload;
+      return `[GM] ${ROLE_ZH[rs.role]}跳过：${rs.reason}`;
+    }
+    case "WITCH_SAVED":
+      return "[GM] 女巫使用解药";
+    case "WITCH_POISONED": {
+      const wp2 = e.payload as WitchActedPayload;
+      const target = wp2.poison_target ?? null;
+      return target !== null ? `[GM] 女巫使用毒药 → ${target}号` : "[GM] 女巫未使用毒药";
+    }
+    case "WITCH_POTION_CONSUMED": {
+      const wc = e.payload as WitchPotionConsumedPayload;
+      const which = wc.antidote ? "解药" : wc.poison ? "毒药" : "药剂";
+      return `[GM] ${wc.seat}号女巫的${which}已用尽`;
+    }
+    case "NIGHT_RESOLVED": {
+      const nr = e.payload as NightResolvedPayload;
+      return nr.deaths.length > 0
+        ? `[GM] 本夜结算：${seatsZh(nr.deaths)} 出局`
+        : "[GM] 本夜结算：平安夜";
+    }
+    case "IDIOT_REVEALED":
+      return `${(e.payload as IdiotRevealedPayload).seat}号翻出白痴牌，免于放逐但失去投票权`;
+    case "SHERIFF_WITHDREW":
+      return `${(e.payload as SheriffWithdrewPayload).seat}号退水`;
+    case "SHERIFF_VOTE_CAST": {
+      const sv = e.payload as SheriffVoteCastPayload;
+      return sv.target !== null ? `  ${sv.voter}号 → ${sv.target}号` : `  ${sv.voter}号 弃票`;
+    }
+    case "SHERIFF_DIRECTION_SET": {
+      const sd = (e.payload as SheriffDirectionSetPayload).direction;
+      return `【警长】发言方向：${DIRECTION_ZH[sd] ?? sd}`;
+    }
+    case "SHERIFF_BADGE_LOST": {
+      const bl = e.payload as SheriffBadgeLostPayload;
+      return `【警徽流失】${BADGE_LOST_ZH[bl.reason] ?? bl.reason}`;
+    }
     default: {
       // 通用回退：对齐 render.py 对未特判类型的处理（非 raw dict）。
       const actor = e.actor_seat !== null ? `${e.actor_seat}号 ` : "";
@@ -361,13 +512,24 @@ function renderEventText(e: Event): string {
 
 /** 发言 + 遗言 + 系统行 + GM 行的统一 feed；含 seq 供回放截断。 */
 export function speechItems(events: readonly Event[]): SpeechItem[] {
-  return events.map((e) => ({
-    seq: e.seq,
-    type: e.type,
-    kind: kindOf(e),
-    actor_seat: e.actor_seat,
-    text: renderEventText(e),
-  }));
+  return events.map((e) => {
+    const item: SpeechItem = {
+      seq: e.seq,
+      type: e.type,
+      kind: kindOf(e),
+      actor_seat: e.actor_seat,
+      text: renderEventText(e),
+    };
+    if (e.type === "PLAYER_SPOKE") {
+      const sp = e.payload as PlayerSpokePayload;
+      item.claim = sp.claim_role ?? null;
+      item.badgeFlow = sp.badge_flow ?? [];
+      item.content = sp.content;
+    } else if (e.type === "LAST_WORDS") {
+      item.content = (e.payload as LastWordsPayload).content;
+    }
+    return item;
+  });
 }
 
 // ---- ReplayBar 分段 ----

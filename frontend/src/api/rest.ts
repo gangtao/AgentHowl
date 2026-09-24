@@ -105,6 +105,18 @@ export function getMeta(gameId: string, token: string): Promise<GameMeta> {
   return req<GameMeta>("GET", `/games/${gameId}/meta`, { token });
 }
 
+/**
+ * 直播期的状态快照（GET /games/{id}/state）。
+ *
+ * 为什么需要它：后端的 `/meta` 与 `/replay` 同一门槛——终局后才开放（rest.py::meta_endpoint），
+ * 所以对局进行中拿不到 GameMeta。GamePage 用本端点补出 `initialState()` 所需的
+ * `{game_id, config, roster}`：GM token 返回完整 GameState（含 config/players），
+ * 观众 token 返回 SpectatorView（只有 seats）。返回体按视角不同，调用方自行判别。
+ */
+export function getState(gameId: string, token: string): Promise<Record<string, unknown>> {
+  return req<Record<string, unknown>>("GET", `/games/${gameId}/state`, { token });
+}
+
 export function getReplay(gameId: string, token: string): Promise<Event[]> {
   return req<Event[]>("GET", `/games/${gameId}/replay`, { token });
 }

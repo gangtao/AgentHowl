@@ -1,0 +1,190 @@
+/* 右栏 · 警长竞选样式（设计稿 1f）。 */
+
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-height: 0;
+  height: 100%;
+  overflow-y: auto;
+}
+
+.head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.title {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.sub {
+  font-size: 11px;
+  color: var(--color-neutral-500);
+}
+
+.stages {
+  display: flex;
+  flex-direction: column;
+}
+
+.stageRow {
+  display: grid;
+  grid-template-columns: 14px 1fr;
+  gap: 10px;
+  align-items: center;
+  font-size: 12px;
+  padding: 4px 0;
+  color: var(--color-neutral-500);
+}
+
+.stageDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-left: 3px;
+  background: var(--color-neutral-800);
+}
+
+.stageRow[data-state="done"] {
+  color: var(--color-neutral-400);
+}
+
+.stageRow[data-state="done"] .stageDot {
+  background: var(--color-accent-700);
+}
+
+.stageRow[data-state="now"] {
+  color: var(--color-text);
+}
+
+.stageRow[data-state="now"] .stageDot {
+  background: var(--color-accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 30%, transparent);
+}
+
+.kicker {
+  font-size: 11px;
+  color: var(--color-neutral-500);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.tags {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.tagOut {
+  background: var(--color-neutral-800);
+  color: var(--color-neutral-100);
+  text-decoration: line-through;
+  opacity: 0.6;
+}
+
+.bars {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.barRow {
+  display: grid;
+  grid-template-columns: 40px 1fr 32px;
+  align-items: center;
+  gap: 10px;
+  font-size: 12.5px;
+}
+
+.barTrack {
+  height: 8px;
+  border-radius: 4px;
+  background: var(--color-neutral-900);
+  overflow: hidden;
+  display: block;
+}
+
+.barFill {
+  display: block;
+  height: 100%;
+  border-radius: 4px;
+}
+
+.barNum {
+  text-align: right;
+  color: var(--color-neutral-300);
+  font-family: ui-monospace, Menlo, monospace;
+}
+
+.voteLines {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 10px;
+  font-size: 12px;
+  color: var(--color-neutral-400);
+}
+
+.electedCard {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--ah-god) 10%, transparent);
+}
+
+.electedDisc {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 1.5px solid;
+  display: grid;
+  place-items: center;
+  font-weight: 500;
+  flex: none;
+}
+
+.electedBody {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.electedName {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.star {
+  color: var(--ah-god);
+}
+
+.electedSub {
+  font-size: 11.5px;
+  color: var(--color-neutral-400);
+}
+
+.order {
+  font-size: 12px;
+  color: var(--color-neutral-400);
+  line-height: 1.6;
+}
+
+.lostCard {
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--color-neutral-800) 55%, transparent);
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--color-neutral-300);
+}
+
+.footer {
+  margin-top: auto;
+  padding-top: var(--space-4);
+  font-size: 11.5px;
+  color: var(--color-neutral-500);
+}

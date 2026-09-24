@@ -64,6 +64,12 @@ export const BADGE_LOST_ZH: Record<string, string> = {
   SELF_DESTRUCT: "竞选期狼人自爆吞警徽",
 };
 
+// 警长发言方向（engine.py::_speech_order：RIGHT = 顺时针、LEFT = 逆时针）。
+export const DIRECTION_ZH: Record<string, string> = {
+  LEFT: "逆时针",
+  RIGHT: "顺时针",
+};
+
 // 与 render.py::render_event 的 GAME_OVER 分支一致（winner 为 null 时另行显示「平局」）。
 export const WINNER_ZH: Record<string, string> = {
   GOOD: "好人阵营",

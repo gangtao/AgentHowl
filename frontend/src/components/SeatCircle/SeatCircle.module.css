@@ -1,0 +1,264 @@
+/* 座位环样式（设计稿 1c/1d/1h）：280×280 容器，座位圆 46px，<900px 缩到 240×240/40px。 */
+
+.root {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-6) var(--space-4);
+  min-height: 0;
+}
+
+.circle {
+  position: relative;
+  width: 280px;
+  height: 280px;
+  flex: none;
+}
+
+.lines {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.seat {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+}
+
+.disc {
+  position: relative;
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  border: 1.5px solid;
+  display: grid;
+  place-items: center;
+}
+
+.speaking {
+  box-shadow:
+    0 0 0 2px var(--color-accent),
+    0 0 18px color-mix(in srgb, var(--color-accent) 55%, transparent);
+}
+
+.abbr {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.badge {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--ah-god);
+  color: var(--color-bg);
+  font-size: 10px;
+  display: grid;
+  place-items: center;
+}
+
+.idiot {
+  position: absolute;
+  bottom: -6px;
+  left: -8px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--ah-villager);
+  color: var(--color-bg);
+  font-size: 10px;
+  display: grid;
+  place-items: center;
+}
+
+.dead {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 22px;
+  color: var(--color-neutral-200);
+  background: color-mix(in srgb, var(--color-bg) 55%, transparent);
+  border-radius: 50%;
+}
+
+.votes {
+  position: absolute;
+  bottom: -6px;
+  right: -8px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--color-accent);
+  color: var(--color-bg);
+  font-size: 10.5px;
+  font-weight: 600;
+  display: grid;
+  place-items: center;
+}
+
+.name {
+  font-size: 10.5px;
+  line-height: 1;
+  color: var(--color-neutral-400);
+  white-space: nowrap;
+}
+
+.center {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  pointer-events: none;
+}
+
+.centerLabel {
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  color: var(--color-neutral-500);
+}
+
+.centerValue {
+  font-size: 20px;
+  font-weight: 500;
+  color: var(--color-accent-300);
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  justify-content: center;
+  font-size: 10.5px;
+  color: var(--color-neutral-400);
+}
+
+.legendItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.lineWolf,
+.lineGuard,
+.lineSave,
+.linePoison,
+.lineSeer {
+  width: 14px;
+  border-top-width: 2px;
+  border-top-style: solid;
+}
+
+.lineWolf {
+  border-top-style: dashed;
+  border-top-color: var(--ah-wolf);
+}
+.lineGuard {
+  border-top-color: var(--ah-line-guard);
+}
+.lineSave {
+  border-top-color: var(--ah-line-save);
+}
+.linePoison {
+  border-top-color: var(--ah-line-poison);
+}
+.lineSeer {
+  border-top-color: var(--ah-line-seer);
+}
+
+.dotWolf,
+.dotGod,
+.dotVillager,
+.dotSpeaking {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.dotWolf {
+  border: 1.5px solid var(--ah-wolf);
+}
+.dotGod {
+  border: 1.5px solid var(--ah-god);
+}
+.dotVillager {
+  border: 1.5px solid var(--ah-villager);
+}
+.dotSpeaking {
+  box-shadow: 0 0 0 2px var(--color-accent);
+}
+
+.star {
+  color: var(--ah-god);
+}
+
+.cards {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: var(--space-2);
+  width: 100%;
+  margin-top: auto;
+  font-size: 11px;
+  color: var(--color-neutral-400);
+}
+
+.statCard {
+  padding: var(--space-2) var(--space-3);
+  gap: 1px;
+}
+
+.statValue {
+  font-size: 17px;
+  color: var(--color-text);
+}
+
+.statSub {
+  font-size: 11px;
+  color: var(--color-neutral-500);
+}
+
+.wolfNum {
+  color: var(--ah-wolf);
+}
+
+@media (max-width: 900px) {
+  .root {
+    padding: var(--space-4);
+  }
+
+  .circle {
+    width: 240px;
+    height: 240px;
+  }
+
+  .disc {
+    width: 40px;
+    height: 40px;
+  }
+
+  .abbr {
+    font-size: 12px;
+  }
+
+  .name {
+    font-size: 10px;
+  }
+}
