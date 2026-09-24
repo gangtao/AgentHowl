@@ -82,6 +82,12 @@ describe("buildAgentsPayload", () => {
   it("库里查不到的 id 视为未分配", () => {
     expect(buildAgentsPayload([{ seat: 2, agentId: "a_gone" }], "a_gone", LIBRARY)).toEqual({});
   });
+
+  it("fill 档案配了 memory_id → 抛错（后端 validate_profiles 必 400）", () => {
+    expect(() => buildAgentsPayload([], "a_fox", LIBRARY)).toThrow(/填满档案不得配置 memory_id/);
+    // 无 memory_id 的档案可以填满
+    expect(buildAgentsPayload([], "a_nice", LIBRARY)["*"]?.name).toBe("老好人");
+  });
 });
 
 describe("toProfilePayload", () => {

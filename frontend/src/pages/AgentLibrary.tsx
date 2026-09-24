@@ -116,8 +116,12 @@ export default function AgentLibrary(): JSX.Element {
     const a = document.createElement("a");
     a.href = url;
     a.download = "agenthowl-agents.json";
+    // 锚点必须入 DOM（Firefox 下游离锚点 click() 不触发下载）；blob URL 延后一拍回收，
+    // 否则部分浏览器会赶在下载启动前失效
+    document.body.appendChild(a);
     a.click();
-    URL.revokeObjectURL(url);
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 0);
   }
 
   return (

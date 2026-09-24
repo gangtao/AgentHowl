@@ -66,13 +66,15 @@ export default function Lobby(): JSX.Element {
     );
   }, [preset]);
 
+  const fillAgent = fill === null ? null : (items.find((a) => a.agent_id === fill) ?? null);
+  // 含 memory_id 的档案不能当 "*"（buildAgentsPayload 会抛错）：这里先摘掉 fill 算预览，
+  // 下面的 fillBlocked 负责把提示与「创建并开始」挡住
+  const fillBlocked = fillAgent?.profile.memory_id != null;
   const agentsPayload = useMemo(
-    () => buildAgentsPayload(assignment, fill, items),
-    [assignment, fill, items],
+    () => buildAgentsPayload(assignment, fillBlocked ? null : fill, items),
+    [assignment, fill, fillBlocked, items],
   );
   const summary = assignmentSummary(assignment, fill);
-  const fillAgent = fill === null ? null : (items.find((a) => a.agent_id === fill) ?? null);
-  const fillBlocked = fillAgent?.profile.memory_id != null;
 
   function assign(seat: number, agentId: string | null): void {
     setAssignment((prev) => prev.map((s) => (s.seat === seat ? { ...s, agentId } : s)));

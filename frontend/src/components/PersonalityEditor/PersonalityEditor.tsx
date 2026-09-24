@@ -36,6 +36,9 @@ export default function PersonalityEditor({
   const styleHits = forbiddenHits(value.styleNotes);
   const spec = toPersonalitySpec(value);
   const selectedWords = new Set(value.traits.map((t) => t.word));
+  // 后端对 traits 的**键**同样跑 _check_guardrail（personality.py::_check_traits）
+  const traitHits = [...new Set(value.traits.flatMap((t) => forbiddenHits(t.word)))];
+  const customHits = forbiddenHits(custom);
 
   function toggleTrait(word: string): void {
     onChange({
@@ -53,6 +56,14 @@ export default function PersonalityEditor({
     });
   }
 
+  /** letter 为空串 = 清空该轴（不表态）。 */
+  function setAxis(axis: string, letter: string): void {
+    const mbti = { ...value.mbti };
+    if (letter) mbti[axis] = letter;
+    else delete mbti[axis];
+    onChange({ ...value, mbti });
+  }
+
   function addCustom(): void {
     const word = custom.trim();
     if (!word || word.length > MAX_TRAIT_LEN || selectedWords.has(word)) return;
@@ -67,7 +78,13 @@ export default function PersonalityEditor({
         <div className="field">
           <label htmlFor={`${uid}-desc`}>
             描述
-            <span className={styles.counter}>
+            <span
+              className={
+                value.description.length > MAX_DESCRIPTION
+                  ? `${styles.counter} ${styles.errText}`
+                  : styles.counter
+              }
+            >
               {value.description.length} / {MAX_DESCRIPTION}
             </span>
           </label>
@@ -126,6 +143,17 @@ export default function PersonalityEditor({
           )}
         </div>
 
+        {customHits.length > 0 && (
+          <span className={styles.err}>
+            护栏：自定义特质含「{customHits.join("」「")}」— 加入后保存将被后端 422 拒绝
+          </span>
+        )}
+        {traitHits.length > 0 && (
+          <span className={styles.err}>
+            护栏：特质词含「{traitHits.join("」「")}」— 保存将被后端 422 拒绝
+          </span>
+        )}
+
         {value.traits.length > 0 && (
           <div className={styles.sliders}>
             {value.traits.map((t) => (
@@ -163,17 +191,16 @@ export default function PersonalityEditor({
           {value.presetSystem === "MBTI" &&
             MBTI_AXES.map((axis) => (
               <span key={axis} className="seg" role="group" aria-label={`MBTI ${axis}`}>
-                {[axis[0] ?? "", axis[1] ?? ""].map((letter) => (
-                  <label key={letter} className="seg-opt">
+                {/* 末项「—」= 这一轴不表态：后端支持部分轴（dict 写法），UI 也要能退回未选 */}
+                {[axis[0] ?? "", axis[1] ?? "", ""].map((letter) => (
+                  <label key={letter || "none"} className="seg-opt">
                     <input
                       type="radio"
                       name={`${uid}-${axis}`}
-                      checked={value.mbti[axis] === letter}
-                      onChange={() =>
-                        onChange({ ...value, mbti: { ...value.mbti, [axis]: letter } })
-                      }
+                      checked={(value.mbti[axis] ?? "") === letter}
+                      onChange={() => setAxis(axis, letter)}
                     />
-                    {letter}
+                    {letter || "—"}
                   </label>
                 ))}
               </span>

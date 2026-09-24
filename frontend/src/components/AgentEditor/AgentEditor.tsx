@@ -86,9 +86,14 @@ export default function AgentEditor({
   const memoryShapeBad = form.memoryId !== "" && !isValidMemoryId(form.memoryId);
 
   const personalitySpec = useMemo(() => toPersonalitySpec(form.personality), [form.personality]);
+  // 护栏短语与后端 _check_guardrail 同口径（description / style_notes / traits 的键），
+  // 但**只做提示不挡保存**：判决权在后端 422（spec §7.2b），落到 footer 的 error 位。
   const guardHits = [
-    ...forbiddenHits(form.personality.description),
-    ...forbiddenHits(form.personality.styleNotes),
+    ...new Set([
+      ...forbiddenHits(form.personality.description),
+      ...forbiddenHits(form.personality.styleNotes),
+      ...form.personality.traits.flatMap((t) => forbiddenHits(t.word)),
+    ]),
   ];
   const tooLong =
     form.personality.description.length > MAX_DESCRIPTION ||
@@ -100,8 +105,7 @@ export default function AgentEditor({
     nameTaken ||
     memoryShapeBad ||
     memoryTakenBy !== undefined ||
-    tooLong ||
-    guardHits.length > 0;
+    tooLong;
 
   function submit(): void {
     if (blocked || saving) return;

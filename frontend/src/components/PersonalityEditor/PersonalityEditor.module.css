@@ -26,6 +26,11 @@
   line-height: 1.5;
 }
 
+/* 只改颜色（计数是 label 里的 float 元素，不能用 .err 的 display:block） */
+.errText {
+  color: var(--ah-err);
+}
+
 .chips {
   display: flex;
   gap: 4px;

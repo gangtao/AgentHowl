@@ -42,7 +42,12 @@ function indexById(library: StoredAgent[]): Map<string, StoredAgent> {
   return new Map(library.map((a) => [a.agent_id, a]));
 }
 
-/** 座位选择 → `POST /games` 的 `agents` 映射。库里查不到的 id 视为未分配（忽略）。 */
+/**
+ * 座位选择 → `POST /games` 的 `agents` 映射。库里查不到的 id 视为未分配（忽略）。
+ *
+ * fill 档案配了 `memory_id` 时抛错：`"*"` 会展开成多个座位共用一份记忆，后端
+ * `validate_profiles` 必 400。规则住在这一层（与 memoryConflicts 同层），UI 的禁用只是前置闸门。
+ */
 export function buildAgentsPayload(
   assignment: SeatSlot[],
   fill: string | null,
@@ -58,7 +63,14 @@ export function buildAgentsPayload(
   }
   if (fill !== null) {
     const stored = byId.get(fill);
-    if (stored !== undefined) out["*"] = toProfilePayload(stored.profile);
+    if (stored !== undefined) {
+      if (stored.profile.memory_id != null) {
+        throw new Error(
+          `填满档案不得配置 memory_id：「${stored.profile.name ?? fill}」的记忆 ${stored.profile.memory_id} 会被多个座位共用`,
+        );
+      }
+      out["*"] = toProfilePayload(stored.profile);
+    }
   }
   return out;
 }

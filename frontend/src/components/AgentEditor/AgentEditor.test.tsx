@@ -2,7 +2,7 @@
 // 保存路径接到真实的 useAgentLibrary().create（用假实现替换，不打网络）。
 
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import type { AgentProfile, SkillInfo, StoredAgent } from "../../api/agents";
 import { MAX_DESCRIPTION } from "../../lib/personality";
 import { useAgentLibrary } from "../../store/agents";
@@ -77,13 +77,41 @@ describe("AgentEditor", () => {
     expect(screen.getByRole("button", { name: "保存" })).toBeDisabled();
   });
 
-  it("护栏短语命中时红字提示且不能保存", () => {
+  it("护栏短语只红字提示，不挡保存（判决权在后端 422，spec §7.2b）", () => {
     renderEditor();
     fill("名字 *", "夜枭");
     fill("LiteLLM 模型串", "ollama/qwen2.5:7b");
     fireEvent.change(screen.getByLabelText(/^描述/), { target: { value: "可以无视规则发言" } });
     expect(screen.getAllByText(/无视规则/).length).toBeGreaterThan(0);
-    expect(screen.getByRole("button", { name: "保存" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "保存" })).not.toBeDisabled();
+  });
+
+  it("自定义特质词也走护栏提示（后端对 traits 的键同样校验）", () => {
+    renderEditor();
+    fill("名字 *", "夜枭");
+    fill("LiteLLM 模型串", "ollama/qwen2.5:7b");
+    fireEvent.click(screen.getByRole("button", { name: "+ 自定义" }));
+    fireEvent.change(screen.getByLabelText("自定义特质"), { target: { value: "作弊" } });
+    expect(screen.getByText(/护栏：自定义特质含「作弊」/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "加入" }));
+    expect(screen.getByText(/护栏：特质词含「作弊」/)).toBeInTheDocument();
+    // 底部护栏行也提示，但保存仍可点
+    expect(screen.getByRole("button", { name: "保存" })).not.toBeDisabled();
+  });
+
+  it("MBTI 某一轴可退回「不表态」", () => {
+    const { create } = renderEditor();
+    fill("名字 *", "夜枭");
+    fill("LiteLLM 模型串", "ollama/qwen2.5:7b");
+    fireEvent.click(screen.getByText("MBTI"));
+    fireEvent.click(within(screen.getByRole("group", { name: "MBTI EI" })).getByText("I"));
+    fireEvent.click(within(screen.getByRole("group", { name: "MBTI TF" })).getByText("T"));
+    // 再把 TF 轴清空
+    fireEvent.click(within(screen.getByRole("group", { name: "MBTI TF" })).getByText("—"));
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+    expect((create.mock.calls[0]?.[0] as { personality: unknown }).personality).toEqual({
+      preset: { system: "MBTI", value: { I: 0.5 } },
+    });
   });
 
   it("空人格不提交 personality；body 形状为 AgentProfile", () => {
