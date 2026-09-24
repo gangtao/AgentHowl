@@ -76,6 +76,11 @@ def _seq_round_map(gm_events: list[Event]) -> dict[int, int]:
 async def ws_endpoint(
     ws: WebSocket, token: str = Query(...), from_seq: int = Query(default=0)
 ) -> None:
+    # accept 必须在任何 close 之前：uvicorn 会把 accept 前的 close 折叠成 HTTP 403
+    # 握手失败，浏览器端 WebSocket 只能看到 CloseEvent.code === 1006，拿不到下面
+    # 这些 4xxx 关闭码（Starlette TestClient 在 accept 前也能送达 code，故测试未发现）。
+    await ws.accept()
+
     tokens = ws.app.state.tokens
     games: GameRegistry = ws.app.state.games
     info: TokenInfo | None = tokens.resolve(token)
@@ -94,7 +99,6 @@ async def ws_endpoint(
     if not handle.started or handle.connections is None:
         await ws.close(code=4409)
         return
-    await ws.accept()
 
     viewer: Any = (
         info.seat if info.kind == "PLAYER" else ("GM" if info.kind == "GM" else "SPECTATOR")
