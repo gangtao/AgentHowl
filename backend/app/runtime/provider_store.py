@@ -63,7 +63,11 @@ class JsonFileProviderStore:
         try:
             return Provider.model_validate(raw)
         except ValidationError as exc:
-            raise StoreCorruptionError(f"provider 校验失败：{path}：{exc}") from exc
+            # pydantic 的错误文本含 input_value=…，可能回显坏文件里的明文密钥片段；
+            # 完整异常只记日志（后端本地文件，非用户可读响应），抛给调用方（可能经 API 500
+            # 回显给客户端）的消息只带文件名，不带 pydantic 原文。
+            logger.warning("provider 文件校验失败 %s：%s", path.name, exc)
+            raise StoreCorruptionError(f"provider 校验失败：{path.name}") from exc
 
     def list(self) -> list[Provider]:
         if not self._dir.is_dir():

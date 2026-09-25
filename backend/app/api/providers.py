@@ -13,7 +13,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel
 
-from app.agent.provider import Provider, ProviderInput, ProviderPublic
+from app.agent.provider import Provider, ProviderInput, ProviderPublic, redact_secret
 from app.runtime.agent_library import AgentLibraryStore
 from app.runtime.provider_probe import ProviderProbe
 from app.runtime.provider_store import ProviderStore
@@ -50,6 +50,17 @@ def _check_name_unique(name: str, store: ProviderStore, *, exclude_id: str | Non
     for other in store.list():
         if other.provider_id != exclude_id and other.name == name:
             raise HTTPException(status_code=409, detail=f"已有同名 provider：{name}")
+
+
+def _redact_response(result: dict[str, Any], provider: Provider) -> dict[str, Any]:
+    """端点级纵深防御：探测结果回给前端前，再对可能带明文密钥的字符串字段脱敏一次
+    （即便 probe 实现忘了脱敏，这里兜底；已脱敏的文本重复替换是幂等的）。
+    """
+    for field in ("error", "detail", "message"):
+        value = result.get(field)
+        if isinstance(value, str):
+            result[field] = redact_secret(value, provider.api_key)
+    return result
 
 
 @router.get("/providers")
@@ -146,7 +157,7 @@ async def test_provider(
     model = (body.model if body is not None else None) or provider.default_model
     if not model:
         raise HTTPException(status_code=400, detail="未指定 model 且该 provider 没有 default_model")
-    return await probe.test(provider, model)
+    return _redact_response(await probe.test(provider, model), provider)
 
 
 @router.get("/providers/{provider_id}/models")
@@ -158,4 +169,4 @@ async def list_provider_models(
     provider = store.get(provider_id)
     if provider is None:
         raise HTTPException(status_code=404, detail=f"provider 不存在：{provider_id}")
-    return await probe.list_models(provider)
+    return _redact_response(await probe.list_models(provider), provider)

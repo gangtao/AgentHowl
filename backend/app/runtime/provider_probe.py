@@ -5,7 +5,7 @@ from __future__ import annotations
 import time
 from typing import Any, Protocol
 
-from app.agent.provider import Provider, resolve_model
+from app.agent.provider import Provider, redact_secret, resolve_model
 
 
 class ProviderProbe(Protocol):
@@ -18,12 +18,9 @@ _STATIC_MODELS: dict[str, list[str]] = {
     "gemini": ["gemini-1.5-flash", "gemini-1.5-pro"],
 }
 
-
-def _redact(msg: str, key: str | None) -> str:
-    """错误信息回给 UI 前脱敏：把明文密钥原样替换成 "****"（纯函数，无需 litellm 即可单测）。"""
-    if not key:
-        return msg
-    return msg.replace(key, "****")
+# 向后兼容别名：脱敏逻辑已迁到 app.agent.provider.redact_secret（端点侧也复用），
+# 这里保留 _redact 这个名字，旧测试按此名字 import 仍可用。
+_redact = redact_secret
 
 
 class LiteLLMProbe:

@@ -103,3 +103,14 @@ def resolve_model(model: str, provider: Provider | None) -> str:
     if provider is None:
         return model
     return f"{_PREFIX[provider.kind]}/{model}"
+
+
+def redact_secret(text: str, key: str | None) -> str:
+    """把明文密钥从文本里原样替换成 "****"（纯函数，无 IO）。
+
+    探测器（provider_probe）与 API 端点均调用此函数做脱敏，端点侧是纵深防御：
+    即便探测器实现忘了脱敏，响应出口也兜底。
+    """
+    if not key:
+        return text
+    return text.replace(key, "****")
