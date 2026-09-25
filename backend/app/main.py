@@ -11,11 +11,14 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from app.agent.skills import BUILTIN_SKILLS_DIR, SkillLibrary
-from app.api import rest, ws
+from app.api import agents, providers, rest, ws
 from app.api.deps import TokenRegistry
+from app.runtime.agent_library import AgentLibraryStore, JsonFileAgentLibrary
 from app.runtime.experience_store import ExperienceStore, JsonFileExperienceStore
 from app.runtime.game_runner import LobbyError, RunnerTimeouts
 from app.runtime.player_port import NotYourTurnError, PlayerPort
+from app.runtime.provider_probe import LiteLLMProbe, ProviderProbe
+from app.runtime.provider_store import JsonFileProviderStore, ProviderStore
 from app.runtime.registry import GameRegistry
 from app.schemas.actions import ToolCallError
 from app.store.event_store import EventStore, JsonFileEventStore, StoreError
@@ -33,6 +36,12 @@ def create_app(
     skills_dir: Path | None = None,
     memory_dir: Path | None = None,
     experience_store: ExperienceStore | None = None,
+    agents_dir: Path | None = None,
+    agent_library: AgentLibraryStore | None = None,
+    providers_dir: Path | None = None,
+    provider_store: ProviderStore | None = None,
+    provider_probe: ProviderProbe | None = None,
+    frontend_dist: Path | None = None,
 ) -> FastAPI:
     app = FastAPI(title="AgentHowl API", version="0.1.0")
     # 内置目录允许缺失（打包场景，容忍过滤）；显式指定的外部目录原样传给 load，
@@ -41,6 +50,11 @@ def create_app(
     if skills_dir is not None:
         dirs.append(skills_dir)  # 显式指定的外部目录不存在 → SkillLibrary.load 报错（fail-loud）
     skill_library = SkillLibrary.load(dirs) if dirs else SkillLibrary.empty()
+    # Provider 存储（issue #26）：惰性建目录，密钥明文文件权限 0600
+    app.state.provider_store = provider_store or JsonFileProviderStore(
+        providers_dir or Path("data/providers")
+    )
+    app.state.provider_probe = provider_probe or LiteLLMProbe()
     # 跨局记忆目录（issue #59）：惰性建目录，无 memory_id 的运行永不落盘
     app.state.games = GameRegistry(
         store=store or JsonFileEventStore(data_dir or Path("data/games")),
@@ -49,10 +63,16 @@ def create_app(
         skill_library=skill_library,
         experience_store=experience_store
         or JsonFileExperienceStore(memory_dir or Path("data/agent_memory")),
+        provider_store=app.state.provider_store,
     )
     app.state.tokens = TokenRegistry()
+    app.state.agent_library = agent_library or JsonFileAgentLibrary(
+        agents_dir or Path("data/agents")
+    )
     app.include_router(rest.router, prefix="/api/v1")
     app.include_router(ws.router, prefix="/api/v1")
+    app.include_router(agents.router, prefix="/api/v1")
+    app.include_router(providers.router, prefix="/api/v1")
 
     def _handler(status: int):  # type: ignore[no-untyped-def]
         async def h(request: Request, exc: Exception) -> JSONResponse:
@@ -68,6 +88,16 @@ def create_app(
     # runner task 崩溃后 handle.ensure_healthy() 抛出裸 RuntimeError，需兜底为 500（否则落到
     # Starlette 默认异常页，客户端拿不到 JSON detail）——issue #30 Task 5 复审发现。
     app.add_exception_handler(RuntimeError, _handler(500))
+    # 前端产物（issue #26）：存在则整站挂到 /；API 路由已先注册，/api/v1 不受影响
+    dist = (
+        frontend_dist
+        if frontend_dist is not None
+        else Path(__file__).resolve().parents[2] / "frontend" / "dist"
+    )
+    if dist.is_dir():
+        from fastapi.staticfiles import StaticFiles
+
+        app.mount("/", StaticFiles(directory=str(dist), html=True), name="frontend")
     return app
 
 

@@ -1,0 +1,44 @@
+/* 夜间遮罩样式（设计稿 1c：GM .38 + 卡片；1h：观众 .7 无卡片背景）。 */
+
+.rootGm,
+.rootSpectator {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.rootGm {
+  background: rgb(10 12 24 / 38%);
+}
+
+.rootSpectator {
+  background: rgb(10 12 24 / 70%);
+}
+
+.cardGm,
+.cardSpectator {
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.cardGm {
+  padding: 18px 32px;
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--color-bg) 72%, transparent);
+  box-shadow: var(--shadow-sm);
+}
+
+.title {
+  font-size: 22px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+}
+
+.role {
+  font-size: 13px;
+}

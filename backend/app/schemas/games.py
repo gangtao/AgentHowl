@@ -23,6 +23,7 @@ class CreateGameResponse(BaseModel):
     game_id: str
     host_token: str
     spectator_token: str | None
+    gm_token: str  # 上帝视角只读 token（issue #26）；只发给建局者
     config: dict[str, Any]
     agents: dict[str, AgentProfile]  # 解析后的档案映射（含旧 ai_model 折叠为 "*"）
 

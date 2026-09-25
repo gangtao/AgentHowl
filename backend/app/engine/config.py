@@ -220,6 +220,8 @@ _PRESETS = {
     "std_9_kill_all": _preset_9_kill_all,
 }
 
+PRESET_NAMES: tuple[str, ...] = tuple(_PRESETS)
+
 
 def build_preset(name: str) -> GameConfig:
     if name not in _PRESETS:

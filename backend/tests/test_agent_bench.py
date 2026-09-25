@@ -91,6 +91,51 @@ async def test_single_game_token_bench() -> None:
     assert total > 0, "token 累计为 0——检查 usage 上报"
 
 
+async def test_provider_bound_client_smoke() -> None:
+    """Provider 绑定端口客户端冒烟（issue #26/#78）：凭据经 Provider 走完整局。
+
+    与 test_single_game_token_bench 不同：模型不直接写进 AgentProfile.model /
+    环境变量，而是经 ProviderStore → GameHandle.providers → build_agent_port(provider=p)
+    绑定到该端口专属的 LiteLLMInstructorClient——验证 create()/start() 的 provider
+    装配路径与凭据注入路径本身，而不只是单次 LLM 调用。
+    """
+    from app.agent.profile import AgentProfile
+    from app.agent.provider import Provider
+    from app.runtime.provider_store import InMemoryProviderStore
+
+    assert SMOKE_MODEL is not None
+    api_base = os.environ.get("AGENTHOWL_SMOKE_API_BASE") or "http://localhost:11434"
+    # provider 已携带 kind 前缀，profile.model 须去前缀，否则 resolve_model 会拼出双前缀
+    bare_model = SMOKE_MODEL.removeprefix("ollama/")
+    now = "2026-01-01T00:00:00+00:00"
+    provider = Provider(
+        provider_id="p_smoke",
+        name="smoke-ollama",
+        kind="ollama",
+        api_base=api_base,
+        api_key=None,
+        default_model=bare_model,
+        created_at=now,
+        updated_at=now,
+    )
+    provider_store = InMemoryProviderStore()
+    provider_store.put(provider)
+
+    registry = GameRegistry(
+        InMemoryEventStore(),
+        RunnerTimeouts(speech_sec=120.0, action_sec=120.0),
+        provider_store=provider_store,
+    )
+    config = build_preset("std_9_kill_side").model_copy(update={"seed": 5})
+    profile = AgentProfile(model=bare_model, provider=provider.provider_id)
+    handle = registry.create(config, allow_spectators=False, agents={"*": profile})
+    registry.start(handle, fill_with_bots=True)
+    assert handle.task is not None
+    state = await asyncio.wait_for(handle.task, timeout=1800)
+    assert state.phase == Phase.GAME_OVER
+    assert handle.providers, "provider 未装配到任何座位——凭据注入路径未生效"
+
+
 @pytest.mark.smoke
 async def test_wolf_team_kill_skill_ab_smoke() -> None:
     """A/B 冒烟：wolf-team-kill 开/关各一局，打印狼队空刀率（不断言方向）。"""

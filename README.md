@@ -96,14 +96,21 @@ uv run python -m app.cli.simulate --preset std_12_yn_hunter_idiot --seed 1 --gam
 仓库根的 `Makefile` 封装了全部常用命令（`make help` 查看）：
 
 ```bash
-make check        # 全量质量门：lint + 格式 + 类型 + 测试（= 下面四条）
+make check        # 全量质量门：lint + 格式 + 类型 + 测试（后端四条 + node_modules 存在时自动带 fe-check）
 make test         # 全量测试（含确定性重放与 500 局终止性扫描）
 make typecheck    # mypy 严格模式
 make lint         # ruff 静态检查
 make format       # ruff 自动格式化
-make serve        # 启动 API 服务（uvicorn 热重载）
+make serve        # 启动 API 服务（uvicorn 热重载；frontend/dist 存在时同端口静态挂载，见下「前端」）
 make smoke        # 真模型 smoke（需 AGENTHOWL_SMOKE_MODEL + Ollama）
 make bench        # 档案 A/B bench（不给 AGENTS 为零 LLM 随机 bot；见下「档案评估」）
+
+# 前端（frontend/，issue #26；详见下「前端 / Frontend」）
+make fe-install   # npm ci
+make fe-dev       # Vite 开发服务器，/api 代理到 8000
+make fe-check     # 前端 lint + tsc + vitest
+make fe-build     # 构建到 frontend/dist
+make fixtures     # 重新生成 TS reducer 金样（引擎/事件改动后必做）
 ```
 
 等价的原始命令（`cd backend` 后）：
@@ -119,6 +126,59 @@ uv run ruff check . && uv run ruff format --check .
 - 文档与注释用中文；代码标识符、API 名与 schema 用英文
 - 规则引擎测试不依赖任何 IO 或 mock；确定性测试用固定 `GameConfig.seed`
 - 新增事件类型必须登记 `EVENT_PAYLOAD_TYPES`（fail-loud tripwire 强制）
+
+## 前端 / Frontend
+
+React 18 + TypeScript + Vite（`frontend/`），issue #26 M3：上帝视角实时直播 + 基础回放、
+三步建局、Agent 档案库、模型服务 Provider 管理页。目录：`src/engine`（与后端 `events.py` /
+`state.py` 同构的纯 TS `reduce()`，零依赖）、`src/store`（Zustand：事件日志 + 回放游标）、
+`src/api`（REST/WS 客户端）、`src/pages`（Lobby / GamePage / AgentLibrary / Providers）、
+`src/components`、`src/lib`。
+
+**安装 / 开发 / 构建 / 检查**：
+
+```bash
+make fe-install   # cd frontend && npm ci
+make fe-dev       # cd frontend && npm run dev   （Vite，/api 代理到 :8000，需另开 make serve）
+make fe-check     # cd frontend && npm run check （eslint + tsc --noEmit + vitest run）
+make fe-build     # cd frontend && npm run build （产物到 frontend/dist）
+```
+
+`make check`（仓库根）在 `frontend/node_modules` 已存在时自动追加跑 `fe-check`；未安装则跳过
+并提示，不会把仓库根的 `make check` 变红。
+
+**金样更新规则**：`src/engine/reduce.ts` 必须与后端 `app/engine` 逐字段等价（`reduce.test.ts`
+用 `frontend/src/engine/__fixtures__/<preset>-3.json` 金样对拍，4 套 preset × seed=3）。**任何
+改动引擎逻辑或事件 payload 形状（新增/改字段、新增 `EventType`）之后，必须**：
+
+```bash
+make fixtures        # 重新导出 4 份金样 JSON 到 frontend/src/engine/__fixtures__/
+git add frontend/src/engine/__fixtures__/*.json   # 提交更新后的金样
+make fe-check         # 或 cd frontend && npm run check —— 确认 TS reduce() 仍与金样一致
+```
+漏做这一步会让 TS reducer 悄悄与后端引擎失配，`fe-check` 的 `reduce.test.ts` 会挂红提示。
+
+**生产静态挂载**：`make fe-build` 后 `make serve`（同一 uvicorn 进程）即可在
+`http://localhost:8000/` 直接看到前端（`create_app(frontend_dist=...)` 检测到
+`frontend/dist` 存在就挂载；不存在则只提供 API，不报错）。开发时用 `make fe-dev`（Vite 热重载
++ 代理）而非反复 `fe-build`。
+
+**链接与 token 安全**：对局页的地址携带 token（URL hash：`#/g/{game_id}?gm=<gm_token>` 或
+`?spec=<spectator_token>`），不落 localStorage。`gm_token`（issue #26）是**上帝视角只读全量**
+凭据——持有者能看到所有玩家的真实身份、夜间行动与狼队私聊，信息隔离对它整体豁免；**只应给受
+信任的主持/复盘方，绝不要把带 `?gm=` 的链接当观战链接分享**，观众一律发 `?spec=` 链接
+（`spectator_token`，服务端已脱敏）。`gm_token` 只在 `POST /games` 响应里出现一次，事后无法
+重新取回。
+
+**模型服务（Providers 页）**：`/api/v1/providers` CRUD + `/test`（连通性探测）+ `/models`
+（拉取可用模型列表），供建局 / Agent 编辑器的 `ModelSelect` 选用，免去每次手填模型字符串。
+密钥落盘在 `backend/data/providers/*.json`，**文件权限 0600、明文存储**——面向本地单用户部署，
+不加密、无轮换；API 响应一律 `ProviderPublic`，**永不回传明文密钥**，只给 `has_key` 与密钥
+末 4 位 `key_hint`。
+
+**Agent 档案库**：`/api/v1/agents` CRUD（持久化于 `backend/data/agents/`）+ `/skills`（内置/
+外部技能包清单）+ `/presets`（四套标准板子摘要），供 Lobby 三步建局挑选/复用档案，及
+`AgentEditor` 编辑人格 / 技能 / 跨局记忆 / 模型（`ModelSelect`，可选绑定 Provider）。
 
 ## 游戏逻辑要点
 
@@ -147,7 +207,8 @@ uv run uvicorn app.main:app --reload   # http://localhost:8000
 # 1) 建局：9 人屠边预设，空位由 LLM Agent 填充（ai_model 省略则用内置随机 bot）
 curl -s -X POST $BASE/games -H 'Content-Type: application/json' \
   -d '{"preset":"std_9_kill_side","config_override":{"seed":3},"ai_model":"ollama/llama3.1"}'
-# → {game_id, host_token, spectator_token, config}
+# → {game_id, host_token, spectator_token, gm_token, config, agents}
+# gm_token：上帝视角只读全量（issue #26），只在本响应出现一次；只给受信任方，别当观战链接发
 
 # 2) （可选）真人加入任意空座，拿 player_token 与 ws_url
 curl -s -X POST $BASE/games/$GID/join -H 'Content-Type: application/json' \
@@ -176,8 +237,30 @@ WebSocket（按视角推送过滤后事件流；断线可凭同 token + `from_se
 
 ```
 GET /api/v1/ws?token=<token>[&from_seq=<n>]
-# server→client 帧：game_event / your_turn / phase_change / game_over
+# token 可以是 player_token / spectator_token / gm_token（HOST token 无读流权限）
+# server→client 帧：game_event / your_turn / phase_change / game_over / action_result / error
 # client→server 帧：与 POST /actions 等价（同 schema 同信封）
+```
+
+**Agent 档案库 / 模型服务 Provider / 建局辅助端点**（issue #26；供前端 Lobby / AgentLibrary /
+Providers 页用，详见「前端 / Frontend」小节）：
+
+| Method | Path | 说明 |
+|---|---|---|
+| GET/POST | `/api/v1/agents` | 列出 / 新建 Agent 档案（`data/agents/`） |
+| GET/PUT/DELETE | `/api/v1/agents/{agent_id}` | 查询 / 更新 / 删除一份档案 |
+| GET | `/api/v1/skills` | 内置 + 外部技能包清单 |
+| GET | `/api/v1/presets` | 四套标准板子摘要 |
+| GET/POST | `/api/v1/providers` | 列出 / 新建模型服务（`data/providers/`，0600） |
+| GET/PUT/DELETE | `/api/v1/providers/{provider_id}` | 查询 / 更新（`api_key` 省略=保留、`""`=清除）/ 删除 |
+| POST | `/api/v1/providers/{provider_id}/test` | 用该服务凭据探测连通性 |
+| GET | `/api/v1/providers/{provider_id}/models` | 拉取该服务可用模型列表 |
+
+```bash
+curl -s $BASE/agents                                    # 已存 Agent 档案
+curl -s $BASE/skills                                     # 技能包清单
+curl -s $BASE/presets                                     # 板子摘要
+curl -s $BASE/providers                                   # 已配置模型服务（不含明文密钥）
 ```
 
 真实模型冒烟与 token bench（默认跳过，需本地 Ollama）：

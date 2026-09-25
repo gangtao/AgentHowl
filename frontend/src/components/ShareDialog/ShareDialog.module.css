@@ -1,0 +1,25 @@
+/* ShareDialog（设计稿 1b）。 */
+
+.row {
+  display: flex;
+  gap: 6px;
+}
+
+.row button {
+  flex: none;
+}
+
+.mono {
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 12px;
+  text-overflow: ellipsis;
+}
+
+.warn {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  font-size: 12px;
+  color: var(--ah-warn);
+  line-height: 1.5;
+}

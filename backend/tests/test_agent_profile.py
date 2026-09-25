@@ -136,3 +136,26 @@ def test_profile_memory_id_field_and_echo_shape() -> None:
     assert p.memory_id == "alice"
     assert AgentProfile(model="m").memory_id is None
     assert "memory_id" in AgentProfile(model="m").model_dump()
+
+
+def test_profile_provider_field_and_to_agent_config_resolves_model() -> None:
+    from app.agent.profile import to_agent_config
+    from app.agent.provider import Provider
+    from app.engine.config import build_preset
+
+    p = Provider(
+        provider_id="p_1",
+        name="本地 Ollama",
+        kind="ollama",
+        api_base="http://localhost:11434",
+        api_key=None,
+        default_model=None,
+        created_at="t",
+        updated_at="t",
+    )
+    prof = AgentProfile(model="qwen2.5:14b", model_speech="qwen2.5:7b", provider="p_1")
+    cfg = to_agent_config(prof, build_preset("std_9_kill_side"), provider=p)
+    assert cfg.model == "ollama/qwen2.5:14b" and cfg.model_speech == "ollama/qwen2.5:7b"
+    plain = to_agent_config(AgentProfile(model="openai/x"), build_preset("std_9_kill_side"))
+    assert plain.model == "openai/x"
+    assert "provider" in AgentProfile(model="m").model_dump()

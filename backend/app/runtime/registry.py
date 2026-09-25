@@ -20,6 +20,7 @@ from app.agent.profile import (
     profile_for,
     validate_profiles,
 )
+from app.agent.provider import Provider
 from app.agent.skills import SkillLibrary, default_library
 from app.engine.config import GameConfig
 from app.engine.state import GameState
@@ -33,6 +34,7 @@ from app.runtime.player_port import (
     SupportsEventIngest,
 )
 from app.runtime.postgame import opponents_for, run_postgame, seat_memory_ids
+from app.runtime.provider_store import InMemoryProviderStore, ProviderStore
 from app.store.event_store import EventStore
 
 logger = logging.getLogger(__name__)
@@ -65,6 +67,8 @@ class GameHandle:
         self.seat_memory_ids: dict[int, str] = {}
         self.experiences: dict[int, AgentExperience] = {}
         self.postgame_task: asyncio.Task[dict[str, AgentExperience]] | None = None
+        # 座位 → Provider（issue #26）：start() 按 profile.provider 装配，供 agent 端口工厂使用
+        self.providers: dict[int, Provider] = {}
 
     @property
     def started(self) -> bool:
@@ -94,6 +98,7 @@ class GameRegistry:
         agent_port_factory: Callable[[int, GameHandle], PlayerPort] | None = None,
         skill_library: SkillLibrary | None = None,
         experience_store: ExperienceStore | None = None,
+        provider_store: ProviderStore | None = None,
     ) -> None:
         self._store = store
         self._timeouts = timeouts
@@ -102,6 +107,9 @@ class GameRegistry:
         self._skill_library = skill_library
         self._experience_store: ExperienceStore = (
             experience_store if experience_store is not None else InMemoryExperienceStore()
+        )
+        self._provider_store: ProviderStore = (
+            provider_store if provider_store is not None else InMemoryProviderStore()
         )
 
     @property
@@ -124,7 +132,8 @@ class GameRegistry:
     ) -> GameHandle:
         # 旧入口 ai_model 折叠为 "*" 默认档案；与显式 agents["*"] 冲突、座位键非法 → ValueError
         resolved = merge_profiles(agents, legacy_to_profiles(ai_model, ai_model_speech))
-        validate_profiles(resolved, config.num_players, self.skill_library)
+        providers = {p.provider_id for p in self._provider_store.list()}
+        validate_profiles(resolved, config.num_players, self.skill_library, providers=providers)
         game_id = f"g_{secrets.token_hex(4)}"
         handle = GameHandle(
             game_id,
@@ -187,6 +196,15 @@ class GameRegistry:
         for seat, mid in handle.seat_memory_ids.items():
             handle.experiences[seat] = self._experience_store.load(mid)
 
+        # Provider 装配（issue #26）：create() 已校验存在性；此处仍可能因并发删除而落空
+        for seat in range(handle.config.num_players):
+            profile = handle.profile_for(seat)
+            if profile is not None and profile.provider:
+                provider = self._provider_store.get(profile.provider)
+                if provider is None:
+                    raise LobbyError(f"provider 已被删除：{profile.provider}")
+                handle.providers[seat] = provider
+
         handle.connections = ConnectionManager(state_provider=_state_of)
         effective: AgentProfiles = {}  # 实际建成 Agent 端口的座位 → 档案，写进 meta（issue #64）
         for seat in range(handle.config.num_players):
@@ -245,6 +263,7 @@ class GameRegistry:
             library=self.skill_library,
             experience=handle.experiences.get(seat),
             opponents=opponents_for(seat, handle.seat_memory_ids),
+            provider=handle.providers.get(seat),
         )
 
 

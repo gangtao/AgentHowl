@@ -1,0 +1,135 @@
+/* SeatAssignment（设计稿 2a）：300px 档案库侧栏 + 座位表两列。 */
+
+.root {
+  display: grid;
+  grid-template-columns: 300px minmax(0, 1fr);
+  gap: var(--space-6);
+  min-height: 0;
+}
+
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-height: 0;
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  overflow-y: auto;
+  max-height: 520px;
+  padding-right: 2px;
+}
+
+.hint {
+  font-size: 11.5px;
+  color: var(--color-neutral-500);
+  line-height: 1.5;
+}
+
+.seats {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.tools {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+  font-size: 12px;
+}
+
+.toolLabel {
+  color: var(--color-neutral-500);
+}
+
+.fillLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--color-neutral-400);
+}
+
+.fillSelect {
+  width: auto;
+  min-height: 30px;
+  padding: 3px 8px;
+  font-size: 12px;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 14px;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+}
+
+.seatNo {
+  font-size: 12.5px;
+  color: var(--color-neutral-400);
+  text-align: right;
+}
+
+.rowMain {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.select {
+  min-height: 34px;
+  font-size: 13px;
+  color: var(--color-neutral-400);
+}
+
+.selectOn {
+  color: var(--color-text);
+  box-shadow: inset 0 0 0 1px var(--color-accent-800);
+}
+
+.warn {
+  font-size: 10.5px;
+  color: var(--ah-warn);
+  line-height: 1.5;
+}
+
+.legend {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: auto;
+  font-size: 11.5px;
+  color: var(--color-neutral-500);
+  line-height: 1.5;
+}
+
+.legend code {
+  font-family: ui-monospace, Menlo, monospace;
+}
+
+@media (max-width: 900px) {
+  .root {
+    grid-template-columns: 1fr;
+  }
+
+  .grid {
+    grid-template-columns: 1fr;
+  }
+
+  .list {
+    max-height: 240px;
+  }
+}

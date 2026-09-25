@@ -44,6 +44,7 @@ from app.runtime.postgame import (
     seat_memory_ids,
     utc_now_iso,
 )
+from app.runtime.provider_store import JsonFileProviderStore, ProviderStore
 from app.store.event_store import EventStore, InMemoryEventStore, StoreError
 
 ReadLine = Callable[[str], Awaitable[str]]
@@ -172,6 +173,7 @@ def _wire_game(
     experiences: Mapping[str, AgentExperience] | None = None,
     store: EventStore | None = None,
     game_id: str = "cli",
+    providers: ProviderStore | None = None,
 ) -> tuple[GameRunner, ConnectionManager, dict[int, PlayerPort]]:
     """装配 store/roster/ports/conns/runner（不订阅、不 run）。agents 缺省=全随机 bot。
 
@@ -198,6 +200,7 @@ def _wire_game(
             from app.agent.agent_player import build_agent_port
 
             exp = (experiences or {}).get(profile.memory_id) if profile.memory_id else None
+            provider = providers.get(profile.provider) if providers and profile.provider else None
             ports[seat] = build_agent_port(
                 seat,
                 config,
@@ -205,6 +208,7 @@ def _wire_game(
                 library=library,
                 experience=exp,
                 opponents=opponents_for(seat, seat_ids),
+                provider=provider,
             )
             used_profiles[str(seat)] = profile
         else:
@@ -242,6 +246,7 @@ async def run_watch(
     library: SkillLibrary | None = None,
     read_line: ReadLine = default_read_line,
     experience_store: ExperienceStore | None = None,
+    providers: ProviderStore | None = None,
 ) -> GameState:
     """看局：打印型订阅者按 view 叙述，delay/step 限速，跑到 GAME_OVER。
 
@@ -250,7 +255,7 @@ async def run_watch(
     store = experience_store if experience_store is not None else InMemoryExperienceStore()
     experiences = load_experiences(agents or {}, config.num_players, store)
     runner, conns, ports = _wire_game(
-        config, agents=agents, library=library, experiences=experiences
+        config, agents=agents, library=library, experiences=experiences, providers=providers
     )
     print(render_agent_roster(agents or {}, config.num_players, None, experiences=experiences))
 
@@ -321,6 +326,11 @@ def main(argv: list[str] | None = None) -> None:
         default="data/agent_memory",
         help="跨局记忆目录（每个 memory_id 一个 JSON；无 memory_id 档案时不落盘）",
     )
+    parser.add_argument(
+        "--providers-dir",
+        default="data/providers",
+        help="模型服务 Provider 目录（每个 provider 一个 JSON；档案 provider 字段引用）",
+    )
     args = parser.parse_args(argv)
 
     config = build_preset(args.preset).model_copy(update={"seed": args.seed})
@@ -342,6 +352,7 @@ def main(argv: list[str] | None = None) -> None:
         reflection_model=args.reflection_model,
         thinking=args.thinking,
     )
+    providers = JsonFileProviderStore(Path(args.providers_dir))
     try:
         library = (
             SkillLibrary.load([BUILTIN_SKILLS_DIR, Path(args.skills_dir)])
@@ -349,7 +360,9 @@ def main(argv: list[str] | None = None) -> None:
             else default_library()
         )
         agents = merge_profiles(args.agents, legacy)
-        validate_profiles(agents, config.num_players, library)
+        validate_profiles(
+            agents, config.num_players, library, providers={p.provider_id for p in providers.list()}
+        )
     except (ValueError, SkillError) as exc:  # SkillError 是 ValueError 子类，列出以示意图
         parser.error(str(exc))
 
@@ -365,6 +378,7 @@ def main(argv: list[str] | None = None) -> None:
                     agents=agents,
                     library=library,
                     experience_store=store,
+                    providers=providers,
                 )
             )
         else:
@@ -377,6 +391,7 @@ def main(argv: list[str] | None = None) -> None:
                     agents=agents,
                     library=library,
                     experience_store=store,
+                    providers=providers,
                 )
             )
     except StoreError as exc:  # 坏的经验文件：明确报错而非 traceback

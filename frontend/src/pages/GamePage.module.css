@@ -1,0 +1,139 @@
+/* 对局页布局（设计稿 1c/1g/1j）：48px [终局横幅 40px] minmax(0,1fr) 52px；三栏 320 / 1fr / 320。 */
+
+.root {
+  height: 100%;
+  display: grid;
+  grid-template-rows: 48px minmax(0, 1fr) 52px;
+  background: var(--color-bg);
+  color: var(--color-text);
+}
+
+.rootOver {
+  grid-template-rows: 48px 40px minmax(0, 1fr) 52px;
+}
+
+.banner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-4);
+  font-size: 13px;
+  background: linear-gradient(
+    to right,
+    transparent,
+    color-mix(in srgb, var(--ah-god) 10%, transparent) 30%,
+    color-mix(in srgb, var(--ah-god) 10%, transparent) 70%,
+    transparent
+  );
+}
+
+.bannerRule {
+  color: var(--ah-god);
+}
+
+.bannerWinner {
+  color: var(--ah-god);
+  font-weight: 500;
+}
+
+.bannerCode {
+  color: var(--color-neutral-500);
+}
+
+.bannerSub {
+  font-size: 11.5px;
+  color: var(--color-neutral-500);
+}
+
+.body {
+  display: grid;
+  grid-template-columns: 320px minmax(0, 1fr) 320px;
+  min-height: 0;
+}
+
+.left {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+  background: linear-gradient(
+      to bottom,
+      transparent,
+      var(--color-divider) 48px,
+      var(--color-divider) calc(100% - 48px),
+      transparent
+    )
+    no-repeat right / 1px 100%;
+}
+
+.center {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  position: relative;
+}
+
+.right {
+  padding: var(--space-6);
+  min-height: 0;
+  overflow: hidden;
+  background: linear-gradient(
+      to bottom,
+      transparent,
+      var(--color-divider) 48px,
+      var(--color-divider) calc(100% - 48px),
+      transparent
+    )
+    no-repeat left / 1px 100%;
+}
+
+.loading {
+  height: 100%;
+  display: grid;
+  place-items: center;
+  color: var(--color-neutral-500);
+  font-size: 13px;
+}
+
+.error {
+  position: fixed;
+  bottom: 62px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 6px 12px;
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--ah-err) 18%, var(--color-surface));
+  color: var(--color-text);
+  font-size: 12px;
+  z-index: 5;
+}
+
+/* <900px：纵向堆叠（设计稿 1j），ReplayBar 仍固定底部。 */
+@media (max-width: 900px) {
+  /* 行模板不变（横幅只在终局出现）；主体改为纵向堆叠并整体滚动。 */
+  .body {
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+  }
+
+  /* 纵向堆叠时各段按内容高度排布，不允许被 flex 压缩（压缩会让座位环与发言流重叠）。 */
+  .left,
+  .right {
+    flex: none;
+    background: linear-gradient(
+        to right,
+        transparent,
+        var(--color-divider) 48px,
+        var(--color-divider) calc(100% - 48px),
+        transparent
+      )
+      no-repeat bottom / 100% 1px;
+    overflow: visible;
+  }
+
+  .center {
+    min-height: 320px;
+    flex: 1;
+  }
+}

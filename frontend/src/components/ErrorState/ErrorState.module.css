@@ -1,0 +1,58 @@
+/* 空 / 错误态样式（设计稿 1i）。 */
+
+.root {
+  height: 100%;
+  display: grid;
+  place-items: center;
+  text-align: center;
+  padding: 24px;
+}
+
+.box {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: center;
+  max-width: 360px;
+}
+
+.code {
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 11px;
+  color: var(--color-neutral-600);
+}
+
+.title {
+  font-size: 18px;
+  font-weight: 500;
+}
+
+.desc {
+  font-size: 12.5px;
+  color: var(--color-neutral-500);
+  line-height: 1.6;
+}
+
+.detail {
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--color-neutral-300);
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+}
+
+.back {
+  margin-top: 10px;
+}
+
+.spinner {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 2px solid var(--color-neutral-800);
+  border-top-color: var(--color-accent);
+  animation: ah-spin 1.2s linear infinite;
+  margin-bottom: 6px;
+}

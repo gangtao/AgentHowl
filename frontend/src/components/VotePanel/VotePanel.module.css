@@ -1,0 +1,150 @@
+/* 右栏 · 投票 / PK 样式（设计稿 1e、1g）。 */
+
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-height: 0;
+  height: 100%;
+}
+
+.head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.title {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.sub {
+  font-size: 11px;
+  color: var(--color-neutral-500);
+}
+
+.candidates {
+  display: flex;
+  gap: 8px;
+}
+
+.candidate {
+  flex: 1;
+  padding: 10px;
+  border-radius: var(--radius-md);
+  border: 1px solid;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.candidateKicker {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  color: var(--color-neutral-400);
+}
+
+.candidateName {
+  font-size: 16px;
+  font-weight: 500;
+}
+
+.candidateVotes {
+  font-size: 11px;
+  color: var(--color-neutral-400);
+}
+
+.votes {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.voteRow {
+  display: grid;
+  grid-template-columns: 40px 16px 1fr auto;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  padding: 5px 10px;
+  border-radius: var(--radius-sm);
+}
+
+.arrow {
+  color: var(--color-neutral-600);
+}
+
+.weight {
+  font-size: 10.5px;
+  color: var(--color-neutral-500);
+}
+
+.kicker {
+  font-size: 11px;
+  color: var(--color-neutral-500);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.bars {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.barRow {
+  display: grid;
+  grid-template-columns: 40px 1fr 32px;
+  align-items: center;
+  gap: 10px;
+  font-size: 12.5px;
+}
+
+.barTrack {
+  height: 8px;
+  border-radius: 4px;
+  background: var(--color-neutral-900);
+  overflow: hidden;
+  display: block;
+}
+
+.barFill {
+  display: block;
+  height: 100%;
+  border-radius: 4px;
+}
+
+.barNum {
+  text-align: right;
+  color: var(--color-neutral-300);
+  font-family: ui-monospace, Menlo, monospace;
+}
+
+.footer {
+  margin-top: auto;
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--color-divider);
+}
+
+.waiting {
+  font-size: 12.5px;
+  color: var(--color-neutral-400);
+}
+
+.resultCard {
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-sm);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.resultSub {
+  display: block;
+  font-size: 11.5px;
+  color: var(--color-neutral-500);
+}

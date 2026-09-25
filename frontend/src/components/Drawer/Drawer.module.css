@@ -1,0 +1,89 @@
+/* 右侧抽屉（设计稿 2c / 3b）：遮罩 + 固定右侧面板，grid-rows auto 1fr auto。 */
+
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: color-mix(in srgb, var(--color-neutral-900) 45%, transparent);
+}
+
+.panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 41;
+  width: min(var(--drawer-width, 620px), 100vw);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-lg);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 20px 28px 14px;
+  background: linear-gradient(
+      to right,
+      transparent,
+      var(--color-divider) 48px,
+      var(--color-divider) calc(100% - 48px),
+      transparent
+    )
+    no-repeat bottom / 100% 1px;
+}
+
+.title {
+  font-size: 18px;
+  font-weight: 500;
+}
+
+.close {
+  margin-left: auto;
+  color: var(--color-neutral-500);
+  background: none;
+  border: 0;
+  cursor: pointer;
+  font-size: 15px;
+  line-height: 1;
+  padding: 4px 6px;
+}
+
+.close:hover {
+  color: var(--color-text);
+}
+
+.body {
+  padding: 20px 28px;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 28px 20px;
+  background: linear-gradient(
+      to right,
+      transparent,
+      var(--color-divider) 48px,
+      var(--color-divider) calc(100% - 48px),
+      transparent
+    )
+    no-repeat top / 100% 1px;
+}
+
+@media (max-width: 900px) {
+  .panel {
+    width: 100vw;
+  }
+
+  .head,
+  .body,
+  .foot {
+    padding-inline: 16px;
+  }
+}

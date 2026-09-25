@@ -555,6 +555,24 @@ class LLMClient(Protocol):
 声称、上警、改票、狼队空刀与重提、技能装配次数）；`app/cli/bench.py` 交错分配两份档案跑 N 局
 并给出 Δ 列。行动首条事件 `meta.skills` 由 runtime 写入，引擎不感知。
 
+#### 4.4.5 模型服务 Provider（issue #26；实现期简化，规格附注）
+
+4.4.3 描述的"模型串 + 环境变量"路由对 CLI/单人本地部署够用，但前端建局页需要一个可持久化、
+可测试连通性、密钥不必每次填的"模型服务"概念——即 `Provider`（`app/agent/provider.py`，纯
+pydantic，零 IO）：`kind`（`ollama`/`openai`/`anthropic`/`openai_compatible`/`gemini`/
+`deepseek`，即 LiteLLM 前缀）+ `api_base` + `api_key` + `default_model`，经
+`app/runtime/provider_store.py`（`JsonFileProviderStore`，`data/providers/<id>.json`，
+文件权限 0600）持久化。`AgentProfile.provider` 存 `provider_id`；`to_agent_config` /
+`build_agent_port` 用 `resolve_model(profile.model, provider)` 给裸模型名拼上前缀，并把
+`provider.api_base`/`api_key` **按端口**新建一个 `LiteLLMInstructorClient` 实例注入——不写入
+`AgentConfig`、不进事件日志、不经环境变量，凭据只在该端口的客户端对象生命周期内持有。
+
+**实现期简化**（相对完整的多租户凭据管理是放大范围）：单用户本地部署假设——密钥落盘明文
+（仅靠文件权限 0600 与"本机单用户"防护，不加密、无密钥轮换）；API 响应统一用 `ProviderPublic`
+（`has_key` + 末 4 位 `key_hint`）不回传明文，但本地文件本身可被同机其他进程读到。`/test` 端点
+在方法内惰性 `import litellm/httpx`（`ProviderProbe`），保持 `app/runtime`/`app/api`/`app/cli`
+模块级不触碰 litellm 的约束（见 CLAUDE.md）。多用户隔离、密钥加密、审计日志均不在 M3 范围。
+
 ---
 
 ## 5. 标准玩家 API（真人与 Agent 通用）
@@ -580,6 +598,26 @@ class LLMClient(Protocol):
 | GET | `/api/v1/games/{game_id}/replay` | 上帝视角完整回放数据（对局结束后开放） |
 | GET | `/api/v1/games/{game_id}/meta` | 对局头记录 `GameMeta`：配置、名单、各座位实际生效的 Agent 档案（`agents`，issue #64；对局结束后开放） |
 
+**Agent 档案库端点**（issue #26；持久化于 `data/agents/`；供 Lobby 建局选档案与 `AgentEditor` 用）：
+
+| Method | Path | 说明 |
+|---|---|---|
+| GET | `/api/v1/agents` | 列出已存档案（`StoredAgent{agent_id, profile, created_at, updated_at}`） |
+| POST | `/api/v1/agents` | 新建档案（body 为 `AgentProfile`；`skills`/`provider` 引用校验同建局） |
+| GET/PUT/DELETE | `/api/v1/agents/{agent_id}` | 查询/整体更新/删除一份档案 |
+| GET | `/api/v1/skills` | 内置 + 外部技能包清单（名称/描述/适用角色与阶段） |
+| GET | `/api/v1/presets` | 四套标准板子的摘要（座位数/角色构成/胜负条件） |
+
+**模型服务 Provider 端点**（issue #26；持久化于 `data/providers/`，文件权限 0600；API 响应用 `ProviderPublic`，**永不回传明文密钥**，只回 `has_key` 与末 4 位 `key_hint`）：
+
+| Method | Path | 说明 |
+|---|---|---|
+| GET | `/api/v1/providers` | 列出已配置的模型服务 |
+| POST | `/api/v1/providers` | 新建（`kind`/`api_base`/`api_key`/`default_model`） |
+| GET/PUT/DELETE | `/api/v1/providers/{provider_id}` | 查询/更新（`api_key` 省略=保留原值，`""`=清除）/删除（仍被档案引用则 409） |
+| POST | `/api/v1/providers/{provider_id}/test` | 用该服务的凭据发一次最小请求，验证连通性 |
+| GET | `/api/v1/providers/{provider_id}/models` | 拉取该服务可用模型列表（依 provider kind，走其 API） |
+
 **创建对局**：
 ```json
 POST /api/v1/games
@@ -590,8 +628,22 @@ POST /api/v1/games
   "ai_model": "openai/gpt-4o"
 }
 --- 200 ---
-{ "game_id": "g_a1b2c3", "join_token_host": "tok_host_xyz", "config": { } }
+{
+  "game_id": "g_a1b2c3",
+  "host_token": "tok_host_xyz",
+  "spectator_token": "tok_spec_xyz",
+  "gm_token": "tok_gm_xyz",
+  "config": { },
+  "agents": { }
+}
 ```
+
+`gm_token`（issue #26）：只随建局响应发给建局者一次，不可事后重取。凭该 token 访问的
+`/state`（返回全量 `GameState`，不脱敏）、`/events`（不按视角过滤）、`/replay`、`/meta`、
+`/ws` 均为**上帝视角只读**——服务端信息隔离对 GM 视角整体豁免，故 `gm_token` 等同于把整局
+所有玩家的私有信息（角色、夜间行动、狼队私聊）都暴露给持有者；前端把它放在 URL hash 的
+`?gm=` 参数（不进 localStorage），该链接只应给受信任的主持/复盘方，绝不能当作观战链接分享
+（观战请用 `spectator_token` 的 `?spec=` 链接，`/state` 对其返回脱敏后的 `SpectatorView`）。
 
 `agents: {"<seat>"|"*": AgentProfile}`（issue #56）：每座位内置 Agent 档案，字段
 `model` / `model_speech` / `reflection_model` / `thinking` / `temperature` / `name` /
@@ -623,22 +675,43 @@ Authorization: Bearer tok_p7
 
 ### 5.3 WebSocket 协议
 
-连接：`wss://host/api/v1/ws?token=<player_token>`（观众用 `spectator_token`）。
+连接：`wss://host/api/v1/ws?token=<token>[&from_seq=<n>]`（`token` 为 `player_token` /
+`spectator_token` / `gm_token` 之一，视角由 token 种类决定；HOST token 无读流权限，连接直接
+4403 关闭）。`from_seq` 省略即从头补发；补发路径与实时路径共用同一套帧构建，按 token 视角
+过滤（GM 不过滤）。`token` 无效 → 4401 关闭；对局不存在 → 4404；对局未开局 → 4409。
 
-**服务器 → 客户端消息类型**：
+**服务器 → 客户端帧**（字段与 `app/api/ws.py::_build_event_frames` / `_your_turn_payload`
+一一对应；下面每种 `type` 都是顶层 `"type"` 判别，不含未实现字段）：
 ```json
-{ "type": "your_turn", "phase": "NIGHT_SEER", "observation": { },
+{ "type": "your_turn", "observation": { "phase": "NIGHT_SEER", "...": "..." },
   "available_tools": ["night_action","get_game_state","get_speeches"],
   "deadline_ts": 1751760000.0 }
 
 { "type": "game_event", "seq": 88,
-  "event": { "type": "PLAYER_SPOKE", "seat": 4, "content": "我是预言家..." } }
+  "event": { "seq": 88, "game_id": "g_a1b2c3", "ts": 1751760000.0,
+             "type": "PLAYER_SPOKE", "actor_seat": 4,
+             "payload": { "content": "我是预言家...", "claim_role": "SEER", "badge_flow": null },
+             "visibility": "PUBLIC", "meta": { } } }
 
-{ "type": "phase_change", "from": "DAY_SPEECH", "to": "VOTE", "round": 2 }
+{ "type": "phase_change", "to": "VOTE", "round": 2 }
 
-{ "type": "game_over", "winner": "WEREWOLF", "roles_reveal": [ ] }
+{ "type": "game_over", "winner": "WEREWOLF" }
+
+{ "type": "action_result", "ok": true, "event_id": null,
+  "state_version": 88, "rejected_reason": null }
+
+{ "type": "error", "detail": "该连接无行动权限或座位无端口" }
 ```
-**客户端 → 服务器**：可通过 WS 直接发行动（等价于 POST actions），或纯用 REST 发、WS 只收。推荐真人客户端 WS 收 + REST 发；Agent 亦然。
+`your_turn` 无顶层 `phase` 字段——阶段在 `observation.phase` 里；`phase_change` 不带 `from`
+（只有 `to`/`round`）；`game_over` 不带 `roles_reveal`（终局身份揭示走 `/replay`/`/meta`，
+上帝视角本就全程可见身份）；`game_event.event` 是 `Event` 的完整 `model_dump`（`seq`/
+`game_id`/`ts`/`type`/`actor_seat`/`payload`/`visibility`/`meta`），并非扁平化的
+`{type, seat, content}`。
+
+**客户端 → 服务器**：直接发送 `ToolCall`（`{"tool": ..., "arguments": {...}}`），与
+`POST /actions` 同 schema 同信封，`actor_seat` 一律取自 token；仅 `PLAYER` token 的座位有
+端口，其余连接发行动收到 `error` 帧。可纯用 REST 发、WS 只收；推荐真人客户端 WS 收 + REST
+发，Agent 亦然。
 
 ### 5.4 认证与会话管理
 - **简单 token 即可**：创建/加入对局时签发 `player_token`（不透明字符串，映射到 `{game_id, seat, player_type}`）。所有 REST 带 `Authorization: Bearer`，WS 带 `?token=`。
@@ -829,9 +902,15 @@ class GameState(BaseModel):
   - 通过 `GET /events?from_seq=` 拉全量事件，前端本地 `reduce` 重建任意时点状态。
 
 ### 7.4 与后端的 WebSocket 事件订阅
-- 连接后收 `your_turn`（仅玩家视角客户端会收到属于自己的）、`game_event`、`phase_change`、`game_over`。
+- 连接后收 `game_event`（携 `seq` 与完整 `Event`）、`phase_change`（`{to, round}`，无 `from`）、
+  `game_over`（`{winner}`，无 `roles_reveal`）；玩家视角连接另收 `your_turn`（`{observation,
+  available_tools, deadline_ts}`，阶段在 `observation.phase` 里）；帧字段以 `app/api/ws.py`
+  为准（见 §5.3）。
 - 前端维护 `eventLog: Event[]`，用与后端一致的 `reduce()`（TS 版）从事件推导 UI 状态，保证前后端一致、且回放/直播复用同一 reducer。
 - 断线重连：重连后先 `GET /state` 与 `GET /events?from_seq=<last_seq>` 补齐，再继续订阅。
+- 上帝视角用 `gm_token` 连接（`?token=<gm_token>`）：事件流与 `/state` 均不脱敏，等同拥有
+  全部玩家的私有信息；GamePage 的引导顺序见 §6（设计 spec）：先探 `/meta`（200=终局，走
+  `/replay` 一次性装入回放），403 时退回 `/state`（200=直播，接 WS；409=未开局，轮询重试）。
 
 ---
 

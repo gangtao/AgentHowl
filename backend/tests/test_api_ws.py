@@ -47,10 +47,59 @@ def test_spectator_stream_public_only_until_game_over(client: TestClient) -> Non
 
 def test_unknown_token_closes_4401(client: TestClient) -> None:
     with (
-        pytest.raises(WebSocketDisconnect),
+        pytest.raises(WebSocketDisconnect) as exc,
         client.websocket_connect("/api/v1/ws?token=garbage") as ws,
     ):
         ws.receive_json()
+    assert exc.value.code == 4401
+
+
+def test_host_token_closes_4403(client: TestClient) -> None:
+    """HOST 无读流权限，浏览器需拿到明确的 4403（而非折叠后的 1006）。"""
+    created = client.post(
+        "/api/v1/games",
+        json={"config_override": {"seed": 1}, "allow_spectators": False},
+    ).json()
+    gid = created["game_id"]
+    r = client.post(f"/api/v1/games/{gid}/start", json={}, headers=_auth(created["host_token"]))
+    assert r.status_code == 200
+    with (
+        pytest.raises(WebSocketDisconnect) as exc,
+        client.websocket_connect(f"/api/v1/ws?token={created['host_token']}") as ws,
+    ):
+        ws.receive_json()
+    assert exc.value.code == 4403
+
+
+def test_unknown_game_closes_4404(client: TestClient) -> None:
+    """token 指向的对局不存在（registry 无该 game_id）应关闭 4404。
+
+    GameRegistry 没有移除对局的 API，故这里直接向 TokenRegistry 登记一个
+    指向不存在 game_id 的 token 来复现该分支，而非先创建再删除对局。
+    """
+    from app.api.deps import TokenInfo
+
+    tokens = client.app.state.tokens  # type: ignore[attr-defined]
+    token = tokens.issue(TokenInfo(game_id="no-such-game", seat=None, kind="SPECTATOR"))
+    with (
+        pytest.raises(WebSocketDisconnect) as exc,
+        client.websocket_connect(f"/api/v1/ws?token={token}") as ws,
+    ):
+        ws.receive_json()
+    assert exc.value.code == 4404
+
+
+def test_not_started_closes_4409(client: TestClient) -> None:
+    """对局已创建但未 start：spectator/GM token 连接应关闭 4409。"""
+    created = client.post(
+        "/api/v1/games", json={"preset": "std_9_kill_side", "config_override": {"seed": 1}}
+    ).json()
+    with (
+        pytest.raises(WebSocketDisconnect) as exc,
+        client.websocket_connect(f"/api/v1/ws?token={created['gm_token']}") as ws,
+    ):
+        ws.receive_json()
+    assert exc.value.code == 4409
 
 
 def test_human_plays_whole_game_via_ws(client: TestClient) -> None:
@@ -234,3 +283,21 @@ async def test_dead_sender_task_still_unsubscribes() -> None:
 
     # 断言：订阅必须被摘除
     assert len(manager._subs) == 0
+
+
+def test_ws_gm_stream_is_unfiltered(client: TestClient) -> None:
+    created = client.post(
+        "/api/v1/games", json={"preset": "std_9_kill_side", "config_override": {"seed": 7}}
+    ).json()
+    gid, host, gm = created["game_id"], created["host_token"], created["gm_token"]
+    r_start = client.post(f"/api/v1/games/{gid}/start", json={}, headers=_auth(host))
+    assert r_start.status_code == 200
+    vis: set[str] = set()
+    with client.websocket_connect(f"/api/v1/ws?token={gm}") as ws:
+        while True:
+            frame = ws.receive_json()
+            if frame["type"] == "game_event":
+                vis.add(frame["event"]["visibility"])
+            if frame["type"] == "game_over":
+                break
+    assert {"PUBLIC", "GM_ONLY"} <= vis

@@ -1,0 +1,56 @@
+/* 全局样式：根节点撑满、两端渐隐分隔线、脉冲/旋转动画（取自 mockup 头部 <style>）。 */
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background: var(--color-bg);
+}
+
+/* 两端渐隐分隔线：水平方向 */
+.ah-rule-x {
+  height: 1px;
+  border: 0;
+  background: linear-gradient(
+    to right,
+    transparent,
+    var(--color-divider) 48px,
+    var(--color-divider) calc(100% - 48px),
+    transparent
+  );
+}
+
+/* 两端渐隐分隔线：垂直方向 */
+.ah-rule-y {
+  width: 1px;
+  border: 0;
+  background: linear-gradient(
+    to bottom,
+    transparent,
+    var(--color-divider) 48px,
+    var(--color-divider) calc(100% - 48px),
+    transparent
+  );
+}
+
+@keyframes ah-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
+}
+
+@keyframes ah-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}

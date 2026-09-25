@@ -17,8 +17,8 @@ class TokenInfo(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     game_id: str
-    seat: int | None  # HOST/SPECTATOR 无座位
-    kind: Literal["HOST", "PLAYER", "SPECTATOR"]
+    seat: int | None  # HOST/SPECTATOR/GM 无座位
+    kind: Literal["HOST", "PLAYER", "SPECTATOR", "GM"]  # GM = 上帝视角只读全量，issue #26
 
 
 class TokenRegistry:

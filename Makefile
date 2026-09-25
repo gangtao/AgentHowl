@@ -2,10 +2,10 @@
 #
 # 所有 Python 命令经 uv 在 backend/ 下执行——无需手动 cd。
 # 运行 `make` 或 `make help` 查看全部命令。
-# 前端（frontend/）相关命令待 M3（issue #26）落地后补充。
 
-BACKEND := backend
-UV      := uv run
+BACKEND  := backend
+FRONTEND := frontend
+UV       := uv run
 
 # 可调参数（示例：make watch SEED=3 VIEW=spectator /
 #   make watch AI_MODEL=ollama/qwen2.5-coder:7b / make play SEAT=2 / make sim GAMES=100）
@@ -77,6 +77,7 @@ typecheck: ## mypy 严格类型检查
 
 .PHONY: check
 check: lint format-check typecheck test ## 全量质量门：lint + 格式 + 类型 + 测试
+	@test -d $(FRONTEND)/node_modules && $(MAKE) fe-check || echo "(frontend 未安装，跳过 fe-check)"
 
 .PHONY: build
 build: install check ## CI 式验证：装依赖 + 全量质量门（Python 应用无独立编译步骤）
@@ -103,6 +104,23 @@ sim: ## 纯引擎随机自对局胜负统计（例：make sim GAMES=100）
 .PHONY: bench
 bench: ## 档案 A/B bench（例：make bench GAMES=20 SEED=7 AGENTS=a.yaml AGENTS_B=b.yaml SKILLS_DIR=x；不给 AGENTS 为随机 bot）
 	cd $(BACKEND) && $(UV) python -m app.cli.bench --games $(GAMES) --seed $(SEED) $(if $(AGENTS),--agents $(AGENTS),) $(if $(AGENTS_B),--agents-b $(AGENTS_B),) $(if $(SKILLS_DIR),--skills-dir $(SKILLS_DIR),) $(ARGS)
+
+# ---- 前端（frontend/）----------------------------------------------------
+
+.PHONY: fixtures
+fixtures: ## 生成前端 reducer 金样（4 个 preset × seed 3）到 frontend/src/engine/__fixtures__/
+	cd $(BACKEND) && for p in std_9_kill_side std_9_kill_all std_12_yn_hunter_idiot std_12_yn_hunter_guard; do \
+		$(UV) python -m app.cli.export_fixture --preset $$p --seed 3 --out ../$(FRONTEND)/src/engine/__fixtures__/$$p-3.json; done
+
+.PHONY: fe-install fe-dev fe-check fe-build
+fe-install: ## 前端依赖（npm ci）
+	cd $(FRONTEND) && npm ci
+fe-dev: ## 前端开发服务器（Vite，/api 代理到 8000）
+	cd $(FRONTEND) && npm run dev
+fe-check: ## 前端 lint + tsc + vitest
+	cd $(FRONTEND) && npm run check
+fe-build: ## 前端构建到 frontend/dist（后端存在该目录时自动挂载）
+	cd $(FRONTEND) && npm run build
 
 # ---- 清理 ---------------------------------------------------------------
 
