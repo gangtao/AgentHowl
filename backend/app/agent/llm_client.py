@@ -17,6 +17,11 @@ TModel = TypeVar("TModel", bound=BaseModel)
 
 DEFAULT_MODEL = "ollama/llama3.1"
 
+# 这些提供方的模型全部支持函数调用；litellm 的模型表不认识的新模型 ID（如 Provider
+# 自定义地址上的 anthropic.claude-*）会被 supports_function_calling 判为不支持而退到 JSON
+# mode——模型把 JSON 裹进 ```json 围栏导致 instructor 反复重试。按前缀兜底为 TOOLS。
+_TOOL_CAPABLE_PREFIXES = ("anthropic/", "bedrock/", "gemini/", "deepseek/")
+
 
 class LLMClient(Protocol):
     """结构化补全的唯一入口；实现必须无游戏状态（可跨座位复用）。"""
@@ -46,6 +51,8 @@ def _pick_mode(model: str, thinking: bool = False) -> instructor.Mode:
         supported = bool(litellm.supports_function_calling(model))
     except Exception:
         supported = False
+    if not supported and model.startswith(_TOOL_CAPABLE_PREFIXES):
+        supported = True
     return instructor.Mode.TOOLS if supported else instructor.Mode.JSON
 
 
@@ -83,6 +90,10 @@ class LiteLLMInstructorClient:
             extra["api_base"] = self._api_base
         if self._api_key:
             extra["api_key"] = self._api_key
+        # 部分模型只接受固定采样参数（如 Claude Opus 4.8 仅允许 temperature=1）；不加
+        # drop_params 时 litellm 在发请求前就抛 UnsupportedParamsError，整局该座位全部落
+        # 默认行动。丢弃不支持的参数比整局失声好；档案里的 temperature 对这类模型无效。
+        extra["drop_params"] = True
         result = await client.chat.completions.create(
             model=model,
             response_model=response_model,

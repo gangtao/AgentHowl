@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime
@@ -24,6 +25,8 @@ from app.runtime.connection import ConnectionManager
 from app.runtime.defaults import default_action
 from app.runtime.player_port import PlayerPort, SupportsResultFeedback
 from app.store.event_store import EventStore, GameMeta, SeatName
+
+logger = logging.getLogger(__name__)
 
 MAX_REJECTIONS = 3  # 截止前允许的非法 intent 次数，超过即落默认行动
 
@@ -175,10 +178,19 @@ class GameRunner:
                     self._ports[seat].act(obs, deadline_ts), timeout=remaining
                 )
             except TimeoutError:
+                logger.warning("seat=%d phase=%s 端口超时，落默认行动", seat, self.state.phase)
                 await self._apply_default(seat)
                 return
-            except Exception:
-                # 端口实现抛错（Agent 崩溃等）：对局不陪葬，落默认行动
+            except Exception as exc:
+                # 端口实现抛错（Agent 崩溃等）：对局不陪葬，落默认行动。必须留日志——
+                # 否则 LLM 参数错误等会被静默记成「超时」，排查无从下手
+                logger.warning(
+                    "seat=%d phase=%s 端口异常，落默认行动：%s: %s",
+                    seat,
+                    self.state.phase,
+                    type(exc).__name__,
+                    str(exc)[:300],
+                )
                 await self._apply_default(seat)
                 return
             res = step(self.state, action)
