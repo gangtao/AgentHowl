@@ -140,11 +140,45 @@ def _speech_instruction(obs: PlayerObservation) -> str:
 
 
 def _sheriff_instruction(obs: PlayerObservation) -> str:
-    text = (
-        "警长相关决策：按当前子阶段给出 action_type"
-        "（run_for_sheriff/withdraw/vote_sheriff/pass_badge/tear_badge/set_speech_direction）"
-        "及必要的 target_seat 或 direction。"
-    )
+    """按子阶段只列出当前合法的 action_type 并解释语义。
+
+    曾经一股脑列全六种动作、不解释「withdraw = 不上警」，模型在报名阶段几乎一律选排在
+    首位的 run_for_sheriff——真机一局 9/9 全员上警。
+    """
+    stage = obs.election_stage
+    if obs.phase == "SHERIFF_ELECTION" and stage == "candidacy":
+        text = (
+            "上警报名：action_type=run_for_sheriff 表示上警竞选警长，withdraw 表示不上警。"
+            "上警意味着你要先发言、成为全场焦点并接受质疑；通常只有想争夺警徽的人上警"
+            "（如预言家为了拿警徽和发言权，或狼队派一两人争徽/悍跳），"
+            "普通村民和不想暴露的角色大多不上警。按你的身份、处境与性格决定，不要随大流。"
+        )
+    elif obs.phase == "SHERIFF_ELECTION" and stage == "withdraw":
+        text = (
+            "退水确认：你已上警，action_type=run_for_sheriff 表示继续竞选，"
+            "withdraw 表示退水（退出竞选，之后可以投票）。"
+        )
+    elif obs.phase == "SHERIFF_ELECTION" and stage == "direction":
+        text = (
+            "你当选警长，选择发言方向：action_type=set_speech_direction，"
+            "direction 为 left 或 right。"
+        )
+    elif obs.phase in ("SHERIFF_ELECTION", "SHERIFF_PK"):
+        text = (
+            f"警下投票：action_type=vote_sheriff，target_seat 从候选人 {obs.sheriff_candidates} "
+            "中选一人。"
+        )
+    elif obs.phase == "LAST_WORDS":
+        text = (
+            "你是警长且即将出局，处置警徽：action_type=pass_badge 并给 target_seat "
+            "把警徽交给一名存活玩家，或 tear_badge 撕掉警徽。"
+        )
+    else:
+        text = (
+            "警长相关决策：按当前子阶段给出 action_type"
+            "（run_for_sheriff/withdraw/vote_sheriff/pass_badge/tear_badge/set_speech_direction）"
+            "及必要的 target_seat 或 direction。"
+        )
     if obs.phase in _SELF_DESTRUCT_PHASES:
         text += "狼人可选 self_destruct 自爆代替常规行动。"
     return text
