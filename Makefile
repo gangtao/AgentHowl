@@ -84,9 +84,11 @@ build: install check ## CI 式验证：装依赖 + 全量质量门（Python 应�
 
 # ---- 运行 ---------------------------------------------------------------
 
+RELOAD ?=   # 设为 1 开启 uvicorn 热重载（改源码即重启；对局与 token 只在内存，重启即全部丢失）
+
 .PHONY: serve
-serve: ## 启动 API 服务（uvicorn，热重载，http://localhost:8000）
-	cd $(BACKEND) && $(UV) uvicorn app.main:app --reload
+serve: ## 启动 API 服务（uvicorn，http://localhost:8000；RELOAD=1 热重载，会打断进行中的对局）
+	cd $(BACKEND) && $(UV) uvicorn app.main:app $(if $(RELOAD),--reload)
 
 .PHONY: watch
 watch: ## 终端看局（可选 SEED= VIEW=gm|spectator|seat:N AI_MODEL= THINKING=1 WOLF_RULE= WOLF_ROUNDS= AGENTS= SKILLS_DIR= ARGS=）

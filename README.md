@@ -101,7 +101,8 @@ make test         # 全量测试（含确定性重放与 500 局终止性扫描�
 make typecheck    # mypy 严格模式
 make lint         # ruff 静态检查
 make format       # ruff 自动格式化
-make serve        # 启动 API 服务（uvicorn 热重载；frontend/dist 存在时同端口静态挂载，见下「前端」）
+make serve        # 启动 API 服务（frontend/dist 存在时同端口静态挂载，见下「前端」）
+make serve RELOAD=1  # 开发时热重载；注意对局与 token 只在内存，任何源码改动触发重启都会让进行中的对局失联（前端报「token 无效」）
 make smoke        # 真模型 smoke（需 AGENTHOWL_SMOKE_MODEL + Ollama）
 make bench        # 档案 A/B bench（不给 AGENTS 为零 LLM 随机 bot；见下「档案评估」）
 
