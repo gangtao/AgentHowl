@@ -228,3 +228,6 @@ frontend/dist/
 
 # Playwright MCP 浏览器验收截图/追踪（issue #26 M3）
 .playwright-mcp/
+
+# Vite 缓存
+frontend/.vite/
