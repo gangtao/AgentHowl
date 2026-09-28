@@ -596,6 +596,11 @@ make watch AI_MODEL=bedrock/us.anthropic.claude-sonnet-4-5-20250929-v1:0
 
 （本账号可用模型可用 `aws bedrock list-foundation-models --by-provider anthropic` 查。）
 
+> 行动窗口：`speech_timeout_sec`（默认 90s）/ `action_timeout_sec`（默认 45s）按板子配置，可用
+> `config_override` 覆盖。云端大模型一次长发言常需 20–60s，Agent 会按剩余预算自动收紧结构化
+> 输出的重试次数（issue #86）；若仍频繁出现「（超时，未发言）」，把 `speech_timeout_sec` 提到
+> 120–180s。
+>
 > 采样参数：部分模型只接受固定值（如 Claude Opus 4.8 仅允许 `temperature=1`）。客户端以
 > `drop_params` 调用 litellm，不支持的参数会被丢弃而不是让该座位整局失声——此时档案里的
 > `temperature` 对该模型无效。端口异常（含此类参数错误）会以 warning 写入服务日志。

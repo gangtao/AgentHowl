@@ -291,3 +291,15 @@ def test_sheriff_instruction_per_stage_lists_only_legal_actions() -> None:
     badge = _sheriff_prompt("LAST_WORDS")
     assert "pass_badge" in badge and "tear_badge" in badge and "run_for_sheriff" not in badge
     assert "self_destruct" not in badge  # LAST_WORDS 不允许自爆
+
+
+def test_speech_instruction_has_length_cap_and_new_info_guidance() -> None:
+    """issue #87：日常发言 ≤150 字，上警发言 / 遗言 ≤250 字，并要求不复述、结尾归票。"""
+    day = build_prompt(DecisionKind.SPEECH, _obs("DAY_SPEECH"), "", agent_seed=1)
+    assert "不超过 150 字" in day and "不复述" in day and "归票" in day
+    campaign = build_prompt(
+        DecisionKind.SPEECH, _obs("SHERIFF_ELECTION", election_stage="speech"), "", agent_seed=1
+    )
+    assert "不超过 250 字" in campaign
+    last = build_prompt(DecisionKind.SPEECH, _obs("LAST_WORDS"), "", agent_seed=1)
+    assert "不超过 250 字" in last

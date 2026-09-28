@@ -35,6 +35,7 @@ class LLMClient(Protocol):
         model: str,
         temperature: float = 0.3,
         thinking: bool = False,
+        max_retries: int | None = None,  # None = 实现默认；调用方按剩余时间预算收紧
     ) -> TModel: ...
 
 
@@ -79,6 +80,7 @@ class LiteLLMInstructorClient:
         model: str,
         temperature: float = 0.3,
         thinking: bool = False,
+        max_retries: int | None = None,
     ) -> TModel:
         client = self._client_for(_pick_mode(model, thinking))
         # Ollama 的 think 参数直接控制模型思考开关；对 ollama/* 显式传（含 False——
@@ -97,7 +99,7 @@ class LiteLLMInstructorClient:
         result = await client.chat.completions.create(
             model=model,
             response_model=response_model,
-            max_retries=self._max_retries,
+            max_retries=self._max_retries if max_retries is None else max_retries,
             temperature=temperature,
             messages=[
                 {"role": "system", "content": system_prompt},

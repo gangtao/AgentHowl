@@ -404,3 +404,47 @@ async def test_reflect_on_game_failure_returns_none() -> None:
 
     port, _client = _port(boom)
     assert await port.reflect_on_game(build_reveal(state, 0, notable_seats=[])) is None
+
+
+class _RetryRecordingClient:
+    """记录每次调用拿到的 max_retries（issue #86）。"""
+
+    def __init__(self) -> None:
+        self.retries: list[int | None] = []
+
+    async def complete_structured(
+        self,
+        *,
+        system_prompt: str,
+        user_prompt: str,
+        response_model: type[BaseModel],
+        model: str,
+        temperature: float = 0.3,
+        thinking: bool = False,
+        max_retries: int | None = None,
+    ) -> BaseModel:
+        from app.agent.decisions import SpeechDecision
+
+        self.retries.append(max_retries)
+        return SpeechDecision(reasoning="r", content="hi")
+
+
+async def test_retries_shrink_with_remaining_budget() -> None:
+    """预算够跑 3 次生成才给 2 次重试；实测耗时变慢后自动收紧到 1 次 / 0 次。"""
+    from app.engine.config import build_preset
+
+    client = _RetryRecordingClient()
+    port = AgentPlayerPort(
+        0, build_preset("std_9_kill_side"), AgentConfig(assumed_call_s=15.0), client
+    )
+    assert port._retries_for_budget(100.0) == 2  # 100 // 15 = 6 次 → 上限 2
+    assert port._retries_for_budget(40.0) == 1  # 2 次生成 → 1 次重试
+    assert port._retries_for_budget(20.0) == 0  # 只够 1 次
+    await port.act(_obs("DAY_SPEECH"), time.time() + 100)
+    assert client.retries == [2]
+    port._call_seconds = 40.0  # 实测一次生成 40s
+    assert port._retries_for_budget(88.0) == 1  # 90s 窗口减 margin：只够 2 次
+    assert port._retries_for_budget(60.0) == 0
+    await port.act(_obs("DAY_SPEECH"), time.time() + 60)
+    assert client.retries[-1] == 0
+    assert port._call_seconds is not None and port._call_seconds < 40.0  # 滑动均值更新

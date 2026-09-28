@@ -136,6 +136,13 @@ def _speech_instruction(obs: PlayerObservation) -> str:
         parts.append("可报警徽流 badge_flow")
     if obs.phase in _SELF_DESTRUCT_PHASES:
         parts.append("狼人可选 self_destruct 自爆")
+    # 长度与信息增量约束（issue #87）：真机对局单条 300–600 字、四家逐句复述同一套话；
+    # 更短的生成也直接降低超时概率与成本。上警发言 / 遗言允许略长。
+    limit = 250 if (campaign or obs.phase == "LAST_WORDS") else 150
+    parts.append(
+        f"content 不超过 {limit} 字：只讲新信息和你自己的判断，不复述别人已经说过的观点，"
+        "结尾明确你的怀疑对象或归票"
+    )
     return "；".join(parts) + "。"
 
 
