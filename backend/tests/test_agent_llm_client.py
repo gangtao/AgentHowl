@@ -33,6 +33,20 @@ def test_pick_mode_json_when_unsupported_or_unknown(monkeypatch: pytest.MonkeyPa
     assert _pick_mode("ollama/whatever") is instructor.Mode.JSON  # 查询异常按不支持处理
 
 
+def test_pick_mode_tools_fallback_for_tool_capable_provider_prefix(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """litellm 模型表不认识的新模型 ID：按提供方前缀兜底为 TOOLS，ollama 仍是 JSON。"""
+    import instructor
+    import litellm
+
+    monkeypatch.setattr(litellm, "supports_function_calling", lambda model: False)
+    assert _pick_mode("anthropic/anthropic.claude-opus-4-8") is instructor.Mode.TOOLS
+    assert _pick_mode("bedrock/us.anthropic.claude-sonnet-4-5") is instructor.Mode.TOOLS
+    assert _pick_mode("ollama/qwen3:8b") is instructor.Mode.JSON
+    assert _pick_mode("anthropic/x", thinking=True) is instructor.Mode.MD_JSON
+
+
 def test_client_constructs_without_network() -> None:
     client = LiteLLMInstructorClient()
     assert client is not None
@@ -153,3 +167,12 @@ async def test_thinking_off_ollama_passes_think_false_and_not_md_json(monkeypatc
 async def test_non_ollama_never_passes_think(monkeypatch) -> None:
     _mode, kwargs = await _run("gpt-4o-mini", thinking=True, monkeypatch=monkeypatch)
     assert "think" not in kwargs  # 非 ollama 不传 think（否则 provider 报错）
+
+
+async def test_always_passes_drop_params(monkeypatch) -> None:
+    """只接受固定采样参数的模型（Claude Opus 4.8 仅 temperature=1）：让 litellm 丢弃而非抛错。"""
+    _mode, kwargs = await _run(
+        "anthropic/anthropic.claude-opus-4-8", thinking=False, monkeypatch=monkeypatch
+    )
+    assert kwargs.get("drop_params") is True
+    assert "temperature" in kwargs  # 参数照传，由 litellm 按模型能力决定是否丢弃

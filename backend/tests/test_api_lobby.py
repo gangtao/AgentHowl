@@ -460,3 +460,15 @@ def test_frontend_dist_mounted_only_when_present(tmp_path) -> None:
     c = TestClient(create_app(store=InMemoryEventStore(), frontend_dist=dist))
     assert c.get("/").status_code == 200 and "AgentHowl" in c.get("/").text
     assert c.get("/api/v1/presets").status_code == 200  # API 前缀不受影响
+
+
+def test_create_without_seed_echoes_random_seed(client: TestClient) -> None:
+    """建局不传 seed → 响应 config.seed 为随机整数且两局不同（此前每局发牌完全一样）。"""
+    a = client.post("/api/v1/games", json={"preset": "std_9_kill_side"}).json()
+    b = client.post("/api/v1/games", json={"preset": "std_9_kill_side"}).json()
+    assert isinstance(a["config"]["seed"], int) and isinstance(b["config"]["seed"], int)
+    assert a["config"]["seed"] != b["config"]["seed"]
+    c = client.post(
+        "/api/v1/games", json={"preset": "std_9_kill_side", "config_override": {"seed": 3}}
+    ).json()
+    assert c["config"]["seed"] == 3

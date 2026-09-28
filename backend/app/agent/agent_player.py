@@ -62,6 +62,10 @@ class AgentConfig(BaseModel):
     agent_seed: int = 0
     deadline_margin_s: float = 2.0  # 剩余时间低于此不再发起 LLM 调用
     reflection_min_remaining_s: float = 10.0  # 剩余时间高于此才做惰性反思
+    # 结构化输出校验失败的最大重试次数（issue #86）：实际次数还会按剩余预算收紧——
+    # 一次生成慢模型要 20–60s，三连重试会吃满整个发言窗口、记成「超时」
+    max_retries: int = 2
+    assumed_call_s: float = 15.0  # 尚无实测耗时前，估算单次生成所需秒数
     thinking: bool = False  # 开启推理模型思考（软 JSON 解析；更强推理但明显更慢）
     # 每次决策装配技能正文的字符预算（issue #58）
     skill_budget_chars: int = DEFAULT_SKILL_BUDGET_CHARS
@@ -93,6 +97,18 @@ class AgentPlayerPort:
         self._experience = experience
         self._opponents: dict[str, int] = dict(opponents or {})
         self.last_skills_used: tuple[str, ...] = ()
+        self._call_seconds: float | None = None  # 单次决策生成耗时的滑动均值（issue #86）
+
+    def _retries_for_budget(self, budget: float) -> int:
+        """按剩余预算决定还能重试几次：预算至少够跑 n 次生成才允许 n-1 次重试。"""
+        est = self._call_seconds if self._call_seconds is not None else self._cfg.assumed_call_s
+        est = max(est, 1e-3)
+        attempts = int(budget // est)
+        return max(0, min(self._cfg.max_retries, attempts - 1))
+
+    def _note_call_seconds(self, seconds: float) -> None:
+        prev = self._call_seconds
+        self._call_seconds = seconds if prev is None else 0.5 * prev + 0.5 * seconds
 
     async def on_events(self, events: list[Event]) -> None:
         await self.memory.on_events(events)
@@ -172,6 +188,7 @@ class AgentPlayerPort:
         budget = deadline_ts - time.time() - self._cfg.deadline_margin_s
         if budget <= 0:
             raise TimeoutError(f"座位 {self._seat} 装配后已无调用预算")
+        started = time.monotonic()
         decision = await asyncio.wait_for(
             self._client.complete_structured(
                 system_prompt=self._system_for(observation),
@@ -180,9 +197,11 @@ class AgentPlayerPort:
                 model=self._model_for(kind),
                 temperature=self._cfg.temperature,
                 thinking=self._cfg.thinking,
+                max_retries=self._retries_for_budget(budget),
             ),
             timeout=budget,
         )
+        self._note_call_seconds(time.monotonic() - started)
         if isinstance(decision, WolfDeliberation):
             self.memory.note_night_private(decision.analysis, observation.round)
         return to_action(kind, decision, observation.my_seat)

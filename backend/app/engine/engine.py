@@ -115,6 +115,10 @@ class RosterEntry(BaseModel):
     player_type: Literal["HUMAN", "AGENT"] = "AGENT"
 
 
+# LAST_WORDS 的 resume_token 之一：夜死警长的「仅警徽处置」窗口（issue #85）
+NIGHT_BADGE_ONLY = "night_badge_only"
+
+
 def _emit(
     state: GameState,
     type_: EventType,
@@ -246,6 +250,8 @@ def _validate(state: GameState, action: Action) -> RejectedReason | None:
             and not campaigning
         ):
             return RejectedReason.WRONG_PHASE
+        if state.phase == Phase.LAST_WORDS and state.resume_token == NIGHT_BADGE_ONLY:
+            return RejectedReason.WRONG_PHASE  # 夜死警长仅处置警徽，无遗言（issue #85）
         if (
             state.phase == Phase.DAY_SPEECH or in_pk_speech
         ) and state.config.speech_order_rule == SpeechOrderRule.BIDDING:
@@ -672,8 +678,8 @@ def _apply_night(state: GameState, a: NightAction) -> tuple[GameState, list[Even
                 actor=actor,
             )
             # 用毒后本人 witch_poison 置 False：通过修改 player 完成（事件驱动）
-            s = _consume_witch_potion(s, actor, poison=True)
-            return s, [e]
+            s, consumed = _consume_witch_potion(s, actor, poison=True)
+            return s, [e, consumed]
         s, e = _emit(
             state,
             EventType.ROLE_SKIPPED,
@@ -720,15 +726,17 @@ def _apply_night(state: GameState, a: NightAction) -> tuple[GameState, list[Even
 
 def _consume_witch_potion(
     state: GameState, seat: int, *, antidote: bool = False, poison: bool = False
-) -> GameState:
-    s, _ = _emit(
+) -> tuple[GameState, Event]:
+    """用药后置 witch_antidote / witch_poison 为 False——事件驱动，调用方必须把返回的事件
+    并入输出（曾经只取 state 丢掉事件：state_version 前进而事件缺号，事件库拒绝后续追加、
+    回放也失去用药记录）。"""
+    return _emit(
         state,
         EventType.WITCH_POTION_CONSUMED,
         WitchPotionConsumedPayload(seat=seat, antidote=antidote, poison=poison),
         Visibility.GM_ONLY,
         actor=seat,
     )
-    return s
 
 
 # ---------- step / advance ----------
@@ -738,9 +746,19 @@ def step(state: GameState, action: Action) -> StepResult:
     rej = _validate(state, action)
     if rej is not None:
         return StepResult(state=state, events=[], rejection=rej)
+    before = state.state_version
     state, events = _apply_action(state, action)
     state, more = advance(state)
-    return StepResult(state=state, events=[*events, *more])
+    out = [*events, *more]
+    # 不变量：一次 step 产出的事件 seq 必须恰好铺满 (before, state_version]——任何分支
+    # 调了 _emit 却丢掉事件都会在这里炸掉，而不是留给事件库的「seq 不连续」把对局卡死
+    seqs = [e.seq for e in out]
+    if seqs != list(range(before + 1, state.state_version + 1)):
+        raise EngineInvariantError(
+            f"step 事件 seq 与 state_version 不一致：seqs={seqs} "
+            f"state_version {before}→{state.state_version} @ {state.phase}"
+        )
+    return StepResult(state=state, events=out)
 
 
 def advance(state: GameState) -> tuple[GameState, list[Event]]:
@@ -933,7 +951,7 @@ def _system_transition(state: GameState) -> tuple[GameState, list[Event]]:
 
     if ph == Phase.LAST_WORDS:
         token = state.resume_token
-        if token == "day_speech":
+        if token in ("day_speech", NIGHT_BADGE_ONLY):
             return _enter_day_speech(state)
         return _after_day_death(state)
 
@@ -978,7 +996,8 @@ def _resolve_night_and_continue(state: GameState) -> tuple[GameState, list[Event
     if na.witch_save and na.wolf_target is not None:
         witches = living_of_role(state, RoleType.WITCH)
         if witches:
-            state = _consume_witch_potion(state, witches[0].seat, antidote=True)
+            state, consumed = _consume_witch_potion(state, witches[0].seat, antidote=True)
+            events.append(consumed)
 
     deaths = resolve_night(state.config, na)
     ordered = tuple(sorted(deaths))
@@ -1249,6 +1268,24 @@ def _finish_night_deaths(
     state: GameState, ordered: tuple[int, ...], events: list[Event]
 ) -> tuple[GameState, list[Event]]:
     recipients = _last_words_recipients(state, ordered, is_night=True)
+    sheriff = state.sheriff_seat
+    if (
+        state.config.sheriff.night_death_badge_window
+        and sheriff is not None
+        and sheriff in ordered
+        and not recipients
+    ):
+        # 夜死警长无遗言但仍要处置警徽（issue #85）：开一个只接受 pass_badge/tear_badge
+        # 的 LAST_WORDS 窗口，resume_token 标记「仅警徽」，发言在此被拒
+        state, e = _emit(
+            state,
+            EventType.PHASE_CHANGED,
+            PhaseChangedPayload(
+                to=Phase.LAST_WORDS, speech_order=(sheriff,), resume_token=NIGHT_BADGE_ONLY
+            ),
+            Visibility.PUBLIC,
+        )
+        return state, [*events, e]
     state, badge_ev = _auto_badge_if_orphaned(state, recipients)
     events = [*events, *badge_ev]
     if recipients:

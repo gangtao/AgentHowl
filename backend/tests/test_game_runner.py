@@ -231,6 +231,26 @@ class TestTimeoutAndRetry:
         replayed = load_state(store, "g1")
         assert replayed.winner == final.winner
 
+    async def test_crashing_port_falls_to_default_and_logs(self, caplog) -> None:
+        """端口抛错不能被静默吞掉：落默认行动的同时留 warning（含异常类型与消息）。"""
+
+        class CrashingPort:
+            async def act(self, observation: PlayerObservation, deadline_ts: float) -> Action:
+                raise ValueError("model does not support temperature=0.4")
+
+        store = InMemoryEventStore()
+        runner, ports = _make_special_runner(
+            store, seed=42, timeouts=RunnerTimeouts(speech_sec=0.5, action_sec=0.5)
+        )
+        ports[0] = CrashingPort()
+        with caplog.at_level("WARNING", logger="app.runtime.game_runner"):
+            final = await runner.run()
+        assert final.phase == Phase.GAME_OVER
+        assert any(e.meta.get("timeout") == "true" for e in store.load_events("g1"))
+        hits = [r for r in caplog.records if "端口异常" in r.getMessage()]
+        assert hits and "ValueError" in hits[0].getMessage()
+        assert "temperature=0.4" in hits[0].getMessage()
+
     async def test_rejections_exhausted_falls_to_default(self) -> None:
         store = InMemoryEventStore()
         runner, ports = _make_special_runner(

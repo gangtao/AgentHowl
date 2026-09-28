@@ -262,3 +262,44 @@ def test_static_prompt_experience_block_after_personality_and_identity_when_empt
     )
     assert "== 跨局经验 ==\n你此前打过 2 局。" in sp
     assert sp.index("== 你的性格 ==") < sp.index("== 跨局经验 ==") < sp.index("发言用中文")
+
+
+def _sheriff_prompt(phase: str, **kw) -> str:
+    return build_prompt(
+        DecisionKind.SHERIFF, _obs(phase, my_role=RoleType.VILLAGER, **kw), "", agent_seed=1
+    )
+
+
+def test_sheriff_candidacy_instruction_explains_withdraw_means_not_running() -> None:
+    """报名阶段：只给 run_for_sheriff / withdraw 两个选项并解释语义（真机曾 9/9 全员上警）。"""
+    text = _sheriff_prompt("SHERIFF_ELECTION", election_stage="candidacy")
+    assert "withdraw 表示不上警" in text
+    assert "run_for_sheriff" in text
+    assert "vote_sheriff" not in text and "pass_badge" not in text and "tear_badge" not in text
+    assert "self_destruct" in text  # SHERIFF_ELECTION 允许自爆
+
+
+def test_sheriff_instruction_per_stage_lists_only_legal_actions() -> None:
+    withdraw = _sheriff_prompt("SHERIFF_ELECTION", election_stage="withdraw")
+    assert "退水" in withdraw and "vote_sheriff" not in withdraw
+    vote = _sheriff_prompt("SHERIFF_ELECTION", election_stage="vote", sheriff_candidates=[2, 6])
+    assert "vote_sheriff" in vote and "[2, 6]" in vote and "run_for_sheriff" not in vote
+    direction = _sheriff_prompt("SHERIFF_ELECTION", election_stage="direction")
+    assert "set_speech_direction" in direction and "left" in direction
+    pk = _sheriff_prompt("SHERIFF_PK", sheriff_candidates=[1, 4])
+    assert "vote_sheriff" in pk and "[1, 4]" in pk
+    badge = _sheriff_prompt("LAST_WORDS")
+    assert "pass_badge" in badge and "tear_badge" in badge and "run_for_sheriff" not in badge
+    assert "self_destruct" not in badge  # LAST_WORDS 不允许自爆
+
+
+def test_speech_instruction_has_length_cap_and_new_info_guidance() -> None:
+    """issue #87：日常发言 ≤150 字，上警发言 / 遗言 ≤250 字，并要求不复述、结尾归票。"""
+    day = build_prompt(DecisionKind.SPEECH, _obs("DAY_SPEECH"), "", agent_seed=1)
+    assert "不超过 150 字" in day and "不复述" in day and "归票" in day
+    campaign = build_prompt(
+        DecisionKind.SPEECH, _obs("SHERIFF_ELECTION", election_stage="speech"), "", agent_seed=1
+    )
+    assert "不超过 250 字" in campaign
+    last = build_prompt(DecisionKind.SPEECH, _obs("LAST_WORDS"), "", agent_seed=1)
+    assert "不超过 250 字" in last

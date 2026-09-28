@@ -101,7 +101,8 @@ make test         # 全量测试（含确定性重放与 500 局终止性扫描�
 make typecheck    # mypy 严格模式
 make lint         # ruff 静态检查
 make format       # ruff 自动格式化
-make serve        # 启动 API 服务（uvicorn 热重载；frontend/dist 存在时同端口静态挂载，见下「前端」）
+make serve        # 启动 API 服务（frontend/dist 存在时同端口静态挂载，见下「前端」）
+make serve RELOAD=1  # 开发时热重载；注意对局与 token 只在内存，任何源码改动触发重启都会让进行中的对局失联（前端报「token 无效」）
 make smoke        # 真模型 smoke（需 AGENTHOWL_SMOKE_MODEL + Ollama）
 make bench        # 档案 A/B bench（不给 AGENTS 为零 LLM 随机 bot；见下「档案评估」）
 
@@ -594,6 +595,15 @@ make watch AI_MODEL=bedrock/us.anthropic.claude-sonnet-4-5-20250929-v1:0
 ```
 
 （本账号可用模型可用 `aws bedrock list-foundation-models --by-provider anthropic` 查。）
+
+> 行动窗口：`speech_timeout_sec`（默认 90s）/ `action_timeout_sec`（默认 45s）按板子配置，可用
+> `config_override` 覆盖。云端大模型一次长发言常需 20–60s，Agent 会按剩余预算自动收紧结构化
+> 输出的重试次数（issue #86）；若仍频繁出现「（超时，未发言）」，把 `speech_timeout_sec` 提到
+> 120–180s。
+>
+> 采样参数：部分模型只接受固定值（如 Claude Opus 4.8 仅允许 `temperature=1`）。客户端以
+> `drop_params` 调用 litellm，不支持的参数会被丢弃而不是让该座位整局失声——此时档案里的
+> `temperature` 对该模型无效。端口异常（含此类参数错误）会以 warning 写入服务日志。
 
 **分层路由**：`--ai-model-speech` 给白天发言单独用（可更强的）模型，`--reflection-model`
 给每轮记忆反思用（通常更便宜的）模型；两者缺省都等同 `--ai-model`。例如便宜模型跑

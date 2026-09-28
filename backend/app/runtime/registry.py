@@ -134,6 +134,10 @@ class GameRegistry:
         resolved = merge_profiles(agents, legacy_to_profiles(ai_model, ai_model_speech))
         providers = {p.provider_id for p in self._provider_store.list()}
         validate_profiles(resolved, config.num_players, self.skill_library, providers=providers)
+        if config.seed is None:
+            # 未指定 seed 时抽一个随机种子并写进 config（随 meta 落盘，回放仍可复现）；
+            # 引擎把 None 当 0 用，若不在此抽签，每局发牌都一模一样
+            config = config.model_copy(update={"seed": secrets.randbelow(2**31)})
         game_id = f"g_{secrets.token_hex(4)}"
         handle = GameHandle(
             game_id,
@@ -231,6 +235,7 @@ class GameRegistry:
             if isinstance(port, SupportsEventIngest):
                 handle.connections.subscribe(seat, port.on_events)
         handle.task = asyncio.create_task(runner.run())
+        handle.task.add_done_callback(lambda t: _log_runner_exit(handle.game_id, t))
         if handle.seat_memory_ids:
             handle.task.add_done_callback(lambda t: self._schedule_postgame(handle, t))
 
@@ -265,6 +270,15 @@ class GameRegistry:
             opponents=opponents_for(seat, handle.seat_memory_ids),
             provider=handle.providers.get(seat),
         )
+
+
+def _log_runner_exit(game_id: str, task: asyncio.Task[GameState]) -> None:
+    """runner 任务无人 await：崩溃必须留日志，否则对局只是无声卡住（曾因事件 seq 缺号
+    在夜间结算处静默死亡，终端里什么都看不到）。"""
+    if task.cancelled():
+        logger.warning("对局 %s runner 被取消", game_id)
+    elif (exc := task.exception()) is not None:
+        logger.error("对局 %s runner 崩溃，对局停摆：%s", game_id, exc, exc_info=exc)
 
 
 def _log_postgame(game_id: str, task: asyncio.Task[dict[str, AgentExperience]]) -> None:
