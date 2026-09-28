@@ -15,6 +15,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict
 
 from app.agent.profile import AgentProfiles
+from app.engine.actions import Action
 from app.engine.config import GameConfig
 from app.engine.engine import RosterEntry, create_game, step
 from app.engine.events import Event
