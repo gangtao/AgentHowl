@@ -92,6 +92,9 @@ class SheriffRule(BaseModel):
     wolf_selfdestruct_eats_badge: bool = True
     campaign_speech_enabled: bool = True  # 上警发言子阶段（issue #47）；False = 上警后直接退水确认
     campaign_speech_order: CampaignSpeechOrder = CampaignSpeechOrder.JUDGE_ODD_EVEN
+    # 夜间死亡且本夜无遗言的警长，天亮后仍有一次只能移交/撕徽的窗口（PRD「死亡时可移交
+    # 或撕掉警徽」不分昼夜；issue #85）。False = 自动撕徽（旧行为）
+    night_death_badge_window: bool = True
 
 
 class RoleSlot(BaseModel):

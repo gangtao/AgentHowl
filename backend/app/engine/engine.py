@@ -115,6 +115,10 @@ class RosterEntry(BaseModel):
     player_type: Literal["HUMAN", "AGENT"] = "AGENT"
 
 
+# LAST_WORDS 的 resume_token 之一：夜死警长的「仅警徽处置」窗口（issue #85）
+NIGHT_BADGE_ONLY = "night_badge_only"
+
+
 def _emit(
     state: GameState,
     type_: EventType,
@@ -246,6 +250,8 @@ def _validate(state: GameState, action: Action) -> RejectedReason | None:
             and not campaigning
         ):
             return RejectedReason.WRONG_PHASE
+        if state.phase == Phase.LAST_WORDS and state.resume_token == NIGHT_BADGE_ONLY:
+            return RejectedReason.WRONG_PHASE  # 夜死警长仅处置警徽，无遗言（issue #85）
         if (
             state.phase == Phase.DAY_SPEECH or in_pk_speech
         ) and state.config.speech_order_rule == SpeechOrderRule.BIDDING:
@@ -945,7 +951,7 @@ def _system_transition(state: GameState) -> tuple[GameState, list[Event]]:
 
     if ph == Phase.LAST_WORDS:
         token = state.resume_token
-        if token == "day_speech":
+        if token in ("day_speech", NIGHT_BADGE_ONLY):
             return _enter_day_speech(state)
         return _after_day_death(state)
 
@@ -1262,6 +1268,24 @@ def _finish_night_deaths(
     state: GameState, ordered: tuple[int, ...], events: list[Event]
 ) -> tuple[GameState, list[Event]]:
     recipients = _last_words_recipients(state, ordered, is_night=True)
+    sheriff = state.sheriff_seat
+    if (
+        state.config.sheriff.night_death_badge_window
+        and sheriff is not None
+        and sheriff in ordered
+        and not recipients
+    ):
+        # 夜死警长无遗言但仍要处置警徽（issue #85）：开一个只接受 pass_badge/tear_badge
+        # 的 LAST_WORDS 窗口，resume_token 标记「仅警徽」，发言在此被拒
+        state, e = _emit(
+            state,
+            EventType.PHASE_CHANGED,
+            PhaseChangedPayload(
+                to=Phase.LAST_WORDS, speech_order=(sheriff,), resume_token=NIGHT_BADGE_ONLY
+            ),
+            Visibility.PUBLIC,
+        )
+        return state, [*events, e]
     state, badge_ev = _auto_badge_if_orphaned(state, recipients)
     events = [*events, *badge_ev]
     if recipients:
