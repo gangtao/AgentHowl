@@ -134,6 +134,10 @@ class GameRegistry:
         resolved = merge_profiles(agents, legacy_to_profiles(ai_model, ai_model_speech))
         providers = {p.provider_id for p in self._provider_store.list()}
         validate_profiles(resolved, config.num_players, self.skill_library, providers=providers)
+        if config.seed is None:
+            # 未指定 seed 时抽一个随机种子并写进 config（随 meta 落盘，回放仍可复现）；
+            # 引擎把 None 当 0 用，若不在此抽签，每局发牌都一模一样
+            config = config.model_copy(update={"seed": secrets.randbelow(2**31)})
         game_id = f"g_{secrets.token_hex(4)}"
         handle = GameHandle(
             game_id,

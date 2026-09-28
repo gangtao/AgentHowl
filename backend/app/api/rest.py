@@ -80,7 +80,8 @@ def create_game_endpoint(
         host_token=host_token,
         spectator_token=spectator_token,
         gm_token=gm_token,
-        config=config.model_dump(mode="json"),
+        # 回显 handle.config 而非请求侧 config：未指定 seed 时 registry 会抽一个随机种子写入
+        config=handle.config.model_dump(mode="json"),
         agents=handle.agents,
     )
 

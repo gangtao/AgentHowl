@@ -471,3 +471,15 @@ async def test_registry_passes_provider_to_agent_port_factory_context() -> None:
         )
     assert handle.task is not None
     handle.task.cancel()
+
+
+def test_create_without_seed_draws_random_seed_into_config() -> None:
+    """seed 留空 = 随机发牌：引擎把 None 当 0，若不在建局时抽签，每局角色分布都一样。"""
+    reg = _registry()
+    cfg = build_preset("std_9_kill_side")
+    assert cfg.seed is None
+    seeds = {reg.create(cfg, allow_spectators=True).config.seed for _ in range(5)}
+    assert None not in seeds
+    assert len(seeds) > 1  # 5 次 31 位随机抽签全同的概率可忽略
+    explicit = reg.create(cfg.model_copy(update={"seed": 7}), allow_spectators=True)
+    assert explicit.config.seed == 7  # 显式 seed 原样保留
