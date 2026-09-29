@@ -157,6 +157,19 @@ def _speech_instruction(obs: PlayerObservation) -> str:
     return "；".join(parts) + "。"
 
 
+def _night_instruction(obs: PlayerObservation) -> str:
+    """夜间行动指引；女巫补一段常规用药原则——批跑 6/6 局都用了解药、4 局在首夜，
+    首夜没有任何身份信息，解药大概率救到普通村民而把真神暴露在第二刀下。"""
+    text = "给出夜间/开枪行动：action_type 与 target_seat（可 skip）。"
+    if obs.phase == "NIGHT_WITCH" and obs.my_role == RoleType.WITCH:
+        text += (
+            "用药原则：首夜信息为零，常规打法是不用解药（skip），留到刀口是已跳明且逻辑可信的"
+            "神职时再救；毒药留给已被查杀或悍跳破绽明显的狼，不确定就留着。"
+            "按本局规则与你的性格决定，不是硬性规定。"
+        )
+    return text
+
+
 def _sheriff_instruction(obs: PlayerObservation) -> str:
     """按子阶段只列出当前合法的 action_type 并解释语义。
 
@@ -208,7 +221,7 @@ def _sheriff_instruction(obs: PlayerObservation) -> str:
 def _instruction_for(kind: DecisionKind, obs: PlayerObservation, cands: list[int]) -> str:
     cand_text = f"候选座位（顺序无含义）：{cands}。" if cands else ""
     body: dict[DecisionKind, str] = {
-        DecisionKind.NIGHT: "给出夜间/开枪行动：action_type 与 target_seat（可 skip）。",
+        DecisionKind.NIGHT: _night_instruction(obs),
         DecisionKind.SPEECH: _speech_instruction(obs),
         DecisionKind.VOTE: "投票放逐一人（target_seat）或弃票（abstain=true）。",
         DecisionKind.SHERIFF: _sheriff_instruction(obs),
