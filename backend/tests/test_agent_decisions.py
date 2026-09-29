@@ -76,7 +76,12 @@ def test_dispatch(phase: str, kw: dict, expected: DecisionKind) -> None:
 
 def test_dispatch_last_words_sheriff_vs_plain() -> None:
     sheriff_seats = [{"seat": 0, "alive": True, "is_sheriff": True}]
-    assert decision_kind_for(_obs("LAST_WORDS", seats=sheriff_seats)) is DecisionKind.SHERIFF
+    # 两步制（issue #90）：遗言回合发言，警徽处置窗口（badge_only）才是警长行动
+    assert decision_kind_for(_obs("LAST_WORDS", seats=sheriff_seats)) is DecisionKind.SPEECH
+    assert (
+        decision_kind_for(_obs("LAST_WORDS", seats=sheriff_seats, badge_only=True))
+        is DecisionKind.SHERIFF
+    )
     assert decision_kind_for(_obs("LAST_WORDS")) is DecisionKind.SPEECH
 
 

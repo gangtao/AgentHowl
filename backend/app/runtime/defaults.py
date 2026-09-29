@@ -17,7 +17,7 @@ from app.engine.actions import (
     Speak,
 )
 from app.engine.config import Faction
-from app.engine.phases import ElectionStage, Phase, speech_queue_pending
+from app.engine.phases import ElectionStage, Phase, is_badge_only_window, speech_queue_pending
 from app.engine.state import GameState, living_seats, player_at
 
 TIMEOUT_SPEECH = "（超时，未发言）"
@@ -71,8 +71,9 @@ def default_action(state: GameState, seat: int) -> Action:
     if ph == Phase.DAY_SPEECH:
         return Speak(actor_seat=seat, content=TIMEOUT_SPEECH)
     if ph == Phase.LAST_WORDS:
-        if pl.is_sheriff:
-            # 警长遗言窗口的期望行动是警徽处置：默认撕掉（警徽流失）
+        badge_window = is_badge_only_window(ph, state.resume_token)
+        if pl.is_sheriff and (badge_window or not state.config.sheriff.night_death_badge_window):
+            # 警徽处置窗口（或旧的一步制）：默认撕掉（警徽流失）；两步制的遗言回合走空发言
             return SheriffAction(actor_seat=seat, action_type=SheriffActionType.TEAR_BADGE)
         return Speak(actor_seat=seat, content=TIMEOUT_SPEECH)
 

@@ -14,7 +14,13 @@ from app.engine.actions import (
 from app.engine.config import Faction, GameConfig
 from app.engine.engine import create_game, step
 from app.engine.events import Event
-from app.engine.phases import Phase, campaign_speaking, expected_actors, pk_speaking
+from app.engine.phases import (
+    Phase,
+    campaign_speaking,
+    expected_actors,
+    is_badge_only_window,
+    pk_speaking,
+)
 from app.engine.state import GameState, living_seats, player_at
 
 
@@ -114,7 +120,14 @@ class RandomBot:
                 if roll == 0:
                     return SelfDestruct(actor_seat=seat)
             return Speak(actor_seat=seat, content="(bot)")
-        if ph == Phase.LAST_WORDS and pl.is_sheriff:
+        if (
+            ph == Phase.LAST_WORDS
+            and pl.is_sheriff
+            and (
+                is_badge_only_window(ph, state.resume_token)
+                or not state.config.sheriff.night_death_badge_window
+            )
+        ):
             from app.engine.actions import SheriffAction, SheriffActionType
 
             return SheriffAction(actor_seat=seat, action_type=SheriffActionType.TEAR_BADGE)

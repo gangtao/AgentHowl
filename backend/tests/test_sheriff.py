@@ -248,7 +248,7 @@ def test_dying_sheriff_can_pass_badge() -> None:
         speech_order=(0,),
         speech_idx=0,
         sheriff_seat=0,
-        resume_token="after_day",
+        resume_token="badge_only:after_day",  # 两步制：警徽处置窗口（issue #90）
     )
     res = step(
         st, SheriffAction(actor_seat=0, action_type=SheriffActionType.PASS_BADGE, target_seat=1)
@@ -321,7 +321,7 @@ def test_badge_pass_reduce_matches_live() -> None:
         speech_order=(0,),
         speech_idx=0,
         sheriff_seat=0,
-        resume_token="after_day",
+        resume_token="badge_only:after_day",  # 两步制：警徽处置窗口（issue #90）
     )
     res = step(
         st, SheriffAction(actor_seat=0, action_type=SheriffActionType.PASS_BADGE, target_seat=1)

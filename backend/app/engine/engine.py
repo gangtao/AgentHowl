@@ -77,10 +77,12 @@ from app.engine.events import (
     reduce,
 )
 from app.engine.phases import (
+    BADGE_ONLY_PREFIX,
     ElectionStage,
     Phase,
     campaign_speaking,
     expected_actors,
+    is_badge_only_window,
     next_night_phase,
     night_phase_sequence,
     pk_speaking,
@@ -115,8 +117,30 @@ class RosterEntry(BaseModel):
     player_type: Literal["HUMAN", "AGENT"] = "AGENT"
 
 
-# LAST_WORDS 的 resume_token 之一：夜死警长的「仅警徽处置」窗口（issue #85）
-NIGHT_BADGE_ONLY = "night_badge_only"
+# 死亡警长的「仅警徽处置」窗口（issue #85/#90）：resume_token = BADGE_ONLY_PREFIX + 续接点
+NIGHT_BADGE_ONLY = BADGE_ONLY_PREFIX + "day_speech"
+
+
+def _badge_orphaned(state: GameState) -> bool:
+    """警徽仍挂在已死亡玩家身上。"""
+    return state.sheriff_seat is not None and not player_at(state, state.sheriff_seat).alive
+
+
+def _open_badge_window(state: GameState, continuation: str) -> tuple[GameState, list[Event]]:
+    """给已死亡的警长开一个只接受 pass_badge/tear_badge 的 LAST_WORDS 窗口，结束后按
+    continuation（"day_speech" / "after_day"）续接。"""
+    assert state.sheriff_seat is not None
+    state, e = _emit(
+        state,
+        EventType.PHASE_CHANGED,
+        PhaseChangedPayload(
+            to=Phase.LAST_WORDS,
+            speech_order=(state.sheriff_seat,),
+            resume_token=BADGE_ONLY_PREFIX + continuation,
+        ),
+        Visibility.PUBLIC,
+    )
+    return state, [e]
 
 
 def _emit(
@@ -250,8 +274,8 @@ def _validate(state: GameState, action: Action) -> RejectedReason | None:
             and not campaigning
         ):
             return RejectedReason.WRONG_PHASE
-        if state.phase == Phase.LAST_WORDS and state.resume_token == NIGHT_BADGE_ONLY:
-            return RejectedReason.WRONG_PHASE  # 夜死警长仅处置警徽，无遗言（issue #85）
+        if is_badge_only_window(state.phase, state.resume_token):
+            return RejectedReason.WRONG_PHASE  # 警徽处置窗口里不能发言（issue #85/#90）
         if (
             state.phase == Phase.DAY_SPEECH or in_pk_speech
         ) and state.config.speech_order_rule == SpeechOrderRule.BIDDING:
@@ -419,6 +443,11 @@ def _validate_sheriff(state: GameState, a: SheriffAction) -> RejectedReason | No
     at = a.action_type
     if state.phase == Phase.LAST_WORDS:
         if at not in (SheriffActionType.PASS_BADGE, SheriffActionType.TEAR_BADGE):
+            return RejectedReason.WRONG_PHASE
+        if state.config.sheriff.night_death_badge_window and not is_badge_only_window(
+            state.phase, state.resume_token
+        ):
+            # 两步制（issue #90）：遗言回合只能发言，警徽在随后的处置窗口里交/撕
             return RejectedReason.WRONG_PHASE
         if not pl.is_sheriff:
             return RejectedReason.NOT_A_CANDIDATE
@@ -950,8 +979,15 @@ def _system_transition(state: GameState) -> tuple[GameState, list[Event]]:
         return _enter_day_last_words(state, extra=())
 
     if ph == Phase.LAST_WORDS:
-        token = state.resume_token
-        if token in ("day_speech", NIGHT_BADGE_ONLY):
+        token = state.resume_token or ""
+        if token.startswith(BADGE_ONLY_PREFIX):
+            continuation = token[len(BADGE_ONLY_PREFIX) :]
+        else:
+            continuation = "day_speech" if token == "day_speech" else "after_day"
+            if state.config.sheriff.night_death_badge_window and _badge_orphaned(state):
+                # 遗言说完、警徽仍在死者手上：再开一个只处置警徽的窗口（issue #90）
+                return _open_badge_window(state, continuation)
+        if continuation == "day_speech":
             return _enter_day_speech(state)
         return _after_day_death(state)
 
@@ -1268,26 +1304,15 @@ def _finish_night_deaths(
     state: GameState, ordered: tuple[int, ...], events: list[Event]
 ) -> tuple[GameState, list[Event]]:
     recipients = _last_words_recipients(state, ordered, is_night=True)
-    sheriff = state.sheriff_seat
-    if (
-        state.config.sheriff.night_death_badge_window
-        and sheriff is not None
-        and sheriff in ordered
-        and not recipients
-    ):
-        # 夜死警长无遗言但仍要处置警徽（issue #85）：开一个只接受 pass_badge/tear_badge
-        # 的 LAST_WORDS 窗口，resume_token 标记「仅警徽」，发言在此被拒
-        state, e = _emit(
-            state,
-            EventType.PHASE_CHANGED,
-            PhaseChangedPayload(
-                to=Phase.LAST_WORDS, speech_order=(sheriff,), resume_token=NIGHT_BADGE_ONLY
-            ),
-            Visibility.PUBLIC,
-        )
-        return state, [*events, e]
-    state, badge_ev = _auto_badge_if_orphaned(state, recipients)
-    events = [*events, *badge_ev]
+    if state.config.sheriff.night_death_badge_window:
+        # 死亡警长的警徽处置窗口（issue #85/#90）：有遗言 → 先遗言、LAST_WORDS 收尾时再开
+        # 警徽窗口；无遗言 → 直接开只接受 pass_badge/tear_badge 的窗口
+        if not recipients and _badge_orphaned(state):
+            state, ev = _open_badge_window(state, "day_speech")
+            return state, [*events, *ev]
+    else:
+        state, badge_ev = _auto_badge_if_orphaned(state, recipients)
+        events = [*events, *badge_ev]
     if recipients:
         state, e = _emit(
             state,
@@ -1500,7 +1525,12 @@ def _enter_day_last_words(
         sorted(set(([state.day_exiled] if state.day_exiled is not None else []) + list(extra)))
     )
     recipients = _last_words_recipients(state, dead_today, is_night=False)
-    state, badge_ev = _auto_badge_if_orphaned(state, recipients)
+    badge_ev: list[Event] = []
+    if state.config.sheriff.night_death_badge_window:
+        if not recipients and _badge_orphaned(state):
+            return _open_badge_window(state, "after_day")  # 无遗言（理论上白天死者恒有遗言）
+    else:
+        state, badge_ev = _auto_badge_if_orphaned(state, recipients)
     if recipients:
         state, e = _emit(
             state,

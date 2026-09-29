@@ -190,8 +190,9 @@ def _sheriff_instruction(obs: PlayerObservation) -> str:
         )
     elif obs.phase == "LAST_WORDS":
         text = (
-            "你是警长且即将出局，处置警徽：action_type=pass_badge 并给 target_seat "
-            "把警徽交给一名存活玩家，或 tear_badge 撕掉警徽。"
+            "你是已出局的警长，现在只处置警徽（遗言已在上一回合说完或本夜无遗言）："
+            "action_type=pass_badge 并给 target_seat 把警徽交给一名存活玩家，"
+            "或 tear_badge 撕掉警徽。"
         )
     else:
         text = (
