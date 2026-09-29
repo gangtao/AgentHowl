@@ -33,7 +33,12 @@ from app.agent.experience import (
 from app.agent.llm_client import DEFAULT_MODEL, LLMClient
 from app.agent.memory import AgentMemory
 from app.agent.personality import PersonalitySpec, render_personality
-from app.agent.prompts import build_prompt, build_wolf_night_prompt, static_system_prompt
+from app.agent.prompts import (
+    badge_flow_allowed,
+    build_prompt,
+    build_wolf_night_prompt,
+    static_system_prompt,
+)
 from app.agent.skills import (
     DEFAULT_SKILL_BUDGET_CHARS,
     Skill,
@@ -98,6 +103,14 @@ class AgentPlayerPort:
         self._opponents: dict[str, int] = dict(opponents or {})
         self.last_skills_used: tuple[str, ...] = ()
         self._call_seconds: float | None = None  # 单次决策生成耗时的滑动均值（issue #86）
+        self._last_rejection: str | None = None  # runner 回填的上次拒绝原因，下次 prompt 带上
+
+    def notify_result(
+        self, rejected_reason: str | None, state_version: int, event_id: str | None
+    ) -> None:
+        """runner 裁决回填（SupportsResultFeedback）：被拒原因喂给下一次决策，否则模型只能
+        盲重试同一个非法行动直到落默认（issue #53）。"""
+        self._last_rejection = rejected_reason
 
     def _retries_for_budget(self, budget: float) -> int:
         """按剩余预算决定还能重试几次：预算至少够跑 n 次生成才允许 n-1 次重试。"""
@@ -185,6 +198,13 @@ class AgentPlayerPort:
                 skills_text=skills_text,
             )
 
+        if self._last_rejection:
+            user_prompt += (
+                f"\n\n== 上一次提交被引擎拒绝 ==\n原因：{self._last_rejection}。"
+                "请按当前阶段的合法行动重新给出决策，不要重复同样的提交。"
+            )
+            self._last_rejection = None
+
         budget = deadline_ts - time.time() - self._cfg.deadline_margin_s
         if budget <= 0:
             raise TimeoutError(f"座位 {self._seat} 装配后已无调用预算")
@@ -204,7 +224,15 @@ class AgentPlayerPort:
         self._note_call_seconds(time.monotonic() - started)
         if isinstance(decision, WolfDeliberation):
             self.memory.note_night_private(decision.analysis, observation.round)
-        return to_action(kind, decision, observation.my_seat)
+        allow_bf = badge_flow_allowed(observation)
+        if not allow_bf and getattr(decision, "badge_flow", None):
+            logger.info(
+                "seat=%d phase=%s 非竞选发言携带 badge_flow=%s，已剥除",
+                self._seat,
+                observation.phase,
+                decision.badge_flow,  # type: ignore[attr-defined]
+            )
+        return to_action(kind, decision, observation.my_seat, allow_badge_flow=allow_bf)
 
     async def reflect_on_game(
         self, reveal: GameReveal, *, timeout_s: float = 120.0

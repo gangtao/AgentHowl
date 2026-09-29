@@ -303,3 +303,15 @@ def test_speech_instruction_has_length_cap_and_new_info_guidance() -> None:
     assert "不超过 250 字" in campaign
     last = build_prompt(DecisionKind.SPEECH, _obs("LAST_WORDS"), "", agent_seed=1)
     assert "不超过 250 字" in last
+
+
+def test_badge_flow_allowed_only_in_campaign_or_pk_speech() -> None:
+    from app.agent.prompts import badge_flow_allowed
+
+    assert badge_flow_allowed(_obs("SHERIFF_ELECTION", election_stage="speech"))
+    assert badge_flow_allowed(_obs("SHERIFF_PK", pk_speech_pending=True))
+    assert not badge_flow_allowed(_obs("SHERIFF_PK", pk_speech_pending=False))
+    assert not badge_flow_allowed(_obs("DAY_SPEECH"))
+    assert not badge_flow_allowed(_obs("LAST_WORDS"))
+    day = build_prompt(DecisionKind.SPEECH, _obs("DAY_SPEECH"), "", agent_seed=1)
+    assert "不报警徽流" in day and "badge_flow" not in day

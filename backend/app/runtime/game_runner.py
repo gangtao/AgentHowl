@@ -242,6 +242,14 @@ class GameRunner:
                 action, pending = pending, None
             else:
                 if remaining <= 0 or rejections >= MAX_REJECTIONS:
+                    logger.warning(
+                        "seat=%d phase=%s %s，落默认行动",
+                        seat,
+                        self.state.phase,
+                        f"连续 {rejections} 次非法行动"
+                        if rejections >= MAX_REJECTIONS
+                        else "重试中窗口耗尽",
+                    )
                     await self._apply_default(seat)
                     return
                 try:
@@ -258,6 +266,14 @@ class GameRunner:
                 if isinstance(port, SupportsResultFeedback):
                     port.notify_result(str(res.rejection), self.state.state_version, None)
                 rejections += 1  # 非法 intent：截止前重试（M2.3 真人重试路径）
+                logger.info(
+                    "seat=%d phase=%s 行动被拒（第 %d 次）：%s %s",
+                    seat,
+                    self.state.phase,
+                    rejections,
+                    res.rejection,
+                    type(action).__name__,
+                )
                 continue
             self._state = res.state
             # 技能装配记录（issue #60）：端口若暴露 last_skills_used，写进本次提交的首条事件 meta
