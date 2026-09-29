@@ -340,3 +340,39 @@ async def test_full_game_skilled_ports_tag_first_event_per_action_and_not_timeou
         )
     # 生命周期头（非行动产生）不带标记
     assert all("skills" not in e.meta for e in events[:2])
+
+
+class _ObsRecorder:
+    """包装端口：记录每次 act 收到的 observation（验证同步窗口）。"""
+
+    def __init__(self, inner: PlayerPort) -> None:
+        self._inner = inner
+        self.seen: list[PlayerObservation] = []
+
+    async def act(self, observation: PlayerObservation, deadline_ts: float) -> Action:
+        self.seen.append(observation)
+        return await self._inner.act(observation, deadline_ts)
+
+
+async def test_candidacy_and_votes_are_simultaneous_windows() -> None:
+    """上警报名 / 投票：全体行动者看到同一 state_version、看不到彼此选择；发言仍串行。"""
+    store = InMemoryEventStore()
+    runner, ports = _make_special_runner(
+        store, seed=42, timeouts=RunnerTimeouts(speech_sec=0.5, action_sec=0.5)
+    )
+    recorders = {seat: _ObsRecorder(port) for seat, port in ports.items()}
+    ports.update(recorders)
+    final = await runner.run()
+    assert final.phase == Phase.GAME_OVER
+    obs = [o for r in recorders.values() for o in r.seen]
+
+    cand = [o for o in obs if o.phase == "SHERIFF_ELECTION" and o.election_stage == "candidacy"]
+    assert len(cand) == 9
+    assert len({o.state_version for o in cand}) == 1
+    assert all(o.sheriff_candidates == [] for o in cand)
+
+    votes = [o for o in obs if o.phase == "VOTE" and o.round == 1]
+    assert len(votes) >= 2 and len({o.state_version for o in votes}) == 1
+
+    speeches = [o for o in obs if o.phase == "DAY_SPEECH" and o.round == 1]
+    assert len(speeches) >= 2 and len({o.state_version for o in speeches}) == len(speeches)

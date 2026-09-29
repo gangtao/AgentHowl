@@ -15,11 +15,12 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict
 
 from app.agent.profile import AgentProfiles
+from app.engine.actions import Action
 from app.engine.config import GameConfig
 from app.engine.engine import RosterEntry, create_game, step
 from app.engine.events import Event
 from app.engine.observation import build_observation
-from app.engine.phases import Phase, expected_actors, speech_queue_pending
+from app.engine.phases import ElectionStage, Phase, expected_actors, speech_queue_pending
 from app.engine.state import GameState
 from app.runtime.connection import ConnectionManager
 from app.runtime.defaults import default_action
@@ -97,6 +98,21 @@ def _speech_window(state: GameState) -> bool:
     return speech_queue_pending(state)
 
 
+def _simultaneous_window(state: GameState) -> bool:
+    """行动者「同时出手、互不可见」的窗口：上警报名 / 退水确认 / 警下投票 / 放逐投票。
+    发言、夜间行动（狼队需看到彼此提议）保持串行。"""
+    ph = state.phase
+    if ph in (Phase.VOTE, Phase.VOTE_PK, Phase.SHERIFF_PK):
+        return not speech_queue_pending(state)  # PK 发言回合串行，投票同步
+    if ph == Phase.SHERIFF_ELECTION:
+        return state.election_stage in (
+            ElectionStage.CANDIDACY,
+            ElectionStage.WITHDRAW,
+            ElectionStage.VOTE,
+        )
+    return False
+
+
 class GameRunner:
     def __init__(
         self,
@@ -146,10 +162,13 @@ class GameRunner:
             actors = sorted(expected_actors(self.state))
             if not actors:
                 raise RuntimeError(f"无人可行动但未终局：phase={self.state.phase}")
-            for seat in actors:
-                if seat not in expected_actors(self.state):
-                    continue  # 前一行动已终结此窗口（如终局）
-                await self._drive_seat(seat)
+            if len(actors) > 1 and _simultaneous_window(self.state):
+                await self._drive_window(actors)
+            else:
+                for seat in actors:
+                    if seat not in expected_actors(self.state):
+                        continue  # 前一行动已终结此窗口（如终局）
+                    await self._drive_seat(seat)
             guard += 1
             if guard > 100_000:
                 raise RuntimeError("对局未收敛")
@@ -162,37 +181,77 @@ class GameRunner:
             return self._timeouts.speech_sec
         return self._timeouts.action_sec
 
-    async def _drive_seat(self, seat: int) -> None:
+    async def _drive_window(self, seats: list[int]) -> None:
+        """同步窗口：全体行动者基于**同一状态**并行决策，再按座位序逐个应用。
+
+        上警报名 / 退水 / 警下投票 / 放逐投票在现实里是同时举手、同时亮票；若像发言那样
+        串行驱动，后行动者会看到前面人的选择——真机 LLM 局出现 9/9 全员上警、跟票成风。
+        PRD §4.4「并发/异步注意」允许并行开窗。非法行动回退到串行重试路径（剩余时限内）。
+        """
+        missing = [s for s in seats if s not in self._ports]
+        if missing:
+            raise RuntimeError(f"座位 {missing} 未接入 PlayerPort（wiring 缺失，拒绝静默代打）")
+        base = self.state
+        window = self._window_timeout()
+        deadline_ts = time.time() + window
+
+        async def one(seat: int) -> Action:
+            return await asyncio.wait_for(
+                self._ports[seat].act(build_observation(base, seat), deadline_ts), timeout=window
+            )
+
+        results = await asyncio.gather(*(one(s) for s in seats), return_exceptions=True)
+        for seat, res in zip(seats, results, strict=True):
+            if seat not in expected_actors(self.state):
+                continue  # 前一行动已终结此窗口（如竞选期自爆）
+            if isinstance(res, BaseException):
+                self._log_port_failure(seat, res)
+                await self._apply_default(seat)
+                continue
+            await self._drive_seat(seat, deadline_ts=deadline_ts, first_action=res)
+
+    def _log_port_failure(self, seat: int, exc: BaseException) -> None:
+        if isinstance(exc, TimeoutError):
+            logger.warning("seat=%d phase=%s 端口超时，落默认行动", seat, self.state.phase)
+            return
+        # 端口实现抛错（Agent 崩溃等）：对局不陪葬，落默认行动。必须留日志——
+        # 否则 LLM 参数错误等会被静默记成「超时」，排查无从下手
+        logger.warning(
+            "seat=%d phase=%s 端口异常，落默认行动：%s: %s",
+            seat,
+            self.state.phase,
+            type(exc).__name__,
+            str(exc)[:300],
+        )
+
+    async def _drive_seat(
+        self, seat: int, *, deadline_ts: float | None = None, first_action: Action | None = None
+    ) -> None:
+        """驱动单个座位直到提交合法行动或落默认。`first_action` 为同步窗口里已并行拿到
+        的行动：先应用它，被拒才回到「重新请求端口」的串行重试路径。"""
         if seat not in self._ports:
             raise RuntimeError(f"座位 {seat} 未接入 PlayerPort（wiring 缺失，拒绝静默代打）")
         obs = build_observation(self.state, seat)
-        deadline_ts = time.time() + self._window_timeout()
+        if deadline_ts is None:
+            deadline_ts = time.time() + self._window_timeout()
         rejections = 0
+        pending = first_action
         while True:
             remaining = deadline_ts - time.time()
-            if remaining <= 0 or rejections >= MAX_REJECTIONS:
-                await self._apply_default(seat)
-                return
-            try:
-                action = await asyncio.wait_for(
-                    self._ports[seat].act(obs, deadline_ts), timeout=remaining
-                )
-            except TimeoutError:
-                logger.warning("seat=%d phase=%s 端口超时，落默认行动", seat, self.state.phase)
-                await self._apply_default(seat)
-                return
-            except Exception as exc:
-                # 端口实现抛错（Agent 崩溃等）：对局不陪葬，落默认行动。必须留日志——
-                # 否则 LLM 参数错误等会被静默记成「超时」，排查无从下手
-                logger.warning(
-                    "seat=%d phase=%s 端口异常，落默认行动：%s: %s",
-                    seat,
-                    self.state.phase,
-                    type(exc).__name__,
-                    str(exc)[:300],
-                )
-                await self._apply_default(seat)
-                return
+            if pending is not None:
+                action, pending = pending, None
+            else:
+                if remaining <= 0 or rejections >= MAX_REJECTIONS:
+                    await self._apply_default(seat)
+                    return
+                try:
+                    action = await asyncio.wait_for(
+                        self._ports[seat].act(obs, deadline_ts), timeout=remaining
+                    )
+                except Exception as exc:  # 含 TimeoutError
+                    self._log_port_failure(seat, exc)
+                    await self._apply_default(seat)
+                    return
             res = step(self.state, action)
             if res.rejection is not None:
                 port = self._ports[seat]

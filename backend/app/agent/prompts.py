@@ -90,6 +90,8 @@ def candidates_for(kind: DecisionKind, obs: PlayerObservation) -> list[int]:
     if kind is DecisionKind.VOTE and obs.vote_candidates:
         return list(obs.vote_candidates)
     if kind is DecisionKind.SHERIFF and obs.sheriff_candidates:
+        if obs.phase == "SHERIFF_ELECTION" and obs.election_stage == "candidacy":
+            return []  # 报名不选目标；列「候选座位」只会诱导跟风上警
         return list(obs.sheriff_candidates)
     if kind is DecisionKind.SPEECH:
         return []
@@ -158,7 +160,9 @@ def _sheriff_instruction(obs: PlayerObservation) -> str:
             "上警报名：action_type=run_for_sheriff 表示上警竞选警长，withdraw 表示不上警。"
             "上警意味着你要先发言、成为全场焦点并接受质疑；通常只有想争夺警徽的人上警"
             "（如预言家为了拿警徽和发言权，或狼队派一两人争徽/悍跳），"
-            "普通村民和不想暴露的角色大多不上警。按你的身份、处境与性格决定，不要随大流。"
+            "普通村民和不想暴露的角色大多不上警。一局通常只有 2–4 人上警；"
+            "如果你没有可验证的信息（查验、金水、银水）或明确的战术理由，就选 withdraw。"
+            "按你的身份、处境与性格决定，全员同时报名、互相看不到。"
         )
     elif obs.phase == "SHERIFF_ELECTION" and stage == "withdraw":
         text = (
