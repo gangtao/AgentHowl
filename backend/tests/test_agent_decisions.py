@@ -147,3 +147,15 @@ def test_self_destruct_overrides() -> None:
         seat=8,
     )
     assert b == SelfDestruct(actor_seat=8)
+
+
+def test_to_action_strips_badge_flow_outside_campaign_context() -> None:
+    """非竞选语境发言剥掉 badge_flow（否则引擎整条拒绝 BADGE_FLOW_INVALID）。"""
+    d = SpeechDecision(
+        reasoning="r", content="我是预言家", claim_role=RoleType.SEER, badge_flow=[1, 7]
+    )
+    kept = to_action(DecisionKind.SPEECH, d, 0, allow_badge_flow=True)
+    stripped = to_action(DecisionKind.SPEECH, d, 0, allow_badge_flow=False)
+    assert isinstance(kept, Speak) and kept.badge_flow == (1, 7)
+    assert isinstance(stripped, Speak) and stripped.badge_flow == ()
+    assert stripped.content == "我是预言家" and stripped.claim_role == RoleType.SEER

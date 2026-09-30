@@ -448,3 +448,39 @@ async def test_retries_shrink_with_remaining_budget() -> None:
     await port.act(_obs("DAY_SPEECH"), time.time() + 60)
     assert client.retries[-1] == 0
     assert port._call_seconds is not None and port._call_seconds < 40.0  # 滑动均值更新
+
+
+async def test_day_speech_badge_flow_is_stripped_but_kept_in_campaign() -> None:
+    """真机批跑：预言家白天发言复述警徽流 → 引擎 BADGE_FLOW_INVALID 三连拒 → 整段发言丢失。"""
+    from app.agent.decisions import SpeechDecision
+
+    def script(rm: type[BaseModel], system: str, user: str) -> BaseModel:
+        return SpeechDecision(
+            reasoning="r", content="我是真预言家", claim_role=RoleType.SEER, badge_flow=[1, 7]
+        )
+
+    port, _ = _port(script)
+    day = await port.act(_obs("DAY_SPEECH", role=RoleType.SEER), time.time() + 60)
+    assert isinstance(day, Speak) and day.badge_flow == () and day.content == "我是真预言家"
+    camp = await port.act(
+        _obs("SHERIFF_ELECTION", role=RoleType.SEER, election_stage="speech"), time.time() + 60
+    )
+    assert isinstance(camp, Speak) and camp.badge_flow == (1, 7)
+
+
+async def test_rejection_reason_is_fed_into_next_prompt_once() -> None:
+    from app.agent.decisions import SpeechDecision
+
+    def script(rm: type[BaseModel], system: str, user: str) -> BaseModel:
+        return SpeechDecision(reasoning="r", content="hi")
+
+    port, client = _port(script)
+    await port.act(_obs("DAY_SPEECH"), time.time() + 60)
+    port.notify_result("BADGE_FLOW_INVALID", 10, None)
+    await port.act(_obs("DAY_SPEECH"), time.time() + 60)
+    port.notify_result(None, 11, "evt_00011")
+    await port.act(_obs("DAY_SPEECH"), time.time() + 60)
+    prompts = [c[2] for c in client.calls]
+    assert "上一次提交被引擎拒绝" not in prompts[0]
+    assert "BADGE_FLOW_INVALID" in prompts[1]
+    assert "上一次提交被引擎拒绝" not in prompts[2]  # 只带一次

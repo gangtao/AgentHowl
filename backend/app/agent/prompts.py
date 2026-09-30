@@ -50,6 +50,13 @@ def _is_campaign_speech(obs: PlayerObservation) -> bool:
     return obs.phase == "SHERIFF_ELECTION" and obs.election_stage == "speech"
 
 
+def badge_flow_allowed(obs: PlayerObservation) -> bool:
+    """引擎只在竞选语境发言（上警发言 / 警长 PK 发言回合）接受 badge_flow；其余发言带了
+    就整条被拒（BADGE_FLOW_INVALID）。真机批跑里预言家在白天发言/遗言里复述警徽流，
+    三次被拒后整段发言丢失、当天被票出——端口据此在提交前剥掉该字段。"""
+    return _is_campaign_speech(obs) or (obs.phase == "SHERIFF_PK" and obs.pk_speech_pending)
+
+
 def shuffle_candidates(
     candidates: list[int], *, agent_seed: int, seat: int, state_version: int
 ) -> list[int]:
@@ -134,8 +141,10 @@ def _speech_instruction(obs: PlayerObservation) -> str:
     campaign = _is_campaign_speech(obs)
     if campaign:
         parts.insert(0, _CAMPAIGN_SPEECH_GUIDE)
-    if campaign or obs.phase == "SHERIFF_PK":
+    if badge_flow_allowed(obs):
         parts.append("可报警徽流 badge_flow")
+    else:
+        parts.append("本回合不报警徽流（留空，只在竞选发言里报）")
     if obs.phase in _SELF_DESTRUCT_PHASES:
         parts.append("狼人可选 self_destruct 自爆")
     # 长度与信息增量约束（issue #87）：真机对局单条 300–600 字、四家逐句复述同一套话；

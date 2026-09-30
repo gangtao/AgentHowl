@@ -376,3 +376,20 @@ async def test_candidacy_and_votes_are_simultaneous_windows() -> None:
 
     speeches = [o for o in obs if o.phase == "DAY_SPEECH" and o.round == 1]
     assert len(speeches) >= 2 and len({o.state_version for o in speeches}) == len(speeches)
+
+
+async def test_rejections_are_logged_and_exhaustion_warns(caplog) -> None:
+    """非法行动被拒与三连拒落默认都必须留日志——此前这条路径静默，预言家丢发言无从排查。"""
+    store = InMemoryEventStore()
+    runner, ports = _make_special_runner(
+        store, seed=42, timeouts=RunnerTimeouts(speech_sec=0.5, action_sec=0.5)
+    )
+    ports[0] = AlwaysInvalidPort()
+    with caplog.at_level("INFO", logger="app.runtime.game_runner"):
+        final = await runner.run()
+    assert final.phase == Phase.GAME_OVER
+    msgs = [r.getMessage() for r in caplog.records]
+    assert any("行动被拒（第 1 次）" in m and "NOT_YOUR_TURN" in m for m in msgs)
+    assert any(
+        r.levelname == "WARNING" and "连续 3 次非法行动" in r.getMessage() for r in caplog.records
+    )

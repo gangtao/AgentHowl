@@ -113,7 +113,11 @@ def decision_kind_for(obs: PlayerObservation) -> DecisionKind:
     return DecisionKind.SPEECH
 
 
-def to_action(kind: DecisionKind, decision: BaseModel, seat: int) -> Action:
+def to_action(
+    kind: DecisionKind, decision: BaseModel, seat: int, *, allow_badge_flow: bool = True
+) -> Action:
+    """决策 → 引擎 Action。`allow_badge_flow=False`（非竞选语境发言）时剥掉 badge_flow：
+    模型常把上警时报过的警徽流复述进白天发言，引擎会整条拒绝。"""
     if kind is DecisionKind.WOLF_NIGHT:
         assert isinstance(decision, WolfDeliberation)
         return NightAction(
@@ -134,7 +138,7 @@ def to_action(kind: DecisionKind, decision: BaseModel, seat: int) -> Action:
             actor_seat=seat,
             content=decision.content,
             claim_role=decision.claim_role,
-            badge_flow=tuple(decision.badge_flow),
+            badge_flow=tuple(decision.badge_flow) if allow_badge_flow else (),
         )
     if kind is DecisionKind.VOTE:
         assert isinstance(decision, VoteDecision)
