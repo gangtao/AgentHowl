@@ -96,10 +96,15 @@ def _alive_others(obs: PlayerObservation) -> list[int]:
 def candidates_for(kind: DecisionKind, obs: PlayerObservation) -> list[int]:
     if kind is DecisionKind.VOTE and obs.vote_candidates:
         return list(obs.vote_candidates)
-    if kind is DecisionKind.SHERIFF and obs.sheriff_candidates:
-        if obs.phase == "SHERIFF_ELECTION" and obs.election_stage == "candidacy":
-            return []  # 报名不选目标；列「候选座位」只会诱导跟风上警
-        return list(obs.sheriff_candidates)
+    if kind is DecisionKind.SHERIFF:
+        # sheriff_candidates 是竞选名单，选举结束后仍留在 state 里；只有警下投票 / PK 投票
+        # 才以它为目标。真机一局预言家交徽时被列成「候选座位 [4, 5]」（旧上警名单，5 是
+        # 自己），把警徽交给了狼 4 号。
+        if obs.phase == "SHERIFF_ELECTION":
+            return list(obs.sheriff_candidates) if obs.election_stage == "vote" else []
+        if obs.phase == "SHERIFF_PK":
+            return list(obs.sheriff_candidates)
+        return _alive_others(obs)  # LAST_WORDS 警徽处置：存活他人
     if kind is DecisionKind.SPEECH:
         return []
     return _alive_others(obs)

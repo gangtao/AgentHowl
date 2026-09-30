@@ -74,9 +74,6 @@ def build_observation(state: GameState, seat: int) -> PlayerObservation:
             if state.pending_night.wolf_target is not None:
                 private["tonight_kill_proposal"] = state.pending_night.wolf_target
 
-        if me.role == RoleType.SEER:
-            private["check_results"] = _seer_results(state, seat)
-
         if me.role == RoleType.WITCH:
             private["antidote_available"] = me.witch_antidote
             private["poison_available"] = me.witch_poison
@@ -88,8 +85,12 @@ def build_observation(state: GameState, seat: int) -> PlayerObservation:
         if me.role == RoleType.GUARD:
             private["last_guard_target"] = me.last_guard_target
 
-        if me.role == RoleType.HUNTER:
-            private["can_shoot"] = me.hunter_can_shoot
+    # 死后仍需要的私有信息：预言家在遗言 / 交徽时要用自己的查验结果，猎人在 HUNTER_SHOOT
+    # 时本就已出局。曾整段挂在 alive 之下，预言家交徽时看不到验过谁。
+    if me.role == RoleType.SEER:
+        private["check_results"] = _seer_results(state, seat)
+    if me.role == RoleType.HUNTER:
+        private["can_shoot"] = me.hunter_can_shoot
 
     return PlayerObservation(
         game_id=state.game_id,
