@@ -9,7 +9,7 @@ from pydantic import BaseModel, ConfigDict
 
 from app.engine.config import Faction, RoleType
 from app.engine.events import Event, Visibility
-from app.engine.phases import expected_actors, night_phase_sequence
+from app.engine.phases import expected_actors, is_badge_only_window, night_phase_sequence
 from app.engine.state import GameState, living_wolves, player_at
 
 Viewer = int | Literal["SPECTATOR", "GM"]
@@ -36,6 +36,8 @@ class PlayerObservation(BaseModel):
     # 仅在 SHERIFF_PK/VOTE_PK 阶段有意义；DAY_SPEECH/LAST_WORDS
     # 等发言队列阶段也会为 True 但语义不同
     pk_speech_pending: bool = False
+    # 死亡警长的警徽处置窗口（issue #90）：True 时只能 pass_badge/tear_badge，不能发言
+    badge_only: bool = False
     available_actions: list[int]  # M1：当前是否轮到本人（空=否）；M2 换成工具名
 
 
@@ -105,6 +107,7 @@ def build_observation(state: GameState, seat: int) -> PlayerObservation:
         sheriff_candidates=sorted(state.sheriff_candidates),
         vote_candidates=sorted(state.vote_candidates),
         pk_speech_pending=state.speech_idx < len(state.speech_order),
+        badge_only=is_badge_only_window(state.phase, state.resume_token),
         available_actions=[seat] if seat in expected_actors(state) else [],
     )
 

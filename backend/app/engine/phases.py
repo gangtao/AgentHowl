@@ -9,6 +9,15 @@ if TYPE_CHECKING:
     from app.engine.state import GameState
 
 
+# LAST_WORDS 的 resume_token 前缀：死亡警长「仅警徽处置」窗口，冒号后为续接点
+# （"day_speech" / "after_day"）。observation 与 defaults 据此判断当前是否只能 pass/tear。
+BADGE_ONLY_PREFIX = "badge_only:"
+
+
+def is_badge_only_window(phase: Phase, resume_token: str | None) -> bool:
+    return phase == Phase.LAST_WORDS and (resume_token or "").startswith(BADGE_ONLY_PREFIX)
+
+
 class Phase(StrEnum):
     LOBBY = "LOBBY"
     ROLE_ASSIGN = "ROLE_ASSIGN"

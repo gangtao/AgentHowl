@@ -72,7 +72,11 @@ def _sweep(preset: str, seed: int, **cfg_override: object) -> set[Phase]:
                 assert d.content == TIMEOUT_SPEECH
             if state.phase == Phase.LAST_WORDS:
                 pl = player_at(state, seat)
-                if pl.is_sheriff:
+                badge_window = (state.resume_token or "").startswith("badge_only:")
+                if pl.is_sheriff and (
+                    badge_window or not state.config.sheriff.night_death_badge_window
+                ):
+                    # 警徽处置窗口（两步制）或旧一步制：默认撕徽
                     assert isinstance(d, SheriffAction)
                     assert d.action_type == SheriffActionType.TEAR_BADGE
                 else:

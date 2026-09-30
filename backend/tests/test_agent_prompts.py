@@ -315,3 +315,14 @@ def test_badge_flow_allowed_only_in_campaign_or_pk_speech() -> None:
     assert not badge_flow_allowed(_obs("LAST_WORDS"))
     day = build_prompt(DecisionKind.SPEECH, _obs("DAY_SPEECH"), "", agent_seed=1)
     assert "不报警徽流" in day and "badge_flow" not in day
+
+
+def test_witch_night_prompt_has_potion_guidance_only_for_witch_window() -> None:
+    witch = build_prompt(
+        DecisionKind.NIGHT, _obs("NIGHT_WITCH", my_role=RoleType.WITCH), "", agent_seed=1
+    )
+    assert "解药" in witch and "skip" in witch
+    seer = build_prompt(
+        DecisionKind.NIGHT, _obs("NIGHT_SEER", my_role=RoleType.SEER), "", agent_seed=1
+    )
+    assert "解药" not in seer

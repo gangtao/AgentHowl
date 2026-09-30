@@ -97,7 +97,8 @@ def decision_kind_for(obs: PlayerObservation) -> DecisionKind:
     if ph == Phase.DAY_SPEECH:
         return DecisionKind.SPEECH
     if ph == Phase.LAST_WORDS:
-        return DecisionKind.SHERIFF if _is_sheriff(obs) else DecisionKind.SPEECH
+        # 两步制（issue #90）：遗言回合发言；警徽处置窗口（obs.badge_only）才是警长行动
+        return DecisionKind.SHERIFF if obs.badge_only else DecisionKind.SPEECH
     if ph == Phase.VOTE:
         return DecisionKind.VOTE
     if ph == Phase.VOTE_PK:
