@@ -326,3 +326,32 @@ def test_witch_night_prompt_has_potion_guidance_only_for_witch_window() -> None:
         DecisionKind.NIGHT, _obs("NIGHT_SEER", my_role=RoleType.SEER), "", agent_seed=1
     )
     assert "解药" not in seer
+
+
+def test_badge_pass_candidates_are_alive_others_not_stale_election_roster() -> None:
+    """交徽（LAST_WORDS 警徽窗口）候选 = 存活他人；不能沿用选举结束后残留的上警名单。"""
+    obs = _obs("LAST_WORDS", badge_only=True, sheriff_candidates=[4, 0], my_seat=0)
+    cands = candidates_for(DecisionKind.SHERIFF, obs)
+    assert 0 not in cands and 5 not in cands  # 自己 / 已死的 5 号不在
+    assert set(cands) == {1, 2, 3, 4, 6, 7, 8}
+    # 竞选期：报名 / 退水 / 方向不给目标，警下投票与 PK 投票才给候选人
+    assert (
+        candidates_for(
+            DecisionKind.SHERIFF,
+            _obs("SHERIFF_ELECTION", election_stage="withdraw", sheriff_candidates=[4, 0]),
+        )
+        == []
+    )
+    assert (
+        candidates_for(
+            DecisionKind.SHERIFF,
+            _obs("SHERIFF_ELECTION", election_stage="direction", sheriff_candidates=[4, 0]),
+        )
+        == []
+    )
+    assert set(
+        candidates_for(
+            DecisionKind.SHERIFF,
+            _obs("SHERIFF_PK", pk_speech_pending=False, sheriff_candidates=[4, 0]),
+        )
+    ) == {4, 0}
