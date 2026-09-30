@@ -126,6 +126,21 @@ fe-build: ## 前端构建到 frontend/dist（后端存在该目录时自动挂�
 
 # ---- 清理 ---------------------------------------------------------------
 
+# ---- Docker -------------------------------------------------------------
+
+.PHONY: docker-build docker-up docker-down docker-logs
+docker-build: ## 构建单镜像（前端构建 + 后端 uv sync；产物 agenthowl:local）
+	docker compose build
+
+docker-up: ## 后台启动（http://localhost:8000；对局数据挂载 backend/data；可选 .env 注入代理/密钥）
+	docker compose up -d --build
+
+docker-down: ## 停止并移除容器（数据留在 backend/data）
+	docker compose down
+
+docker-logs: ## 跟随容器日志（端口异常 / 行动被拒等 warning 在这里看）
+	docker compose logs -f agenthowl
+
 .PHONY: clean
 clean: ## 清理缓存（__pycache__ / .pytest_cache / .mypy_cache / .ruff_cache）
 	find $(BACKEND) -type d -name __pycache__ -prune -exec rm -rf {} + 2>/dev/null || true
