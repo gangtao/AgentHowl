@@ -484,3 +484,16 @@ async def test_rejection_reason_is_fed_into_next_prompt_once() -> None:
     assert "上一次提交被引擎拒绝" not in prompts[0]
     assert "BADGE_FLOW_INVALID" in prompts[1]
     assert "上一次提交被引擎拒绝" not in prompts[2]  # 只带一次
+
+
+async def test_rejection_feedback_includes_human_hint() -> None:
+    from app.agent.decisions import SpeechDecision
+
+    def script(rm: type[BaseModel], system: str, user: str) -> BaseModel:
+        return SpeechDecision(reasoning="r", content="hi")
+
+    port, client = _port(script)
+    port.notify_result("BADGE_FLOW_INVALID", 10, None)
+    await port.act(_obs("DAY_SPEECH"), time.time() + 60)
+    prompt = client.calls[-1][2]
+    assert "BADGE_FLOW_INVALID" in prompt and "警徽流不合法" in prompt and "留空" in prompt

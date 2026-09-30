@@ -266,7 +266,8 @@ class GameRunner:
                 if isinstance(port, SupportsResultFeedback):
                     port.notify_result(str(res.rejection), self.state.state_version, None)
                 rejections += 1  # 非法 intent：截止前重试（M2.3 真人重试路径）
-                logger.info(
+                # WARNING 而非 INFO：uvicorn 默认只透出 WARNING+，被拒原因必须能在终端看到
+                logger.warning(
                     "seat=%d phase=%s 行动被拒（第 %d 次）：%s %s",
                     seat,
                     self.state.phase,

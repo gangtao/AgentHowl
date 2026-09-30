@@ -59,6 +59,29 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+# 引擎拒绝码 → 给模型的中文提示（issue #53）：光给枚举名，模型多半原样重交
+REJECTION_HINTS: dict[str, str] = {
+    "BADGE_FLOW_INVALID": (
+        "警徽流不合法：只能列存活玩家的座位、不能重复、最多列本局允许的夜数"
+        "（通常 2 个）；不确定就把 badge_flow 留空。"
+    ),
+    "DEAD_TARGET": "目标座位已出局，请从存活玩家中选。",
+    "INVALID_TARGET": "目标不在本阶段允许的候选范围内，请从给出的候选座位中选。",
+    "NOT_A_CANDIDATE": "只能投给当前候选人名单里的座位。",
+    "WRONG_PHASE": "该动作类型在当前阶段不合法，请只用本阶段允许的动作。",
+    "NOT_YOUR_TURN": "现在不是你的行动窗口。",
+    "WITCH_NO_ANTIDOTE": "解药已用完，不能再救人。",
+    "WITCH_NO_POISON": "毒药已用完，不能再下毒。",
+    "WITCH_SELF_RESCUE_FORBIDDEN": "本局规则不允许女巫自救。",
+    "WITCH_TWO_POTIONS_FORBIDDEN": "同一夜不能同时用解药和毒药。",
+    "GUARD_SAME_TARGET": "不能连续两夜守护同一个人。",
+    "GUARD_SELF_FORBIDDEN": "本局规则不允许守卫自守。",
+    "HUNTER_CANNOT_SHOOT": "你现在不能开枪（如被毒死），请 skip。",
+    "CANNOT_VOTE": "你没有投票权（如已退水的候选人）。",
+    "NOT_SELF_DESTRUCTABLE": "只有狼人可以自爆。",
+}
+
+
 class AgentConfig(BaseModel):
     model: str = DEFAULT_MODEL
     model_speech: str | None = None  # §8.3 分层路由落点：发言用（可更强的）模型
@@ -199,8 +222,9 @@ class AgentPlayerPort:
             )
 
         if self._last_rejection:
+            hint = REJECTION_HINTS.get(self._last_rejection, "")
             user_prompt += (
-                f"\n\n== 上一次提交被引擎拒绝 ==\n原因：{self._last_rejection}。"
+                f"\n\n== 上一次提交被引擎拒绝 ==\n原因：{self._last_rejection}。{hint}"
                 "请按当前阶段的合法行动重新给出决策，不要重复同样的提交。"
             )
             self._last_rejection = None

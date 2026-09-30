@@ -388,8 +388,12 @@ async def test_rejections_are_logged_and_exhaustion_warns(caplog) -> None:
     with caplog.at_level("INFO", logger="app.runtime.game_runner"):
         final = await runner.run()
     assert final.phase == Phase.GAME_OVER
-    msgs = [r.getMessage() for r in caplog.records]
-    assert any("行动被拒（第 1 次）" in m and "NOT_YOUR_TURN" in m for m in msgs)
+    assert any(
+        r.levelname == "WARNING"
+        and "行动被拒（第 1 次）" in r.getMessage()
+        and "NOT_YOUR_TURN" in r.getMessage()
+        for r in caplog.records
+    )
     assert any(
         r.levelname == "WARNING" and "连续 3 次非法行动" in r.getMessage() for r in caplog.records
     )
