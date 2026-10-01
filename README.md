@@ -80,6 +80,27 @@ uv run python -m app.cli.simulate --preset std_9_kill_side --seed 42 --verbose
 uv run python -m app.cli.simulate --preset std_12_yn_hunter_idiot --seed 1 --games 100
 ```
 
+## Docker 运行 / Run with Docker
+
+单镜像：前端在构建阶段打包，后端 uvicorn 同端口托管静态文件；对局事件、Agent 档案、
+Provider 密钥（0600）、跨局记忆全部通过 volume 留在宿主机 `backend/data/`，不进镜像。
+
+```bash
+cp .env.example .env      # 可选：代理 / 云端密钥 / Ollama 地址；不配也能跑随机 bot 局
+make docker-up            # = docker compose up -d --build；打开 http://localhost:8000/
+AGENTHOWL_PORT=8011 make docker-up   # 宿主机 8000 被本地 make serve 占用时换端口
+make docker-logs          # 端口异常、行动被拒等 warning
+make docker-down          # 停止；backend/data 保留
+```
+
+- 容器里的 `localhost` 不是宿主机：本地 Ollama 或宿主机代理请写 `host.docker.internal`
+  （compose 已把 `OLLAMA_API_BASE` 默认指向 `http://host.docker.internal:11434`；Provider 页里
+  本地 Ollama 的地址同样要填 `host.docker.internal`）。
+- 单 worker：对局与 token 在进程内存里，不要加 `--workers`；重启容器会丢掉进行中的对局
+  （文件里的事件流可回放）。
+- 镜像内置 `bedrock` 可选依赖（boto3）；直连 Anthropic/OpenAI 等只需在 `.env` 里给对应
+  环境变量，或直接在 Provider 页配置。
+
 ## 板子（presets）
 
 | preset | 局型 | 配置要点 |

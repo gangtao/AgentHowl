@@ -1,0 +1,19 @@
+services:
+  agenthowl:
+    build: .
+    image: agenthowl:local
+    container_name: agenthowl
+    ports:
+      - "${AGENTHOWL_PORT:-8000}:8000"  # 宿主机端口可用 AGENTHOWL_PORT 覆盖
+    volumes:
+      # 对局事件 / Agent 档案 / Provider（含密钥，0600）/ 跨局记忆 —— 全部留在宿主机
+      - ./backend/data:/app/backend/data
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      # 容器内的 localhost 不是宿主机：本地 Ollama / 宿主机代理请用 host.docker.internal
+      - OLLAMA_API_BASE=${OLLAMA_API_BASE:-http://host.docker.internal:11434}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
