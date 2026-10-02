@@ -595,8 +595,9 @@ pydantic，零 IO）：`kind`（`ollama`/`openai`/`anthropic`/`openai_compatible
 | POST | `/api/v1/games/{game_id}/actions` | 提交行动（统一入口，body 为工具调用） |
 | GET | `/api/v1/games/{game_id}/my-turn` | 长轮询：挂起至轮到本玩家（polling 降级用） |
 | GET | `/api/v1/games/{game_id}/events` | 获取事件日志（回放用，支持 `?from_seq=`） |
-| GET | `/api/v1/games/{game_id}/replay` | 上帝视角完整回放数据（对局结束后开放） |
-| GET | `/api/v1/games/{game_id}/meta` | 对局头记录 `GameMeta`：配置、名单、各座位实际生效的 Agent 档案（`agents`，issue #64；对局结束后开放） |
+| GET | `/api/v1/games/{game_id}/replay` | 上帝视角完整回放数据（对局结束后开放；已结束对局在 `AGENTHOWL_PUBLIC_HISTORY=1`（默认）下无需 token，且进程重启后从事件文件回退读取，issue #98） |
+| GET | `/api/v1/games/{game_id}/meta` | 对局头记录 `GameMeta`：配置、名单、各座位实际生效的 Agent 档案（`agents`，issue #64；对局结束后开放，公开策略同 `/replay`） |
+| GET | `/api/v1/games` | 历史对局列表 `GameSummary[]`：`game_id / preset / num_players / status(finished·live·aborted) / started_at / ended_at / winner / rounds / seats / seq`，文件里的对局 + 内存里进行中的状态合并，新的在前；公开策略同 `/replay`（issue #98） |
 
 **Agent 档案库端点**（issue #26；持久化于 `data/agents/`；供 Lobby 建局选档案与 `AgentEditor` 用）：
 

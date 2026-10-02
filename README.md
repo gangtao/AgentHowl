@@ -97,7 +97,7 @@ make docker-down          # 停止；backend/data 保留
   （compose 已把 `OLLAMA_API_BASE` 默认指向 `http://host.docker.internal:11434`；Provider 页里
   本地 Ollama 的地址同样要填 `host.docker.internal`）。
 - 单 worker：对局与 token 在进程内存里，不要加 `--workers`；重启容器会丢掉进行中的对局
-  （文件里的事件流可回放）。
+  （已结束的对局重启后仍可在「历史对局」页回放，见下）。
 - 镜像内置 `bedrock` 可选依赖（boto3）；直连 Anthropic/OpenAI 等只需在 `.env` 里给对应
   环境变量，或直接在 Provider 页配置。
 
@@ -154,8 +154,15 @@ uv run ruff check . && uv run ruff format --check .
 React 18 + TypeScript + Vite（`frontend/`），issue #26 M3：上帝视角实时直播 + 基础回放、
 三步建局、Agent 档案库、模型服务 Provider 管理页。目录：`src/engine`（与后端 `events.py` /
 `state.py` 同构的纯 TS `reduce()`，零依赖）、`src/store`（Zustand：事件日志 + 回放游标）、
-`src/api`（REST/WS 客户端）、`src/pages`（Lobby / GamePage / AgentLibrary / Providers）、
+`src/api`（REST/WS 客户端）、`src/pages`（Lobby / GamePage / AgentLibrary / Providers / History）、
 `src/components`、`src/lib`。
+
+**历史对局**（issue #98）：导航「历史对局」→ `#/history` 列出 `backend/data/games/` 里的全部对局
+（时间、板子、胜方、轮数、座位档案、状态），已结束的一键「回放」（`#/g/{id}?replay=1`），
+**不需要 token、后端重启后依然可用**——终局后观众视角本就拿全量事件流，等于没有新泄露面。
+进行中的对局显示「直播中」，仍只能用建局时的上帝/观众链接观看；中断局（重启丢掉的中途局）
+只列出不可回放。多用户场景可设 `AGENTHOWL_PUBLIC_HISTORY=0` 关闭：列表与已结束对局的
+`/replay` `/meta` `/speeches` 恢复要求 token，且不再从文件回退。
 
 **安装 / 开发 / 构建 / 检查**：
 
