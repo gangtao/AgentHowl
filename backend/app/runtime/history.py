@@ -97,6 +97,6 @@ def list_history(store: EventStore, registry: GameRegistry) -> list[GameSummary]
             logger.warning("历史对局 %s 读取失败，已跳过：%s", game_id, exc)
             continue
         out.append(summarize_game(meta, events, live=_is_live(registry, game_id)))
-    # 有时间戳的在前且按时间倒序；无时间戳的排最后
-    out.sort(key=lambda s: (s.started_at is not None, s.started_at or ""), reverse=True)
+    # 有时间戳的在前且按时间倒序；无时间戳的排最后；同时间戳用 game_id 决胜（稳定排序）
+    out.sort(key=lambda s: (s.started_at is not None, s.started_at or "", s.game_id), reverse=True)
     return out

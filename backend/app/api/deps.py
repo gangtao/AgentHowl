@@ -63,6 +63,19 @@ def require_token(
     return info
 
 
+def optional_token(
+    creds: HTTPAuthorizationCredentials | None = Depends(_bearer),
+    tokens: TokenRegistry = Depends(get_tokens),
+) -> TokenInfo | None:
+    """没带 token → None；带了就必须有效（无效仍 401），避免「坏 token 等于匿名」的歧义。"""
+    if creds is None:
+        return None
+    info = tokens.resolve(creds.credentials)
+    if info is None:
+        raise HTTPException(status_code=401, detail="token 无效")
+    return info
+
+
 def require_kind(info: TokenInfo, game_id: str, *kinds: str) -> TokenInfo:
     """token 必须属于该对局且 kind 在允许集合内，否则 403。"""
     if info.game_id != game_id or info.kind not in kinds:

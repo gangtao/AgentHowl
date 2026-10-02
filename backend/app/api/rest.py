@@ -5,7 +5,7 @@ from __future__ import annotations
 import time
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 
@@ -14,6 +14,7 @@ from app.api.deps import (
     TokenRegistry,
     get_games,
     get_tokens,
+    optional_token,
     require_kind,
     require_token,
 )
@@ -22,6 +23,7 @@ from app.engine.config import build_preset
 from app.engine.events import Event, EventType, Visibility
 from app.engine.observation import build_observation, visible_events
 from app.engine.phases import Phase
+from app.runtime.history import GameSummary, is_finished, list_history
 from app.runtime.player_port import NotYourTurnError, TurnPrompt
 from app.runtime.registry import GameHandle, GameRegistry
 from app.schemas.actions import (
@@ -41,7 +43,7 @@ from app.schemas.games import (
     StartRequest,
     StartResponse,
 )
-from app.store.event_store import GameMeta, event_to_json
+from app.store.event_store import GameMeta, GameNotFoundError, event_to_json
 
 router = APIRouter(prefix="/games", tags=["games"])
 
@@ -118,6 +120,63 @@ def _handle_for(games: GameRegistry, game_id: str) -> GameHandle:
     return handle
 
 
+def _public_history(request: Request) -> bool:
+    return bool(getattr(request.app.state, "public_history", True))
+
+
+def _require_history_access(info: TokenInfo | None, public: bool) -> None:
+    if info is None and not public:
+        raise HTTPException(status_code=401, detail="缺少 Bearer token")
+
+
+@router.get("")
+def list_games_endpoint(
+    request: Request,
+    info: TokenInfo | None = Depends(optional_token),
+    games: GameRegistry = Depends(get_games),
+) -> list[GameSummary]:
+    """历史对局列表（issue #98）：文件里的全部对局 + registry 的进行中状态。"""
+    _require_history_access(info, _public_history(request))
+    return list_history(games.store, games)
+
+
+def _finished_from_store(games: GameRegistry, game_id: str) -> GameMeta:
+    """registry 没有该局时退回事件文件：存在且已终局才开放，否则与现状同样的 404/403。
+
+    注：GameNotFoundError 是 StoreError 的子类而非 LookupError（核对 event_store.py），
+    两者都要捕获才能把"文件不存在"映射成 404（而非落到全局 StoreError→500 handler）。
+    """
+    try:
+        meta = games.store.load_meta(game_id)
+    except (LookupError, GameNotFoundError):
+        raise HTTPException(status_code=404, detail=f"对局不存在：{game_id}") from None
+    if not is_finished(games.store.load_events(game_id)):
+        raise HTTPException(status_code=403, detail="对局未结束，上帝视角回放未开放")
+    return meta
+
+
+def _finished_or_handle(
+    games: GameRegistry, game_id: str, info: TokenInfo | None, public: bool, *kinds: str
+) -> None:
+    """三个终局接口共用的门槛：有活 handle 走原逻辑（必须有 token）；无 handle 走 store 回退。"""
+    try:
+        handle = games.get(game_id)
+    except LookupError:
+        _require_history_access(info, public)
+        if info is not None:
+            require_kind(info, game_id, *kinds)
+        _finished_from_store(games, game_id)
+        return
+    handle.ensure_healthy()
+    if info is None:
+        if not (public and handle.started and handle.live_state().phase == Phase.GAME_OVER):
+            raise HTTPException(status_code=401, detail="缺少 Bearer token")
+        return
+    require_kind(info, game_id, *kinds)
+    if not handle.started or handle.live_state().phase != Phase.GAME_OVER:
+        raise HTTPException(status_code=403, detail="对局未结束，上帝视角回放未开放")
+
+
 def _viewer_for(info: TokenInfo) -> Any:
     """token → 可见性 viewer：座位号 / "SPECTATOR" / "GM"（GM 全量，issue #26）。"""
     if info.kind == "PLAYER":
@@ -165,15 +224,21 @@ def state_endpoint(
 @router.get("/{game_id}/speeches")
 def speeches_endpoint(
     game_id: str,
+    request: Request,
     round: int | None = Query(default=None),
     phase: str | None = Query(default=None),
-    info: TokenInfo = Depends(require_token),
+    info: TokenInfo | None = Depends(optional_token),
     games: GameRegistry = Depends(get_games),
 ) -> list[SpeechItem]:
-    handle = _handle_for(games, game_id)
-    require_kind(info, game_id, "PLAYER", "SPECTATOR", "GM")
-    if not handle.started:
-        return []
+    _finished_or_handle(games, game_id, info, _public_history(request), "PLAYER", "SPECTATOR", "GM")
+    try:
+        handle: GameHandle | None = games.get(game_id)
+    except LookupError:
+        handle = None  # 无活 handle：已经过 _finished_or_handle 校验，必已终局，事件齐全
+    if handle is not None:
+        handle.ensure_healthy()
+        if not handle.started:
+            return []
     # 服务端以 GM 视角扫描以计算 round/phase（返回的两类事件本身是 PUBLIC）
     out: list[SpeechItem] = []
     cur_round, cur_phase = 0, ""
@@ -241,30 +306,30 @@ def events_endpoint(
 @router.get("/{game_id}/replay")
 def replay_endpoint(
     game_id: str,
-    info: TokenInfo = Depends(require_token),
+    request: Request,
+    info: TokenInfo | None = Depends(optional_token),
     games: GameRegistry = Depends(get_games),
 ) -> list[dict[str, Any]]:
-    handle = _handle_for(games, game_id)
-    require_kind(info, game_id, "PLAYER", "SPECTATOR", "HOST", "GM")
-    if not handle.started or handle.live_state().phase != Phase.GAME_OVER:
-        raise HTTPException(status_code=403, detail="对局未结束，上帝视角回放未开放")
+    _finished_or_handle(
+        games, game_id, info, _public_history(request), "PLAYER", "SPECTATOR", "HOST", "GM"
+    )
     return [event_to_json(e) for e in games.store.load_events(game_id)]
 
 
 @router.get("/{game_id}/meta")
 def meta_endpoint(
     game_id: str,
-    info: TokenInfo = Depends(require_token),
+    request: Request,
+    info: TokenInfo | None = Depends(optional_token),
     games: GameRegistry = Depends(get_games),
 ) -> GameMeta:
     """对局头记录（配置 / 名单 / 各座位实际生效的 Agent 档案，issue #64）。
 
     与 /replay 同一门槛：终局后才开放——档案含模型与技能等 GM 层信息，不经 observation 暴露。
     """
-    handle = _handle_for(games, game_id)
-    require_kind(info, game_id, "PLAYER", "SPECTATOR", "HOST", "GM")
-    if not handle.started or handle.live_state().phase != Phase.GAME_OVER:
-        raise HTTPException(status_code=403, detail="对局未结束，对局元数据未开放")
+    _finished_or_handle(
+        games, game_id, info, _public_history(request), "PLAYER", "SPECTATOR", "HOST", "GM"
+    )
     return games.store.load_meta(game_id)
 
 
