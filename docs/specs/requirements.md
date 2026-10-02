@@ -591,7 +591,7 @@ pydantic，零 IO）：`kind`（`ollama`/`openai`/`anthropic`/`openai_compatible
 | POST | `/api/v1/games/{game_id}/join` | 加入对局，占一个座位，返回 player token |
 | POST | `/api/v1/games/{game_id}/start` | 房主开始对局 |
 | GET | `/api/v1/games/{game_id}/state` | 获取本视角 observation（信息隔离） |
-| GET | `/api/v1/games/{game_id}/speeches` | 获取公开发言 |
+| GET | `/api/v1/games/{game_id}/speeches` | 获取公开发言；已结束对局公开策略同 `/replay`（issue #98） |
 | POST | `/api/v1/games/{game_id}/actions` | 提交行动（统一入口，body 为工具调用） |
 | GET | `/api/v1/games/{game_id}/my-turn` | 长轮询：挂起至轮到本玩家（polling 降级用） |
 | GET | `/api/v1/games/{game_id}/events` | 获取事件日志（回放用，支持 `?from_seq=`） |

@@ -43,7 +43,7 @@ from app.schemas.games import (
     StartRequest,
     StartResponse,
 )
-from app.store.event_store import GameMeta, GameNotFoundError, event_to_json
+from app.store.event_store import GameMeta, GameNotFoundError, StoreError, event_to_json
 
 router = APIRouter(prefix="/games", tags=["games"])
 
@@ -145,10 +145,12 @@ def _finished_from_store(games: GameRegistry, game_id: str) -> GameMeta:
 
     注：GameNotFoundError 是 StoreError 的子类而非 LookupError（核对 event_store.py），
     两者都要捕获才能把"文件不存在"映射成 404（而非落到全局 StoreError→500 handler）。
+    非法 game_id（_check_game_id 拒绝的字符）与损坏事件文件也从 StoreError 派生或直出——
+    同样映射成 404，而不是把文件名/解析错误回给匿名访客（终审 m1）。
     """
     try:
         meta = games.store.load_meta(game_id)
-    except (LookupError, GameNotFoundError):
+    except (LookupError, GameNotFoundError, StoreError):
         raise HTTPException(status_code=404, detail=f"对局不存在：{game_id}") from None
     if not is_finished(games.store.load_events(game_id)):
         raise HTTPException(status_code=403, detail="对局未结束，上帝视角回放未开放")
@@ -190,13 +192,13 @@ def _finished_or_handle(
             raise HTTPException(status_code=404, detail=f"对局不存在：{game_id}") from None
         _finished_from_store(games, game_id)
         return
-    handle.ensure_healthy()
-    if info is None:
-        if not (public and handle.started and handle.live_state().phase == Phase.GAME_OVER):
-            raise HTTPException(status_code=401, detail="缺少 Bearer token")
-        return
+    # 匿名 401 必须先于 ensure_healthy（终审 M1）：live_state() 只读 runner.state，不碰 task
+    # 健康状态，崩溃 runner 不会让这行炸；这样未认证访客拿不到崩溃对局的内部异常文本。
     finished = handle.started and handle.live_state().phase == Phase.GAME_OVER
-    if public and finished:
+    if info is None and not (public and finished):
+        raise HTTPException(status_code=401, detail="缺少 Bearer token")
+    handle.ensure_healthy()
+    if info is None or (public and finished):
         return
     require_kind(info, game_id, *kinds)
     if require_finished and not finished:

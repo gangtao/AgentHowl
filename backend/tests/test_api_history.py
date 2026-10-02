@@ -3,13 +3,14 @@
 
 import time
 from collections.abc import Iterator
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 
 from app.main import create_app
 from app.runtime.game_runner import RunnerTimeouts
-from app.store.event_store import InMemoryEventStore
+from app.store.event_store import InMemoryEventStore, JsonFileEventStore
 
 
 def _app(store: InMemoryEventStore, public_history: bool | None = None) -> TestClient:
@@ -40,6 +41,20 @@ def _play_to_end(client: TestClient, seed: int) -> dict:
 
 def _auth(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
+
+
+class _CrashedTask:
+    """ensure_healthy() 只读 done()/cancelled()/exception()——伪造一个崩溃 task 不需要真跑
+    事件循环，也不会被当作真 asyncio.Task 处理（终审 M1 复现用）。"""
+
+    def done(self) -> bool:
+        return True
+
+    def cancelled(self) -> bool:
+        return False
+
+    def exception(self) -> BaseException:
+        return RuntimeError("secret internal detail")
 
 
 @pytest.fixture
@@ -164,6 +179,29 @@ def test_public_history_switch_off_handle_path_intact(store: InMemoryEventStore)
         assert c.get(f"/api/v1/games/{gid}/replay", headers=_auth(gm_token)).status_code == 200
 
 
+def test_crashed_game_anonymous_401_before_health_check(store: InMemoryEventStore) -> None:
+    """终审 M1：匿名请求必须先拿 401，不触发 ensure_healthy()——不会把崩溃异常文本泄露给
+    未认证访客；带有效 token 的请求仍按原逻辑触发健康检查 → 500（对认证过的调用方不变）。"""
+    with _app(store) as c:
+        body = c.post("/api/v1/games", json={"preset": "std_9_kill_side"}).json()
+        gid = body["game_id"]
+        c.post(
+            f"/api/v1/games/{gid}/start",
+            json={},
+            headers=_auth(body["host_token"]),
+        )
+        handle = c.app.state.games.get(gid)  # type: ignore[attr-defined]
+        handle.task = _CrashedTask()  # type: ignore[assignment]
+        for path in ("replay", "meta", "speeches"):
+            resp = c.get(f"/api/v1/games/{gid}/{path}")
+            assert resp.status_code == 401, (path, resp.text)
+            assert "secret" not in resp.text
+        gm = _auth(body["gm_token"])
+        for path in ("replay", "meta", "speeches"):
+            resp = c.get(f"/api/v1/games/{gid}/{path}", headers=gm)
+            assert resp.status_code == 500, (path, resp.text)
+
+
 def test_public_history_switch_off_no_handle_still_404(store: InMemoryEventStore) -> None:
     """Ruling 2：开关关 + 无 handle 时不走 store 回退，即使带有效 token 也是 404。"""
     with _app(store) as c:
@@ -176,3 +214,21 @@ def test_public_history_switch_off_no_handle_still_404(store: InMemoryEventStore
             c2.get(f"/api/v1/games/{gid}/replay", headers=_auth(fresh["gm_token"])).status_code
             == 404
         )
+
+
+def test_store_fallback_maps_illegal_or_corrupt_game_id_to_404(tmp_path: Path) -> None:
+    """终审 m1：store 回退路径（无 handle）下，非法 / 损坏 game_id 对匿名请求应是 404
+    （改造前即是 404；曾退化为 500，把文件名/解析错误回给访客）；列表照常 200 并跳过坏文件。"""
+    store = JsonFileEventStore(tmp_path)
+    with _app(store) as c:
+        # 非法 game_id（含 `.`，_check_game_id 拒绝）→ 404，不是 500
+        resp = c.get("/api/v1/games/g.nope/replay")
+        assert resp.status_code == 404, resp.text
+        # 损坏文件：首行不是合法 JSON → StoreCorruptionError（StoreError 子类）→ 404
+        (tmp_path / "g_corrupt.jsonl").write_text("not json at all\n", encoding="utf-8")
+        resp = c.get("/api/v1/games/g_corrupt/replay")
+        assert resp.status_code == 404, resp.text
+        # 列表不受坏文件拖累：仍 200，且该局被跳过
+        resp = c.get("/api/v1/games")
+        assert resp.status_code == 200
+        assert all(r["game_id"] != "g_corrupt" for r in resp.json())
