@@ -21,4 +21,21 @@ describe("parseHash", () => {
   it.each(cases)("parseHash(%s)", (hash, expected) => {
     expect(parseHash(hash)).toEqual(expected);
   });
+
+  it("history 路由与 replay=1 无 token 回放", () => {
+    expect(parseHash("#/history")).toEqual({ route: "history" });
+    expect(parseHash("#/g/g_abc?replay=1")).toEqual({
+      route: "game",
+      gameId: "g_abc",
+      replay: true,
+      viewer: "GM",
+    });
+    // gm 与 replay 同时出现：有 token 走原路径
+    expect(parseHash("#/g/g_abc?gm=T&replay=1")).toEqual({
+      route: "game",
+      gameId: "g_abc",
+      token: "T",
+      viewer: "GM",
+    });
+  });
 });

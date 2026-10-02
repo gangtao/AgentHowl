@@ -6,11 +6,13 @@ import { parseHash } from "./api/tokens";
 import type { ParsedHash } from "./api/tokens";
 import AgentLibrary from "./pages/AgentLibrary";
 import GamePage from "./pages/GamePage";
+import History from "./pages/History";
 import Lobby from "./pages/Lobby";
 import Providers from "./pages/Providers";
 
 const NAV = [
   { href: "#/", label: "新的一局", route: "lobby" as const },
+  { href: "#/history", label: "历史对局", route: "history" as const },
   { href: "#/agents", label: "Agent 档案库", route: "agents" as const },
   { href: "#/providers", label: "模型服务", route: "providers" as const },
 ];
@@ -27,10 +29,11 @@ export default function App(): JSX.Element {
   if (hash.route === "game") {
     return (
       <GamePage
-        key={`${hash.gameId ?? ""}:${hash.viewer ?? ""}`}
+        key={`${hash.gameId ?? ""}:${hash.viewer ?? ""}:${hash.replay === true ? "replay" : ""}`}
         gameId={hash.gameId}
         token={hash.token}
         viewer={hash.viewer}
+        replay={hash.replay}
       />
     );
   }
@@ -49,7 +52,9 @@ export default function App(): JSX.Element {
           </a>
         ))}
       </nav>
-      {hash.route === "agents" ? (
+      {hash.route === "history" ? (
+        <History />
+      ) : hash.route === "agents" ? (
         <AgentLibrary />
       ) : hash.route === "providers" ? (
         <Providers />

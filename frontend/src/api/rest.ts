@@ -101,7 +101,9 @@ export function startGame(
   });
 }
 
-export function getMeta(gameId: string, token: string): Promise<GameMeta> {
+/** token 可省略：开关 AGENTHOWL_PUBLIC_HISTORY 开启时，已结束对局的 /meta 无需 token
+ * （issue #98 设计 §2.2）。`req` 在 token 为 undefined 时不发 Authorization 头。 */
+export function getMeta(gameId: string, token?: string): Promise<GameMeta> {
   return req<GameMeta>("GET", `/games/${gameId}/meta`, { token });
 }
 
@@ -117,7 +119,8 @@ export function getState(gameId: string, token: string): Promise<Record<string, 
   return req<Record<string, unknown>>("GET", `/games/${gameId}/state`, { token });
 }
 
-export function getReplay(gameId: string, token: string): Promise<Event[]> {
+/** token 可省略，同 `getMeta`。 */
+export function getReplay(gameId: string, token?: string): Promise<Event[]> {
   return req<Event[]>("GET", `/games/${gameId}/replay`, { token });
 }
 

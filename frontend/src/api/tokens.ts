@@ -1,7 +1,8 @@
 // Hash 路由解析：token 只放在 URL hash（规格 §6），不写 localStorage。
-// 支持：#/、#/agents、#/providers、#/g/{gameId}?gm=…、#/g/{gameId}?spec=…
+// 支持：#/、#/agents、#/providers、#/history、#/g/{gameId}?gm=…、#/g/{gameId}?spec=…、
+// #/g/{gameId}?replay=1（已结束对局的无 token 回放，issue #98 设计 §3）。
 
-export type Route = "lobby" | "agents" | "providers" | "game";
+export type Route = "lobby" | "agents" | "providers" | "history" | "game";
 export type Viewer = "GM" | "SPECTATOR";
 
 export interface ParsedHash {
@@ -9,6 +10,8 @@ export interface ParsedHash {
   gameId?: string;
   token?: string;
   viewer?: Viewer;
+  /** 无 token 回放（历史对局页进来的链接）：后端只对已结束对局开放。 */
+  replay?: boolean;
 }
 
 /** 解析当前 `location.hash`（或传入的字符串）。无法识别的路径一律归为 lobby；
@@ -24,6 +27,9 @@ export function parseHash(hash: string = location.hash): ParsedHash {
   if (raw === "/providers" || raw.startsWith("/providers?") || raw.startsWith("/providers/")) {
     return { route: "providers" };
   }
+  if (raw === "/history" || raw.startsWith("/history?") || raw.startsWith("/history/")) {
+    return { route: "history" };
+  }
   const match = /^\/g\/([^/?]+)(?:\?(.*))?$/.exec(raw);
   if (match) {
     const gameId = decodeURIComponent(match[1] ?? "");
@@ -37,6 +43,10 @@ export function parseHash(hash: string = location.hash): ParsedHash {
     }
     if (spec) {
       return { route: "game", gameId, token: spec, viewer: "SPECTATOR" };
+    }
+    // 无 token 回放：gm/spec 之后判定——带 token 的链接权限更高，不被 replay 参数降级。
+    if (query.get("replay") === "1") {
+      return { route: "game", gameId, replay: true, viewer: "GM" };
     }
     return { route: "game", gameId };
   }
