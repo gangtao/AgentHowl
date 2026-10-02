@@ -127,12 +127,14 @@ export default function GamePage({ gameId, token, viewer, replay }: GamePageProp
             setDetail(err.detail);
             return;
           }
-          if (err instanceof ApiError && err.status === 403) {
+          // 403（对局未结束）与 401 合成同一条文案：回放模式本就无 token，用户也无从提供
+          // token——开关 AGENTHOWL_PUBLIC_HISTORY=0 时 401 的含义同样是「这局现在不给你看」，
+          // 对无 token 的访客与「对局进行中」没有区别，不该暴露成 token 问题（复核 M1 / 裁决 R6）。
+          if (err instanceof ApiError && (err.status === 403 || err.status === 401)) {
             setErrorKind("error");
-            setDetail("对局未结束，暂不可回放");
+            setDetail("对局进行中，暂不可回放（已结束的对局可从历史页回放）");
             return;
           }
-          // 401 也走这里：开关 AGENTHOWL_PUBLIC_HISTORY 关闭时回放需要 token，原文展示。
           setErrorKind("error");
           setDetail(err instanceof ApiError ? `${err.status} · ${err.detail}` : String(err));
         }

@@ -4,6 +4,13 @@
   white-space: nowrap;
 }
 
+.gameId {
+  display: block;
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 10.5px;
+  color: var(--color-neutral-500);
+}
+
 .seats {
   max-width: 260px;
   overflow: hidden;

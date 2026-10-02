@@ -21,9 +21,6 @@ const WINNER_LABEL: Record<string, string> = {
   WOLF: "狼人胜",
 };
 
-/** 超过这个座位数就只在 title 里放全文，单元格截断显示。 */
-const SEATS_INLINE_MAX = 6;
-
 /** ISO 时间 → 本地时区 `MM-DD HH:mm`；null / 不可解析 → `—`。 */
 function formatStartedAt(iso: string | null): string {
   if (iso === null) return "—";
@@ -80,18 +77,22 @@ export default function HistoryTable({ items }: HistoryTableProps): JSX.Element 
           const seatsText = names.join("、");
           return (
             <tr key={row.game_id}>
-              <td className={styles.nowrap}>{formatStartedAt(row.started_at)}</td>
-              <td title={row.game_id}>{PRESET_LABEL[row.preset] ?? row.preset}</td>
+              <td className={styles.nowrap}>
+                {formatStartedAt(row.started_at)}
+                {/* 对局 id 可见可复制：排查问题时不用去 hover 别的列。 */}
+                <code className={styles.gameId} title={row.game_id}>
+                  {row.game_id}
+                </code>
+              </td>
+              <td>{PRESET_LABEL[row.preset] ?? row.preset}</td>
               <td>{row.num_players}</td>
               <td className={styles.nowrap}>
                 <span className={statusTagClass(row.status)}>{statusLabel(row)}</span>
               </td>
               <td>{row.winner !== null ? (WINNER_LABEL[row.winner] ?? row.winner) : "—"}</td>
               <td>{row.rounds}</td>
-              <td
-                className={styles.seats}
-                {...(names.length > SEATS_INLINE_MAX ? { title: seatsText } : {})}
-              >
+              {/* 单元格对所有行恒定截断，所以只要有名单就挂 title（复核 m2）。 */}
+              <td className={styles.seats} {...(seatsText !== "" ? { title: seatsText } : {})}>
                 {seatsText === "" ? "—" : seatsText}
               </td>
               <td className={styles.nowrap}>
