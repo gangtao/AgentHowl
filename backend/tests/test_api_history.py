@@ -38,6 +38,10 @@ def _play_to_end(client: TestClient, seed: int) -> dict:
     return body
 
 
+def _auth(token: str) -> dict[str, str]:
+    return {"Authorization": f"Bearer {token}"}
+
+
 @pytest.fixture
 def store() -> Iterator[InMemoryEventStore]:
     yield InMemoryEventStore()
@@ -106,3 +110,69 @@ def test_public_history_switch_off(store: InMemoryEventStore, monkeypatch) -> No
     monkeypatch.setenv("AGENTHOWL_PUBLIC_HISTORY", "1")
     with _app(store) as c4:
         assert c4.get("/api/v1/games").status_code == 200
+
+
+def test_speeches_unaffected_before_game_over(store: InMemoryEventStore) -> None:
+    """评审 Blocker 1：/speeches 对有 handle 的对局必须保持现状——不要求终局。"""
+    with _app(store) as c:
+        body = c.post("/api/v1/games", json={"preset": "std_9_kill_side"}).json()
+        gid = body["game_id"]
+        # 未开局 + GM token → 200 []（原行为：未开局直接返回空列表）
+        resp = c.get(f"/api/v1/games/{gid}/speeches", headers=_auth(body["gm_token"]))
+        assert resp.status_code == 200 and resp.json() == []
+        c.post(
+            f"/api/v1/games/{gid}/start",
+            json={},
+            headers=_auth(body["host_token"]),
+        )
+        # 进行中 + SPECTATOR token → 200（不要求 GAME_OVER）
+        assert (
+            c.get(
+                f"/api/v1/games/{gid}/speeches", headers=_auth(body["spectator_token"])
+            ).status_code
+            == 200
+        )
+        # 进行中 + 无 token → 401（匿名访问仍只对已终局开放，原样不变）
+        assert c.get(f"/api/v1/games/{gid}/speeches").status_code == 401
+
+
+def test_finished_game_any_valid_token_equals_anonymous(store: InMemoryEventStore) -> None:
+    """Ruling 4：开关开 + 已终局时，任意有效 token（含 HOST、别局）都降级为匿名放行。"""
+    with _app(store) as c:
+        done = _play_to_end(c, seed=21)
+        other = c.post("/api/v1/games", json={"preset": "std_9_kill_side"}).json()
+        live = c.post("/api/v1/games", json={"preset": "std_9_kill_side"}).json()
+        gid, host_token, other_gm = done["game_id"], done["host_token"], other["gm_token"]
+        # /speeches 的 kinds 本不含 HOST——已终局时也一视同仁放行
+        assert c.get(f"/api/v1/games/{gid}/speeches", headers=_auth(host_token)).status_code == 200
+        # 别局的有效 GM token 同理放行
+        assert c.get(f"/api/v1/games/{gid}/replay", headers=_auth(other_gm)).status_code == 200
+        # 未知 game_id + 别局有效 token：先判存在性，不再先查 kind → 仍是 404
+        assert c.get("/api/v1/games/g_nope/replay", headers=_auth(other_gm)).status_code == 404
+        # 进行中对局 + 别局 token：未终局不降级，仍按 kind 校验 → 403（不变）
+        assert (
+            c.get(f"/api/v1/games/{live['game_id']}/replay", headers=_auth(other_gm)).status_code
+            == 403
+        )
+
+
+def test_public_history_switch_off_handle_path_intact(store: InMemoryEventStore) -> None:
+    """Ruling 2：开关关时，有 handle 的已终局对局走原逻辑，不受开关影响。"""
+    with _app(store, public_history=False) as c:
+        done = _play_to_end(c, seed=23)
+        gid, gm_token = done["game_id"], done["gm_token"]
+        assert c.get(f"/api/v1/games/{gid}/replay", headers=_auth(gm_token)).status_code == 200
+
+
+def test_public_history_switch_off_no_handle_still_404(store: InMemoryEventStore) -> None:
+    """Ruling 2：开关关 + 无 handle 时不走 store 回退，即使带有效 token 也是 404。"""
+    with _app(store) as c:
+        done = _play_to_end(c, seed=25)
+    gid = done["game_id"]
+    with _app(store, public_history=False) as c2:
+        # 新进程铸造的有效 token（任意对局皆可，只需在本进程的 TokenRegistry 里能 resolve 成功）
+        fresh = c2.post("/api/v1/games", json={"preset": "std_9_kill_side"}).json()
+        assert (
+            c2.get(f"/api/v1/games/{gid}/replay", headers=_auth(fresh["gm_token"])).status_code
+            == 404
+        )

@@ -156,15 +156,38 @@ def _finished_from_store(games: GameRegistry, game_id: str) -> GameMeta:
 
 
 def _finished_or_handle(
-    games: GameRegistry, game_id: str, info: TokenInfo | None, public: bool, *kinds: str
+    games: GameRegistry,
+    game_id: str,
+    info: TokenInfo | None,
+    public: bool,
+    *kinds: str,
+    require_finished: bool = True,
 ) -> None:
-    """三个终局接口共用的门槛：有活 handle 走原逻辑（必须有 token）；无 handle 走 store 回退。"""
+    """三个终局接口共用的门槛（issue #98 fix round 1，评审 Blocker 1 / Ruling 3-4）。
+
+    有 handle（对局在本进程注册过）：
+      - 无 token：仅当开关开 + 已终局才放行，否则 401——与改造前一致，未变。
+      - 有 token：开关开且已终局时，**任意有效 token 都降级为匿名放行**——不再校验 kind /
+        game_id（既然该局对匿名完全公开，持 token 的访问者不该比匿名更受限，这是刻意的不对称：
+        "终局 + 公开" 这一条件本身已经是最宽的闸门，token 只在它不满足时才需要起约束作用）；
+        否则（未终局，或开关关）按原逻辑校验 kind，并按 `require_finished` 决定是否额外要求
+        GAME_OVER —— `/speeches` 传 `False` 以保留"进行中/未开局也可读"的现状，`/replay` `/meta`
+        保持默认 `True`。
+
+    无 handle（registry 没有该局，典型如重启后换了新 registry）：
+      - 开关关：不走 store 回退，与改造前严格一致——无 token 401（`require_token` 当年的
+        行为：没带 token 根本进不到 `_handle_for`），带了（哪怕有效）token 则 404（`games.get`
+        的裸 `LookupError`），都不理会 kind。
+      - 开关开：退回 store；存在性/终局判断（`_finished_from_store` → 404/403）先于任何 token
+        逻辑；通过后与上面"有 handle + 已终局 + 公开"同理，不再校验 kind。
+    """
     try:
         handle = games.get(game_id)
     except LookupError:
-        _require_history_access(info, public)
-        if info is not None:
-            require_kind(info, game_id, *kinds)
+        if not public:
+            if info is None:
+                raise HTTPException(status_code=401, detail="缺少 Bearer token") from None
+            raise HTTPException(status_code=404, detail=f"对局不存在：{game_id}") from None
         _finished_from_store(games, game_id)
         return
     handle.ensure_healthy()
@@ -172,8 +195,11 @@ def _finished_or_handle(
         if not (public and handle.started and handle.live_state().phase == Phase.GAME_OVER):
             raise HTTPException(status_code=401, detail="缺少 Bearer token")
         return
+    finished = handle.started and handle.live_state().phase == Phase.GAME_OVER
+    if public and finished:
+        return
     require_kind(info, game_id, *kinds)
-    if not handle.started or handle.live_state().phase != Phase.GAME_OVER:
+    if require_finished and not finished:
         raise HTTPException(status_code=403, detail="对局未结束，上帝视角回放未开放")
 
 
@@ -230,7 +256,16 @@ def speeches_endpoint(
     info: TokenInfo | None = Depends(optional_token),
     games: GameRegistry = Depends(get_games),
 ) -> list[SpeechItem]:
-    _finished_or_handle(games, game_id, info, _public_history(request), "PLAYER", "SPECTATOR", "GM")
+    _finished_or_handle(
+        games,
+        game_id,
+        info,
+        _public_history(request),
+        "PLAYER",
+        "SPECTATOR",
+        "GM",
+        require_finished=False,  # 进行中/未开局也可读：规格 §2.2 要求 /speeches 行为完全同现状
+    )
     try:
         handle: GameHandle | None = games.get(game_id)
     except LookupError:
