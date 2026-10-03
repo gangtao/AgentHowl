@@ -42,6 +42,7 @@ def create_app(
     provider_store: ProviderStore | None = None,
     provider_probe: ProviderProbe | None = None,
     frontend_dist: Path | None = None,
+    public_history: bool | None = None,
 ) -> FastAPI:
     app = FastAPI(title="AgentHowl API", version="0.1.0")
     # 内置目录允许缺失（打包场景，容忍过滤）；显式指定的外部目录原样传给 load，
@@ -66,6 +67,11 @@ def create_app(
         provider_store=app.state.provider_store,
     )
     app.state.tokens = TokenRegistry()
+    # 历史对局公开开关（issue #98）：默认开放已终局对局的无 token 回放
+    if public_history is None:
+        raw = os.environ.get("AGENTHOWL_PUBLIC_HISTORY", "1").strip().lower()
+        public_history = raw not in ("0", "false", "no", "off")
+    app.state.public_history = public_history
     app.state.agent_library = agent_library or JsonFileAgentLibrary(
         agents_dir or Path("data/agents")
     )

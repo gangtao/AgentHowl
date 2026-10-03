@@ -71,4 +71,16 @@ describe("rest.ts", () => {
     expect(url).toBe("/api/v1/games/g1/replay");
     expect(init.headers).toMatchObject({ Authorization: "Bearer tok-123" });
   });
+
+  // issue #98：已结束对局公开回放——省略 token 时绝不能发 Authorization 头。
+  it("getReplay 省略 token 时不发 Authorization", async () => {
+    const fetchMock = vi.fn(async () => jsonResponse(200, []));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await getReplay("g1");
+
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe("/api/v1/games/g1/replay");
+    expect(init.headers).not.toHaveProperty("Authorization");
+  });
 });
