@@ -1,11 +1,13 @@
 // 历史对局表格（issue #98 设计 §3）：零过滤——只渲染服务端 GameSummary 给出的字段。
 // 操作列：finished → 无 token 回放链接；live → 提示用建局链接观看；aborted → 无法回放。
+// 传入 onDelete 时每行多一个「删除」（issue #100）：直播中禁用，确认框由页面负责。
 
 import type { GameSummary } from "../../api/history";
 import styles from "./HistoryTable.module.css";
 
 export interface HistoryTableProps {
   items: GameSummary[];
+  onDelete?: (row: GameSummary) => void;
 }
 
 /** 板子 id → 中文名（后端 presets）；未知 id 原样显示。 */
@@ -42,7 +44,7 @@ function statusTagClass(status: GameSummary["status"]): string {
   return "tag tag-neutral";
 }
 
-export default function HistoryTable({ items }: HistoryTableProps): JSX.Element {
+export default function HistoryTable({ items, onDelete }: HistoryTableProps): JSX.Element {
   if (items.length === 0) {
     return (
       <div className={styles.empty}>
@@ -106,6 +108,17 @@ export default function HistoryTable({ items }: HistoryTableProps): JSX.Element 
                   <span className={styles.hint} title="没有终局事件，服务端不开放回放">
                     无法回放
                   </span>
+                )}
+                {onDelete !== undefined && (
+                  <button
+                    type="button"
+                    className={`btn btn-ghost ${styles.deleteBtn}`}
+                    disabled={row.status === "live"}
+                    title={row.status === "live" ? "进行中的对局不能删除" : "删除事件文件，不可恢复"}
+                    onClick={() => onDelete(row)}
+                  >
+                    删除
+                  </button>
                 )}
               </td>
             </tr>

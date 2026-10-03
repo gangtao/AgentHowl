@@ -1,5 +1,5 @@
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { fireEvent, render, screen } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
 import HistoryTable from "./HistoryTable";
 
 const base = {
@@ -53,6 +53,51 @@ describe("HistoryTable", () => {
     // 三行共用同一份 seats，座位列必然出现三次——用 getAllByText（brief 原文的 getByText
     // 会报 "Found multiple elements"，见 task-3-report.md）。
     expect(screen.getAllByText(/夜枭/)).toHaveLength(3);
+  });
+  it("删除按钮：已结束/中断可点并回调整行，直播中禁用（issue #100）", () => {
+    const onDelete = vi.fn();
+    const finished = {
+      ...base,
+      game_id: "g_f",
+      status: "finished" as const,
+      started_at: null,
+      ended_at: null,
+      winner: "GOOD",
+    };
+    render(
+      <HistoryTable
+        items={[
+          finished,
+          { ...base, game_id: "g_l", status: "live", started_at: null, ended_at: null, winner: null },
+          {
+            ...base,
+            game_id: "g_a",
+            status: "aborted",
+            started_at: null,
+            ended_at: null,
+            winner: null,
+          },
+        ]}
+        onDelete={onDelete}
+      />,
+    );
+    const buttons = screen.getAllByRole("button", { name: /删除/ });
+    expect(buttons).toHaveLength(3);
+    expect(buttons[1]).toBeDisabled();
+    expect(buttons[0]).toBeEnabled();
+    expect(buttons[2]).toBeEnabled();
+    fireEvent.click(buttons[0]!);
+    expect(onDelete).toHaveBeenCalledWith(finished);
+  });
+  it("不传 onDelete 则无删除按钮", () => {
+    render(
+      <HistoryTable
+        items={[
+          { ...base, game_id: "g_f", status: "finished", started_at: null, ended_at: null, winner: null },
+        ]}
+      />,
+    );
+    expect(screen.queryByRole("button", { name: /删除/ })).toBeNull();
   });
   it("空态", () => {
     render(<HistoryTable items={[]} />);
