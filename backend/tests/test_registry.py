@@ -124,6 +124,29 @@ def test_get_unknown_game_raises_lookup() -> None:
         reg.get("g_nope")
 
 
+def test_remove_drops_handle_and_unknown_raises_lookup() -> None:
+    """issue #100：remove 只摘 handle（不管任务），未知 id → LookupError。"""
+    reg = _registry()
+    handle = reg.create(build_preset("std_9_kill_side"), allow_spectators=True)
+    reg.remove(handle.game_id)
+    with pytest.raises(LookupError):
+        reg.get(handle.game_id)
+    with pytest.raises(LookupError):
+        reg.remove(handle.game_id)
+
+
+def test_token_registry_revoke_game_only_hits_that_game() -> None:
+    """issue #100：revoke_game 作废该局全部 token，别局不受影响。"""
+    tokens = TokenRegistry()
+    a1 = tokens.issue(TokenInfo(game_id="g_a", seat=None, kind="GM"))
+    a2 = tokens.issue(TokenInfo(game_id="g_a", seat=2, kind="PLAYER"))
+    b = tokens.issue(TokenInfo(game_id="g_b", seat=None, kind="HOST"))
+    tokens.revoke_game("g_a")
+    assert tokens.resolve(a1) is None and tokens.resolve(a2) is None
+    assert tokens.resolve(b) is not None
+    tokens.revoke_game("g_nope")  # 幂等，无异常
+
+
 async def test_create_with_agents_resolves_per_seat_and_names_bots() -> None:
     from app.agent.profile import AgentProfile
     from app.runtime.player_port import BotPlayerPort

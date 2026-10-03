@@ -33,6 +33,10 @@ class GameNotFoundError(StoreError):
     """按 game_id 找不到对局。"""
 
 
+class InvalidGameIdError(StoreError):
+    """game_id 含非法字符（_check_game_id 拒绝）。"""
+
+
 class SeqConflictError(StoreError):
     """append 的 seq 不等于 last_seq + 1（洞或重复）。"""
 
@@ -114,7 +118,7 @@ _GAME_ID_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 def _check_game_id(game_id: str) -> None:
     """game_id 触盘前校验（路径穿越防护）；两个实现共用同一口径。"""
     if not _GAME_ID_RE.fullmatch(game_id):
-        raise StoreError(f"非法 game_id：{game_id!r}（仅允许 [A-Za-z0-9_-]+）")
+        raise InvalidGameIdError(f"非法 game_id：{game_id!r}（仅允许 [A-Za-z0-9_-]+）")
 
 
 def _check_append(game_id: str, last_seq: int, event: Event) -> None:
@@ -139,6 +143,8 @@ class EventStore(Protocol):
     def load_events(self, game_id: str, from_seq: int = 0) -> list[Event]: ...
 
     def list_games(self) -> list[str]: ...
+
+    def delete_game(self, game_id: str) -> None: ...
 
 
 class InMemoryEventStore:
@@ -167,6 +173,12 @@ class InMemoryEventStore:
 
     def list_games(self) -> list[str]:
         return sorted(self._games)
+
+    def delete_game(self, game_id: str) -> None:
+        """整局删除（issue #100）：不存在 → GameNotFoundError；非法 id 与文件实现同口径拒绝。"""
+        _check_game_id(game_id)
+        self._get(game_id)
+        del self._games[game_id]
 
     def _get(self, game_id: str) -> tuple[GameMeta, list[Event]]:
         try:
@@ -216,6 +228,17 @@ class JsonFileEventStore:
 
     def list_games(self) -> list[str]:
         return sorted(p.stem for p in self._data_dir.glob("*.jsonl"))
+
+    def delete_game(self, game_id: str) -> None:
+        """整局删除（issue #100）：删文件并清缓存；文件不在 → GameNotFoundError。"""
+        path = self._path(game_id)
+        self._cache.pop(game_id, None)
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            raise GameNotFoundError(f"对局不存在：{game_id}") from None
+        except OSError as exc:
+            raise StoreError(f"{path.name}：删除失败：{exc}") from exc
 
     # ---------- 内部 ----------
 

@@ -33,6 +33,11 @@ class TokenRegistry:
     def resolve(self, token: str) -> TokenInfo | None:
         return self._tokens.get(token)
 
+    def revoke_game(self, game_id: str) -> None:
+        """作废某局的全部 token（issue #100 删除对局时调用）；幂等。"""
+        for token in [t for t, info in self._tokens.items() if info.game_id == game_id]:
+            del self._tokens[token]
+
 
 _bearer = HTTPBearer(auto_error=False)
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import time
 from typing import Any
 
@@ -43,7 +44,15 @@ from app.schemas.games import (
     StartRequest,
     StartResponse,
 )
-from app.store.event_store import GameMeta, GameNotFoundError, StoreError, event_to_json
+from app.store.event_store import (
+    GameMeta,
+    GameNotFoundError,
+    InvalidGameIdError,
+    StoreError,
+    event_to_json,
+)
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/games", tags=["games"])
 
@@ -138,6 +147,43 @@ def list_games_endpoint(
     """历史对局列表（issue #98）：文件里的全部对局 + registry 的进行中状态。"""
     _require_history_access(info, _public_history(request))
     return list_history(games.store, games)
+
+
+@router.delete("/{game_id}", status_code=204, response_class=Response)
+def delete_game_endpoint(
+    game_id: str,
+    request: Request,
+    games: GameRegistry = Depends(get_games),
+    tokens: TokenRegistry = Depends(get_tokens),
+) -> Response:
+    """删除历史对局（issue #100）：删事件文件 + 摘 handle + 作废该局 token。
+
+    权限跟随 AGENTHOWL_PUBLIC_HISTORY：开关关 → 一律 404（功能不存在，带 token 也一样）。
+    有 handle 且 task 未结束（含未开局）→ 409；已终局 / 崩溃 / 仅存文件的中断局都可删。
+    不触碰 agent 跨局记忆（experience）——那是档案的数据，不随对局走。
+    """
+    if not _public_history(request):
+        raise HTTPException(status_code=404, detail=f"对局不存在：{game_id}")
+    try:
+        handle: GameHandle | None = games.get(game_id)
+    except LookupError:
+        handle = None
+    if handle is not None and not (handle.task is not None and handle.task.done()):
+        raise HTTPException(status_code=409, detail="对局进行中（或尚未开局），不能删除")
+    try:
+        games.store.delete_game(game_id)
+    except (GameNotFoundError, InvalidGameIdError):
+        # 非法 id / 文件不在归 404；handle 存在但文件已没了的情况仍把 handle 清掉
+        if handle is None:
+            raise HTTPException(status_code=404, detail=f"对局不存在：{game_id}") from None
+    except StoreError as exc:
+        # 真删不掉（权限、磁盘）：不能装作成功把 handle/token 清掉，也不把文件名/OS 错误回给调用方
+        logger.error("删除对局 %s 的事件文件失败：%s", game_id, exc)
+        raise HTTPException(status_code=500, detail="删除失败，请查看服务端日志") from exc
+    if handle is not None:
+        games.remove(game_id)
+    tokens.revoke_game(game_id)
+    return Response(status_code=204)
 
 
 def _finished_from_store(games: GameRegistry, game_id: str) -> GameMeta:

@@ -26,6 +26,10 @@
   white-space: nowrap;
 }
 
+.deleteBtn {
+  margin-left: 8px;
+}
+
 .empty {
   display: flex;
   flex-direction: column;

@@ -49,6 +49,29 @@ describe("useHistory", () => {
       "/api/v1/games",
     );
   });
+  it("remove 发 DELETE 并从列表移除；失败落 error 并抛出（issue #100）", async () => {
+    useHistory.setState({ items: rows as never });
+    const fetchMock = vi.fn(async () => new Response(null, { status: 204 }));
+    vi.stubGlobal("fetch", fetchMock);
+    await useHistory.getState().remove("g_new");
+    expect(useHistory.getState().items.map((r) => r.game_id)).toEqual(["g_live"]);
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toContain("/api/v1/games/g_new");
+    expect(init.method).toBe("DELETE");
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(JSON.stringify({ detail: "对局进行中（或尚未开局），不能删除" }), {
+            status: 409,
+          }),
+      ),
+    );
+    await expect(useHistory.getState().remove("g_live")).rejects.toThrow();
+    expect(useHistory.getState().error).toContain("不能删除");
+    expect(useHistory.getState().items.map((r) => r.game_id)).toEqual(["g_live"]);
+  });
   it("失败落 error", async () => {
     vi.stubGlobal(
       "fetch",

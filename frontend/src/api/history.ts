@@ -28,3 +28,8 @@ export interface GameSummary {
 export function listGames(): Promise<GameSummary[]> {
   return req<GameSummary[]>("GET", "/games");
 }
+
+/** 删除历史对局（issue #100）：进行中 409；开关关 404。 */
+export function deleteGame(gameId: string): Promise<void> {
+  return req<void>("DELETE", `/games/${gameId}`);
+}
