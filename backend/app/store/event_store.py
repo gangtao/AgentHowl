@@ -33,6 +33,10 @@ class GameNotFoundError(StoreError):
     """按 game_id 找不到对局。"""
 
 
+class InvalidGameIdError(StoreError):
+    """game_id 含非法字符（_check_game_id 拒绝）。"""
+
+
 class SeqConflictError(StoreError):
     """append 的 seq 不等于 last_seq + 1（洞或重复）。"""
 
@@ -114,7 +118,7 @@ _GAME_ID_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 def _check_game_id(game_id: str) -> None:
     """game_id 触盘前校验（路径穿越防护）；两个实现共用同一口径。"""
     if not _GAME_ID_RE.fullmatch(game_id):
-        raise StoreError(f"非法 game_id：{game_id!r}（仅允许 [A-Za-z0-9_-]+）")
+        raise InvalidGameIdError(f"非法 game_id：{game_id!r}（仅允许 [A-Za-z0-9_-]+）")
 
 
 def _check_append(game_id: str, last_seq: int, event: Event) -> None:

@@ -276,8 +276,30 @@ def test_delete_crashed_game_allowed(store: InMemoryEventStore) -> None:
         resp = c.delete(f"/api/v1/games/{gid}")
         handle.task = real_task
         assert resp.status_code == 204, resp.text
-        assert "secret" not in resp.text
         assert gid not in store.list_games()
+
+
+def test_delete_store_failure_is_500_without_leaking_and_keeps_handle(
+    store: InMemoryEventStore, monkeypatch
+) -> None:
+    """评审 Major：文件真删不掉（权限/磁盘）不能装作 204 把 handle/token 清掉，
+    也不把文件名 / OS 错误文本回给调用方。"""
+    from app.store.event_store import StoreError
+
+    with _app(store) as c:
+        done = _play_to_end(c, seed=39)
+        gid, gm = done["game_id"], _auth(done["gm_token"])
+
+        def boom(game_id: str) -> None:
+            raise StoreError(f"{game_id}.jsonl：删除失败：[Errno 13] secret-path")
+
+        monkeypatch.setattr(store, "delete_game", boom)
+        resp = c.delete(f"/api/v1/games/{gid}")
+        assert resp.status_code == 500, resp.text
+        assert "secret-path" not in resp.text and ".jsonl" not in resp.text
+        # handle 与 token 都还在，列表照常
+        assert c.get(f"/api/v1/games/{gid}/state", headers=gm).status_code == 200
+        assert any(r["game_id"] == gid for r in c.get("/api/v1/games").json())
 
 
 def test_delete_switch_off_404_even_with_token(store: InMemoryEventStore) -> None:
