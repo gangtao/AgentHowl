@@ -155,6 +155,12 @@ class GameRegistry:
         except KeyError:
             raise LookupError(f"对局不存在：{game_id}") from None
 
+    def remove(self, game_id: str) -> None:
+        """摘掉 handle（issue #100）。只做注册表层面的移除，不停任务、不动事件文件——
+        调用方（DELETE /games/{id}）须先确认对局不在跑。"""
+        if self._games.pop(game_id, None) is None:
+            raise LookupError(f"对局不存在：{game_id}")
+
     @property
     def store(self) -> EventStore:
         return self._store

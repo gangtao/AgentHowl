@@ -216,6 +216,99 @@ def test_public_history_switch_off_no_handle_still_404(store: InMemoryEventStore
         )
 
 
+class _RunningTask(_CrashedTask):
+    """未完成的 task：进行中对局不可删（issue #100）。"""
+
+    def done(self) -> bool:
+        return False
+
+
+def test_delete_finished_game_in_process(store: InMemoryEventStore) -> None:
+    """issue #100：删除已终局对局 → 204；随后列表/回放都没了，该局旧 token 作废，再删 404。"""
+    with _app(store) as c:
+        done = _play_to_end(c, seed=31)
+        gid, gm = done["game_id"], _auth(done["gm_token"])
+        assert c.get(f"/api/v1/games/{gid}/state", headers=gm).status_code == 200
+        assert c.delete(f"/api/v1/games/{gid}").status_code == 204
+        assert all(r["game_id"] != gid for r in c.get("/api/v1/games").json())
+        assert c.get(f"/api/v1/games/{gid}/replay").status_code == 404
+        assert c.get(f"/api/v1/games/{gid}/state", headers=gm).status_code == 401
+        assert c.delete(f"/api/v1/games/{gid}").status_code == 404
+        assert store.list_games() == []
+
+
+def test_delete_after_restart_store_only(store: InMemoryEventStore) -> None:
+    with _app(store) as c:
+        done = _play_to_end(c, seed=33)
+    gid = done["game_id"]
+    with _app(store) as c2:  # 无 handle，只有文件
+        assert c2.delete(f"/api/v1/games/{gid}").status_code == 204
+        assert c2.get("/api/v1/games").json() == []
+        assert c2.get(f"/api/v1/games/{gid}/replay").status_code == 404
+
+
+def test_delete_live_or_pending_game_409(store: InMemoryEventStore) -> None:
+    """进行中（task 未完成）或未开局的对局都不可删：409，且文件/handle 原样。"""
+    with _app(store) as c:
+        body = c.post("/api/v1/games", json={"preset": "std_9_kill_side"}).json()
+        gid = body["game_id"]
+        assert c.delete(f"/api/v1/games/{gid}").status_code == 409  # 未开局
+        c.post(f"/api/v1/games/{gid}/start", json={}, headers=_auth(body["host_token"]))
+        handle = c.app.state.games.get(gid)  # type: ignore[attr-defined]
+        real_task = handle.task
+        handle.task = _RunningTask()  # type: ignore[assignment]
+        resp = c.delete(f"/api/v1/games/{gid}")
+        handle.task = real_task
+        assert resp.status_code == 409, resp.text
+        assert c.app.state.games.get(gid) is handle  # type: ignore[attr-defined]
+        assert gid in store.list_games()
+
+
+def test_delete_crashed_game_allowed(store: InMemoryEventStore) -> None:
+    """崩溃（task 已结束且带异常）的对局不在跑，允许删除清理；异常文本不回给调用方。"""
+    with _app(store) as c:
+        body = c.post("/api/v1/games", json={"preset": "std_9_kill_side"}).json()
+        gid = body["game_id"]
+        c.post(f"/api/v1/games/{gid}/start", json={}, headers=_auth(body["host_token"]))
+        handle = c.app.state.games.get(gid)  # type: ignore[attr-defined]
+        real_task = handle.task
+        handle.task = _CrashedTask()  # type: ignore[assignment]
+        resp = c.delete(f"/api/v1/games/{gid}")
+        handle.task = real_task
+        assert resp.status_code == 204, resp.text
+        assert "secret" not in resp.text
+        assert gid not in store.list_games()
+
+
+def test_delete_switch_off_404_even_with_token(store: InMemoryEventStore) -> None:
+    """权限跟随 AGENTHOWL_PUBLIC_HISTORY：关 → 功能不存在（404），带 GM token 也一样。"""
+    with _app(store, public_history=False) as c:
+        done = _play_to_end(c, seed=35)
+        gid = done["game_id"]
+        assert c.delete(f"/api/v1/games/{gid}").status_code == 404
+        assert c.delete(f"/api/v1/games/{gid}", headers=_auth(done["gm_token"])).status_code == 404
+        assert gid in store.list_games()
+
+
+def test_delete_aborted_unknown_and_illegal_id(store: InMemoryEventStore) -> None:
+    """中断局（无 GAME_OVER、无 handle）可删 → 204；未知 / 非法 id → 404（不是 500）。"""
+    with _app(store) as c:
+        done = _play_to_end(c, seed=37)
+    gid = done["game_id"]
+    meta = store.load_meta(gid)
+    events = store.load_events(gid)[:10]
+    store.create_game(meta.model_copy(update={"game_id": "g_aborted"}))
+    for ev in events:
+        store.append("g_aborted", ev.model_copy(update={"game_id": "g_aborted"}))
+    with _app(store) as c2:
+        rows = {r["game_id"]: r["status"] for r in c2.get("/api/v1/games").json()}
+        assert rows["g_aborted"] == "aborted"
+        assert c2.delete("/api/v1/games/g_aborted").status_code == 204
+        assert c2.delete("/api/v1/games/g_nope").status_code == 404
+        assert c2.delete("/api/v1/games/g.nope").status_code == 404
+        assert store.list_games() == [gid]
+
+
 def test_store_fallback_maps_illegal_or_corrupt_game_id_to_404(tmp_path: Path) -> None:
     """终审 m1：store 回退路径（无 handle）下，非法 / 损坏 game_id 对匿名请求应是 404
     （改造前即是 404；曾退化为 500，把文件名/解析错误回给访客）；列表照常 200 并跳过坏文件。"""

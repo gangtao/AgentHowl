@@ -159,6 +159,24 @@ class TestContract:
             store.create_game(GameMeta(game_id=gid, config=meta.config, roster=meta.roster))
         assert store.list_games() == ["g1", "g2"]
 
+    def test_delete_game(self, store: EventStore) -> None:
+        """issue #100：删除后不再列出、不可读；重复删除 / 未知 / 非法 id 分别报错；可同 id 重建。"""
+        meta, _, events = _run_fixture_game()
+        store.create_game(meta)
+        store.append("g1", events[0])
+        store.delete_game("g1")
+        assert store.list_games() == []
+        with pytest.raises(GameNotFoundError):
+            store.load_meta("g1")
+        with pytest.raises(GameNotFoundError):
+            store.delete_game("g1")
+        with pytest.raises(GameNotFoundError):
+            store.delete_game("nope")
+        with pytest.raises(StoreError):
+            store.delete_game("a/b")
+        store.create_game(meta)  # 删除即释放 id
+        assert store.load_events("g1") == []
+
 
 class TestJsonFile:
     def test_restart_reloads(self, tmp_path: Path) -> None:
@@ -174,6 +192,19 @@ class TestJsonFile:
         assert s2.load_events("g1") == events[:-1]
         s2.append("g1", events[-1])  # seq 续接
         _assert_replay_matches(load_state(s2, "g1"), final)
+
+    def test_delete_removes_file_and_cache(self, tmp_path: Path) -> None:
+        """issue #100：删除即删文件（新实例也看不到），且本实例缓存同步清掉。"""
+        meta, _, events = _run_fixture_game()
+        s1 = JsonFileEventStore(tmp_path / "d")
+        s1.create_game(meta)
+        s1.append("g1", events[0])
+        assert (tmp_path / "d" / "g1.jsonl").exists()
+        s1.delete_game("g1")
+        assert not (tmp_path / "d" / "g1.jsonl").exists()
+        with pytest.raises(GameNotFoundError):
+            s1.load_meta("g1")
+        assert JsonFileEventStore(tmp_path / "d").list_games() == []
 
     def test_list_games_from_disk(self, tmp_path: Path) -> None:
         meta, _, _ = _run_fixture_game()

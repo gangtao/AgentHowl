@@ -140,6 +140,8 @@ class EventStore(Protocol):
 
     def list_games(self) -> list[str]: ...
 
+    def delete_game(self, game_id: str) -> None: ...
+
 
 class InMemoryEventStore:
     """内存实现：测试与单进程 MVP 用。"""
@@ -167,6 +169,12 @@ class InMemoryEventStore:
 
     def list_games(self) -> list[str]:
         return sorted(self._games)
+
+    def delete_game(self, game_id: str) -> None:
+        """整局删除（issue #100）：不存在 → GameNotFoundError；非法 id 与文件实现同口径拒绝。"""
+        _check_game_id(game_id)
+        self._get(game_id)
+        del self._games[game_id]
 
     def _get(self, game_id: str) -> tuple[GameMeta, list[Event]]:
         try:
@@ -216,6 +224,17 @@ class JsonFileEventStore:
 
     def list_games(self) -> list[str]:
         return sorted(p.stem for p in self._data_dir.glob("*.jsonl"))
+
+    def delete_game(self, game_id: str) -> None:
+        """整局删除（issue #100）：删文件并清缓存；文件不在 → GameNotFoundError。"""
+        path = self._path(game_id)
+        self._cache.pop(game_id, None)
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            raise GameNotFoundError(f"对局不存在：{game_id}") from None
+        except OSError as exc:
+            raise StoreError(f"{path.name}：删除失败：{exc}") from exc
 
     # ---------- 内部 ----------
 

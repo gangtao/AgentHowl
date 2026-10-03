@@ -140,6 +140,39 @@ def list_games_endpoint(
     return list_history(games.store, games)
 
 
+@router.delete("/{game_id}", status_code=204, response_class=Response)
+def delete_game_endpoint(
+    game_id: str,
+    request: Request,
+    games: GameRegistry = Depends(get_games),
+    tokens: TokenRegistry = Depends(get_tokens),
+) -> Response:
+    """删除历史对局（issue #100）：删事件文件 + 摘 handle + 作废该局 token。
+
+    权限跟随 AGENTHOWL_PUBLIC_HISTORY：开关关 → 一律 404（功能不存在，带 token 也一样）。
+    有 handle 且 task 未结束（含未开局）→ 409；已终局 / 崩溃 / 仅存文件的中断局都可删。
+    不触碰 agent 跨局记忆（experience）——那是档案的数据，不随对局走。
+    """
+    if not _public_history(request):
+        raise HTTPException(status_code=404, detail=f"对局不存在：{game_id}")
+    try:
+        handle: GameHandle | None = games.get(game_id)
+    except LookupError:
+        handle = None
+    if handle is not None and not (handle.task is not None and handle.task.done()):
+        raise HTTPException(status_code=409, detail="对局进行中（或尚未开局），不能删除")
+    try:
+        games.store.delete_game(game_id)
+    except (LookupError, GameNotFoundError, StoreError):
+        # 非法 id / 损坏 / 文件不在都归 404；handle 存在但文件已没了的情况仍把 handle 清掉
+        if handle is None:
+            raise HTTPException(status_code=404, detail=f"对局不存在：{game_id}") from None
+    if handle is not None:
+        games.remove(game_id)
+    tokens.revoke_game(game_id)
+    return Response(status_code=204)
+
+
 def _finished_from_store(games: GameRegistry, game_id: str) -> GameMeta:
     """registry 没有该局时退回事件文件：存在且已终局才开放，否则与现状同样的 404/403。
 
