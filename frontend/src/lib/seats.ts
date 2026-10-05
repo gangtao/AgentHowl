@@ -23,6 +23,7 @@ const PROFILE_KEYS = [
   "personality",
   "memory_id",
   "provider",
+  "avatar",
 ] as const;
 
 /**

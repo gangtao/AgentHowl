@@ -95,6 +95,16 @@ describe("toProfilePayload", () => {
     const out = toProfilePayload({ model: "m", model_speech: null, provider: undefined });
     expect(out).toEqual({ model: "m", model_speech: null });
   });
+
+  it("保留 avatar（导入/复制不丢头像，issue #102）", () => {
+    const out = toProfilePayload({ model: "m", avatar: "3f9a1c0b7e2d4a66.png" });
+    expect(out).toEqual({ model: "m", avatar: "3f9a1c0b7e2d4a66.png" });
+  });
+
+  it("没有 avatar 的档案不带出多余的 avatar 键", () => {
+    const out = toProfilePayload({ model: "m" }) as unknown as Record<string, unknown>;
+    expect("avatar" in out).toBe(false);
+  });
 });
 
 describe("memoryConflicts", () => {
