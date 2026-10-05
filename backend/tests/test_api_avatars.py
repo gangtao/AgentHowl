@@ -1,6 +1,7 @@
 """头像端点（issue #102）：上传魔数/大小校验、内容寻址读取、对局座位头像映射。"""
 
 import time
+from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
@@ -54,6 +55,32 @@ def test_upload_rejects_bad_type_and_size(client: TestClient) -> None:
     too_big = PNG + b"\x00" * (512 * 1024)
     assert _put(client, too_big).status_code == 413
     assert _put(client, b"").status_code == 415
+
+
+def test_upload_oversize_without_content_length_still_413(client: TestClient) -> None:
+    """生成器 body（httpx 不预知长度，不发 Content-Length）：只能靠逐块累积守卫兜底，
+    不能靠请求头检查（issue #102 复审发现：原测试全走 bytes content，总带 Content-Length，
+    从未真正跑到 request.stream() 里的那段累积判断）。"""
+
+    def _oversize() -> Any:
+        yield PNG
+        yield b"\x00" * (512 * 1024)
+
+    r = client.put("/api/v1/avatars", content=_oversize(), headers={"Content-Type": "image/png"})
+    assert "content-length" not in r.request.headers  # 确认确实没发，守卫测的是对的路径
+    assert r.status_code == 413
+
+
+def test_upload_under_limit_without_content_length_succeeds(client: TestClient) -> None:
+    """同样无 Content-Length，但未超限：不应被误拦截。"""
+
+    def _ok() -> Any:
+        yield PNG
+
+    r = client.put("/api/v1/avatars", content=_ok(), headers={"Content-Type": "image/png"})
+    assert "content-length" not in r.request.headers
+    assert r.status_code == 200
+    assert r.json()["bytes"] == len(PNG)
 
 
 def test_fetch_missing_or_illegal_id_404(client: TestClient) -> None:
