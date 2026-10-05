@@ -159,3 +159,18 @@ def test_profile_provider_field_and_to_agent_config_resolves_model() -> None:
     plain = to_agent_config(AgentProfile(model="openai/x"), build_preset("std_9_kill_side"))
     assert plain.model == "openai/x"
     assert "provider" in AgentProfile(model="m").model_dump()
+
+
+def test_avatar_field_pattern_and_default() -> None:
+    """issue #102：avatar 是内容 id（16 hex + 扩展名），默认 None；非法形状拒绝（路径穿越防护）。"""
+    from pydantic import ValidationError
+
+    assert AgentProfile(model="x").avatar is None
+    ok = AgentProfile(model="x", avatar="3f9a1c0b7e2d4a66.png")
+    assert ok.avatar == "3f9a1c0b7e2d4a66.png"
+    for bad in ("../x.png", "3f9a1c0b7e2d4a66.gif", "3F9A1C0B7E2D4A66.png", "abc.png", ""):
+        with pytest.raises(ValidationError):
+            AgentProfile(model="x", avatar=bad)
+    # 不进 LLM 配置
+    cfg = to_agent_config(ok, build_preset("std_9_kill_side"))
+    assert not hasattr(cfg, "avatar")
