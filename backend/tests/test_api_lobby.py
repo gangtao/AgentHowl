@@ -137,6 +137,7 @@ def test_create_legacy_ai_model_echoes_star(client: TestClient) -> None:
             "personality": None,
             "memory_id": None,
             "provider": None,
+            "avatar": None,
         }
     }
     r2 = client.post("/api/v1/games", json={"preset": "std_9_kill_side"})
