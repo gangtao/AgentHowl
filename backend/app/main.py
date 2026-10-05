@@ -11,9 +11,10 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from app.agent.skills import BUILTIN_SKILLS_DIR, SkillLibrary
-from app.api import agents, providers, rest, ws
+from app.api import agents, avatars, providers, rest, ws
 from app.api.deps import TokenRegistry
 from app.runtime.agent_library import AgentLibraryStore, JsonFileAgentLibrary
+from app.runtime.avatar_store import AvatarStore, FileAvatarStore
 from app.runtime.experience_store import ExperienceStore, JsonFileExperienceStore
 from app.runtime.game_runner import LobbyError, RunnerTimeouts
 from app.runtime.player_port import NotYourTurnError, PlayerPort
@@ -41,6 +42,8 @@ def create_app(
     providers_dir: Path | None = None,
     provider_store: ProviderStore | None = None,
     provider_probe: ProviderProbe | None = None,
+    avatars_dir: Path | None = None,
+    avatar_store: AvatarStore | None = None,
     frontend_dist: Path | None = None,
     public_history: bool | None = None,
 ) -> FastAPI:
@@ -75,10 +78,13 @@ def create_app(
     app.state.agent_library = agent_library or JsonFileAgentLibrary(
         agents_dir or Path("data/agents")
     )
+    # 头像存储（issue #102）：内容寻址，首次上传建目录
+    app.state.avatar_store = avatar_store or FileAvatarStore(avatars_dir or Path("data/avatars"))
     app.include_router(rest.router, prefix="/api/v1")
     app.include_router(ws.router, prefix="/api/v1")
     app.include_router(agents.router, prefix="/api/v1")
     app.include_router(providers.router, prefix="/api/v1")
+    app.include_router(avatars.router, prefix="/api/v1")
 
     def _handler(status: int):  # type: ignore[no-untyped-def]
         async def h(request: Request, exc: Exception) -> JSONResponse:
