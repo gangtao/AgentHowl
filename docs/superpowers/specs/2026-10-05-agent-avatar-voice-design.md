@@ -61,12 +61,12 @@ class AgentProfile(BaseModel):
 
 ### 3.1 存储与端点
 
-- 目录 `data/avatars/`（`create_app(avatars_dir=...)`，默认 `Path("data/avatars")`，启动时 `mkdir -p`）。
+- 目录 `data/avatars/`（`create_app(avatars_dir=...)`，默认 `Path("data/avatars")`，首次上传时惰性创建）。
 - `PUT /api/v1/avatars`：**raw body**（`Content-Type: image/png | image/jpeg | image/webp`），
   不用 multipart（避免 `python-multipart` 依赖）。
   - 上限 512 KB（读 body 前先看 `Content-Length`，超限 413；无长度则读到上限 + 1 字节判定）。
-  - 按**魔数**判类型（PNG `89 50 4E 47`、JPEG `FF D8 FF`、WebP `RIFF....WEBP`），与 `Content-Type` 不符或
-    不认识 → 415。
+  - 按**魔数**判类型（PNG `89 50 4E 47`、JPEG `FF D8 FF`、WebP `RIFF....WEBP`），忽略 `Content-Type`
+    （只信字节）；不认识 → 415。
   - `avatar_id = sha256(bytes)[:16] + "." + ext`；已存在则不重写（幂等）；原子写（tmp + `os.replace`），
     不需要 0600（非敏感）。
   - 响应 `200 {"avatar_id": "...", "bytes": n}`。无鉴权——头像随 `/meta` 对已结束对局公开，本就不是秘密。
@@ -84,9 +84,10 @@ class AgentProfile(BaseModel):
 - `AgentEditor`：头像区（当前头像/占位、「上传」文件选择 `accept="image/png,image/jpeg,image/webp"`、
   「移除」）；前端先检查大小 ≤ 512 KB，超限直接提示不发请求；上传成功写入 `form.avatar`。
   JSON 导入/导出原样带 `avatar` 字段。
-- 显示位置：`SeatCircle` 圆片用 `<Avatar>` 替换角色缩写，缩写缩成右下角标（已知角色才显示，
+- 显示位置：`SeatCircle` 圆片用 `<Avatar>` 替换角色缩写，缩写缩成左下角标（未知角色仍显示 `?`，
   保持零过滤——角色来自服务端视角数据）；`SpeechFeed` 发言卡头部；`SeatAssignment` 与档案列表行首小头像。
-  头像 id 来源：对局页 `meta.agents[String(seat)]?.avatar ?? null`（真人/随机 bot 无档案 → 占位），
+  头像 id 来源：对局页调 `GET /api/v1/games/{id}/avatars`（座位 → id；直播中需本局任意 token，终局公开策略
+  同 `/replay`；来源为已开局的 `GameMeta.agents`，未开局为 `handle.agents`），直播/回放同一条路，取不到只是没图；
   档案页用 `profile.avatar`。
 
 ### 3.3 测试
