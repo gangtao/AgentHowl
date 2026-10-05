@@ -2,7 +2,7 @@
 // 保存路径接到真实的 useAgentLibrary().create（用假实现替换，不打网络）。
 
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { AgentProfile, SkillInfo, StoredAgent } from "../../api/agents";
 import { MAX_DESCRIPTION } from "../../lib/personality";
 import { useAgentLibrary } from "../../store/agents";
@@ -135,6 +135,7 @@ describe("AgentEditor", () => {
       personality: null,
       memory_id: "night-owl",
       provider: null,
+      avatar: null,
     });
   });
 
@@ -158,5 +159,35 @@ describe("AgentEditor", () => {
     fireEvent.click(screen.getByRole("button", { name: "按名字生成" }));
     const input = screen.getByLabelText("memory_id（可选）") as HTMLInputElement;
     expect(input.value).toMatch(/^agent-[0-9a-f]{6}$/);
+  });
+
+  it("头像：上传成功写入 profile.avatar；超 512 KB 不发请求并提示（issue #102）", async () => {
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ avatar_id: "3f9a1c0b7e2d4a66.png", bytes: 10 }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const { create } = renderEditor();
+    fill("名字 *", "夜枭");
+    fill("LiteLLM 模型串", "ollama/qwen2.5:7b");
+
+    const input = screen.getByLabelText(/上传头像/) as HTMLInputElement;
+    const big = new File([new Uint8Array(512 * 1024 + 1)], "big.png", { type: "image/png" });
+    fireEvent.change(input, { target: { files: [big] } });
+    expect(await screen.findByText(/不能超过 512 KB/)).toBeInTheDocument();
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    const ok = new File([new Uint8Array(10)], "a.png", { type: "image/png" });
+    fireEvent.change(input, { target: { files: [ok] } });
+    await waitFor(() => expect(screen.getByRole("img", { name: /头像|夜枭/ })).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({ avatar: "3f9a1c0b7e2d4a66.png" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "移除头像" }));
+    expect(screen.queryByRole("img")).toBeNull();
   });
 });

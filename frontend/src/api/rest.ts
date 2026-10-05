@@ -3,7 +3,7 @@
 
 import type { Event, GameMeta } from "../engine/types";
 
-const API_BASE = "/api/v1";
+export const API_BASE = "/api/v1";
 
 /** REST 错误：非 2xx 响应统一转成本类型；detail 取响应体 `detail`
  * （FastAPI 校验失败时 detail 是数组，这里拍平成字符串，参见规格 §6）。 */

@@ -3,6 +3,7 @@
 
 import type { StoredAgent } from "../../api/agents";
 import { personalitySummary, type PersonalitySpecShape } from "../../lib/personality";
+import Avatar from "../Avatar/Avatar";
 import styles from "./AgentCard.module.css";
 
 export interface AgentCardProps {
@@ -62,7 +63,10 @@ export default function AgentCard({
         }}
       >
         <div className={styles.compactHead}>
-          <span className={styles.compactName}>{p.name}</span>
+          <span className={styles.compactNameRow}>
+            <Avatar avatar={p.avatar ?? null} name={p.name ?? ""} seat={null} size={22} />
+            <span className={styles.compactName}>{p.name}</span>
+          </span>
           <span className={styles.mono}>{p.model}</span>
         </div>
         <div className={styles.tags}>
@@ -85,7 +89,10 @@ export default function AgentCard({
     <div className={`card elev-sm ${styles.card}`}>
       <div className={styles.head}>
         <div className={styles.headMain}>
-          <span className={styles.name}>{p.name}</span>
+          <div className={styles.nameRow}>
+            <Avatar avatar={p.avatar ?? null} name={p.name ?? ""} seat={null} size={32} />
+            <span className={styles.name}>{p.name}</span>
+          </div>
           <span className={styles.mono}>{p.model}</span>
           <span className={styles.sub}>
             {providerName ? `服务 ${providerName}` : "兼容模式 · 无 provider"}

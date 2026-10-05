@@ -1,0 +1,17 @@
+.img,
+.placeholder {
+  border-radius: 50%;
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+}
+.img {
+  object-fit: cover;
+  background: var(--color-surface);
+}
+.placeholder {
+  color: #fff;
+  font-weight: 600;
+  line-height: 1;
+  user-select: none;
+}
