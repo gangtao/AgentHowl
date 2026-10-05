@@ -127,3 +127,8 @@ export function getReplay(gameId: string, token?: string): Promise<Event[]> {
 export function getEvents(gameId: string, token: string, fromSeq = 0): Promise<Event[]> {
   return req<Event[]>("GET", `/games/${gameId}/events?from_seq=${fromSeq}`, { token });
 }
+
+/** 座位 → 头像 id（issue #102）：直播中需本局 token；终局公开策略同 /replay。 */
+export function getGameAvatars(gameId: string, token?: string): Promise<Record<string, string>> {
+  return req<Record<string, string>>("GET", `/games/${gameId}/avatars`, { token });
+}

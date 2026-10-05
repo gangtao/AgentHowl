@@ -64,9 +64,9 @@ describe("GamePage 回放模式（无 token）", () => {
     expect(useGameStore.getState().mode).toBe("replay");
     expect(wsCtor).not.toHaveBeenCalled();
 
-    // 两个请求都不带 Authorization（已结束对局公开回放）。
+    // 所有请求（含引导成功后补拉的 /avatars）都不带 Authorization（已结束对局公开回放）。
     for (const [url, init] of fetchMock.mock.calls as unknown as [string, RequestInit][]) {
-      expect(url).toMatch(/\/api\/v1\/games\/g_x\/(meta|replay)$/);
+      expect(url).toMatch(/\/api\/v1\/games\/g_x\/(meta|replay|avatars)$/);
       expect(init.headers).not.toHaveProperty("Authorization");
     }
   });

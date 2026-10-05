@@ -42,4 +42,21 @@ describe("SeatCircle", () => {
     expect(marked).toHaveLength(1);
     expect(marked[0]!.getAttribute("aria-label")).toContain(`${speaking}号`);
   });
+
+  it("有头像的座位渲染 img，其余占位首字；角色缩写仍按 state 显示（零过滤）", () => {
+    render(
+      <SeatCircle
+        state={finalState}
+        speaking={null}
+        votes={{}}
+        nightLines={[]}
+        avatars={{ 0: "3f9a1c0b7e2d4a66.png" }}
+      />,
+    );
+    const imgs = screen.getAllByRole("img");
+    expect(imgs).toHaveLength(1);
+    expect(imgs[0]).toHaveAttribute("src", "/api/v1/avatars/3f9a1c0b7e2d4a66.png");
+    // 现有「角色缩写」断言不变：已知角色时每个座位仍有缩写角标
+    expect(screen.queryAllByText("?")).toHaveLength(0);
+  });
 });
