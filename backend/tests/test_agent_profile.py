@@ -174,3 +174,33 @@ def test_avatar_field_pattern_and_default() -> None:
     # 不进 LLM 配置
     cfg = to_agent_config(ok, build_preset("std_9_kill_side"))
     assert not hasattr(cfg, "avatar")
+
+
+def test_voice_spec_validation() -> None:
+    """issue #103：preset 必须有白名单 speaker；design 必须有 style 且不带 speaker；
+    speed 0.5-2.0。"""
+    from pydantic import ValidationError
+
+    from app.agent.profile import VoiceSpec
+
+    assert AgentProfile(model="x").voice is None
+    ok = AgentProfile(model="x", voice=VoiceSpec(mode="preset", speaker="dylan"))
+    assert ok.voice is not None and ok.voice.speed == 1.0
+    VoiceSpec(mode="preset", speaker="eric", style="非常愤怒，语速快", speed=1.5)
+    VoiceSpec(mode="design", style="沙哑低沉的老爷爷")
+    for bad in (
+        {"mode": "preset"},  # 缺 speaker
+        {"mode": "preset", "speaker": "nobody"},
+        {"mode": "preset", "speaker": "vivian", "style": "x" * 201},
+        {"mode": "design"},  # 缺 style
+        {"mode": "design", "style": "   "},
+        {"mode": "design", "style": "ok", "speaker": "vivian"},
+        {"mode": "preset", "speaker": "vivian", "speed": 0.4},
+        {"mode": "preset", "speaker": "vivian", "speed": 2.1},
+        {"mode": "clone", "style": "x"},
+    ):
+        with pytest.raises(ValidationError):
+            VoiceSpec.model_validate(bad)
+    # 不进 LLM 配置
+    cfg = to_agent_config(ok, build_preset("std_9_kill_side"))
+    assert not hasattr(cfg, "voice")
