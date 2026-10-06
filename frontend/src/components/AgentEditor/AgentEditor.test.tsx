@@ -136,6 +136,7 @@ describe("AgentEditor", () => {
       memory_id: "night-owl",
       provider: null,
       avatar: null,
+      voice: null,
     });
   });
 
@@ -189,5 +190,27 @@ describe("AgentEditor", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "移除头像" }));
     expect(screen.queryByRole("img")).toBeNull();
+  });
+
+  it("声线：预置模式必须选 speaker；设计模式必须填描述；保存写入 profile.voice（issue #103）", () => {
+    const { create } = renderEditor();
+    fill("名字 *", "夜枭");
+    fill("LiteLLM 模型串", "ollama/qwen2.5:7b");
+
+    fireEvent.change(screen.getByLabelText(/声线模式/), { target: { value: "preset" } });
+    fireEvent.change(screen.getByLabelText(/预置声线/), { target: { value: "eric" } });
+    fireEvent.change(screen.getByLabelText(/情绪 \/ 语速指令|声线描述/), { target: { value: "急躁" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+    expect(create).toHaveBeenLastCalledWith(
+      expect.objectContaining({ voice: { mode: "preset", speaker: "eric", style: "急躁", speed: 1 } }),
+    );
+
+    fireEvent.change(screen.getByLabelText(/声线模式/), { target: { value: "design" } });
+    fireEvent.change(screen.getByLabelText(/情绪 \/ 语速指令|声线描述/), { target: { value: "" } });
+    expect(screen.getByRole("button", { name: "保存" })).toBeDisabled();
+
+    fireEvent.change(screen.getByLabelText(/声线模式/), { target: { value: "none" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+    expect(create).toHaveBeenLastCalledWith(expect.objectContaining({ voice: null }));
   });
 });
