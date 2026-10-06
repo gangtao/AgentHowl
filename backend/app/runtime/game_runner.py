@@ -10,15 +10,15 @@ import logging
 import time
 from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from pydantic import BaseModel, ConfigDict
 
-from app.agent.profile import AgentProfiles
+from app.agent.profile import AgentProfiles, profile_for
 from app.engine.actions import Action
 from app.engine.config import GameConfig
 from app.engine.engine import RosterEntry, create_game, step
-from app.engine.events import Event
+from app.engine.events import Event, EventType
 from app.engine.observation import build_observation
 from app.engine.phases import ElectionStage, Phase, expected_actors, speech_queue_pending
 from app.engine.state import GameState
@@ -26,6 +26,10 @@ from app.runtime.connection import ConnectionManager
 from app.runtime.defaults import default_action
 from app.runtime.player_port import PlayerPort, SupportsResultFeedback
 from app.store.event_store import EventStore, GameMeta, SeatName
+
+if TYPE_CHECKING:
+    # 仅类型标注用：speech_audio 不 import 本模块，这里避免循环更稳（惰性加载设计同 profile.py）。
+    from app.runtime.speech_audio import SpeechAudioSink
 
 logger = logging.getLogger(__name__)
 
@@ -125,6 +129,7 @@ class GameRunner:
         connections: ConnectionManager | None = None,
         timeouts: RunnerTimeouts | None = None,
         agents: AgentProfiles | None = None,
+        speech_audio: SpeechAudioSink | None = None,
     ) -> None:
         self._store = store
         self._config = config
@@ -136,6 +141,7 @@ class GameRunner:
         self.connections = connections
         self._timeouts = timeouts or RunnerTimeouts.from_config(config)
         self._state: GameState | None = None
+        self._speech_audio = speech_audio
 
     @property
     def state(self) -> GameState:
@@ -279,11 +285,31 @@ class GameRunner:
             # 技能装配记录（issue #60）：端口若暴露 last_skills_used，写进本次提交的首条事件 meta
             skills = tuple(getattr(self._ports[seat], "last_skills_used", ()))
             await self._commit(res.events, skills=skills)
+            await self._maybe_speak(seat, res.events)
             port = self._ports[seat]
             if isinstance(port, SupportsResultFeedback):
                 event_id = f"evt_{res.events[0].seq:05d}" if res.events else None
                 port.notify_result(None, self._state.state_version, event_id)
             return
+
+    async def _maybe_speak(self, seat: int, events: list[Event]) -> None:
+        """发言配音（issue #103）：该座位档案有 voice 且本次提交含公开发言 → 交给 sink 合成并等待。
+        sink 自身吞 TtsError；这里再兜一层任何异常，配音永远不能让对局陪葬。"""
+        if self._speech_audio is None:
+            return
+        profile = profile_for(self._agents, seat)
+        if profile is None or profile.voice is None:
+            return
+        for e in events:
+            if e.type in (EventType.PLAYER_SPOKE, EventType.LAST_WORDS):
+                text = str(e.payload.content)  # type: ignore[attr-defined]
+                try:
+                    await self._speech_audio.speak(
+                        self._game_id, e.seq, text, profile.voice, self.connections
+                    )
+                except Exception:
+                    logger.warning("seat=%d seq=%d 配音异常，跳过等待", seat, e.seq, exc_info=True)
+                return
 
     async def _apply_default(self, seat: int) -> None:
         res = step(self.state, default_action(self.state, seat))

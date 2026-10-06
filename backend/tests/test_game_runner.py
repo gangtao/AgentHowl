@@ -393,3 +393,79 @@ async def test_rejections_are_logged_and_exhaustion_warns(caplog) -> None:
     assert any(
         r.levelname == "WARNING" and "连续 3 次非法行动" in r.getMessage() for r in caplog.records
     )
+
+
+class _RecordingSink:
+    """假 sink：记下每次 speak 的 (seq, text, voice)，并真实 sleep per_call 秒模拟音频时长。"""
+
+    def __init__(self, per_call: float) -> None:
+        self.per_call = per_call
+        self.calls: list[tuple[int, str, object]] = []
+
+    async def speak(
+        self, game_id: str, seq: int, text: str, voice: object, connections: object
+    ) -> None:
+        self.calls.append((seq, text, voice))
+        await asyncio.sleep(self.per_call)
+
+
+async def test_runner_waits_for_speech_audio_only_for_voiced_seats() -> None:
+    """issue #103：有 voice 档案的座位发言后调用 sink（文本=发言正文）；其它座位不调用。"""
+    from app.agent.profile import AgentProfile, VoiceSpec
+
+    store = InMemoryEventStore()
+    cfg = build_preset("std_9_kill_side").model_copy(update={"seed": 7})
+    lobby = GameLobby(cfg, game_id="g1")
+    lobby.fill_with_bots()
+    ports: dict[int, PlayerPort] = {}
+    sink = _RecordingSink(per_call=0.0)
+    voiced = AgentProfile(model="x", voice=VoiceSpec(mode="preset", speaker="eric"))
+    silent = AgentProfile(model="x")
+    runner = GameRunner(
+        store=store,
+        config=cfg,
+        game_id="g1",
+        roster=lobby.roster(),
+        ports=ports,
+        connections=ConnectionManager(state_provider=lambda: runner.state),
+        agents={"0": voiced, "1": voiced, "2": silent},
+        speech_audio=sink,  # type: ignore[arg-type]
+    )
+    for seat in range(cfg.num_players):
+        ports[seat] = BotPlayerPort(state_provider=lambda: runner.state)
+    final = await runner.run()
+    assert final.phase == Phase.GAME_OVER
+    voice_event_types = (EventType.PLAYER_SPOKE, EventType.LAST_WORDS)
+    spoken = [e for e in store.load_events("g1") if e.type in voice_event_types]
+    voiced_seqs = {e.seq for e in spoken if e.actor_seat in (0, 1)}
+    assert {c[0] for c in sink.calls} == voiced_seqs and voiced_seqs
+    by_seq = {e.seq: e for e in spoken}
+    for seq, text, voice in sink.calls:
+        assert text == by_seq[seq].payload.content  # type: ignore[attr-defined]
+        assert voice == voiced.voice
+
+
+async def test_runner_sink_exception_does_not_kill_game() -> None:
+    from app.agent.profile import AgentProfile, VoiceSpec
+
+    class _Boom:
+        async def speak(self, *a: object, **k: object) -> None:
+            raise RuntimeError("tts exploded")
+
+    store = InMemoryEventStore()
+    cfg = build_preset("std_9_kill_side").model_copy(update={"seed": 8})
+    lobby = GameLobby(cfg, game_id="g1")
+    lobby.fill_with_bots()
+    ports: dict[int, PlayerPort] = {}
+    runner = GameRunner(
+        store=store,
+        config=cfg,
+        game_id="g1",
+        roster=lobby.roster(),
+        ports=ports,
+        agents={"*": AgentProfile(model="x", voice=VoiceSpec(mode="design", style="x"))},
+        speech_audio=_Boom(),  # type: ignore[arg-type]
+    )
+    for seat in range(cfg.num_players):
+        ports[seat] = BotPlayerPort(state_provider=lambda: runner.state)
+    assert (await runner.run()).phase == Phase.GAME_OVER
