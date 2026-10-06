@@ -48,6 +48,7 @@ backend/
 ├── tests/                 # 380+ 测试：规则/隔离/确定性/API E2E/Agent/CLI
 └── pyproject.toml
 Makefile                   # 仓库根：dev/test/build/运行命令（make help）
+tts/                        # 本地 TTS 服务（mlx-audio，issue #103；make tts）
 docs/
 ├── specs/requirements.md  # ★ 权威设计文档（PRD + 技术设计，中文）
 └── superpowers/           # 每个特性的设计 spec 与实施计划（开发记录）
@@ -211,6 +212,28 @@ make fe-check         # 或 cd frontend && npm run check —— 确认 TS reduce
 `AgentEditor` 编辑人格 / 技能 / 跨局记忆 / 模型（`ModelSelect`，可选绑定 Provider）。
 档案可上传头像（PNG/JPEG/WebP ≤ 512 KB，存 `backend/data/avatars/`，内容寻址），座位环与
 发言卡显示；无头像显示名字首字（issue #102）。
+
+**语音播报**（issue #103）：公开发言可配音播放。
+
+- **起 TTS**：本机 Apple Silicon 直接 `make tts`（详见 [`tts/README.md`](tts/README.md)），起
+  mlx-audio 在 `http://127.0.0.1:8880`（Docker 跑后端时用 `http://host.docker.internal:8880`）。
+  非 Apple Silicon 换任意 OpenAI `/v1/audio/speech` 兼容服务。
+- **后端环境变量**（`.env.example` 末尾「发言配音」块）：`AGENTHOWL_TTS_URL` 空=关闭；
+  `AGENTHOWL_TTS_KIND`（`mlx_audio` | `openai` | `generic`）；
+  `AGENTHOWL_TTS_MODEL_PRESET` / `AGENTHOWL_TTS_MODEL_DESIGN` 换模型；`AGENTHOWL_TTS_API_KEY`
+  仅 `openai` 类服务需要，永不回显。
+- **档案里配声线**：`AgentEditor` 的声线表单——**预置**（5 个 speaker：vivian / serena /
+  uncle_fu / dylan / eric；方言目前只有 `dylan`=北京话、`eric`=四川话两种）或**描述声线**
+  （自由文本，走 Qwen3-TTS VoiceDesign，一句话描述音色/语气）二选一，另配语速（0.5–2.0）。
+- **建局**：Lobby 建局勾选「语音播报」（`POST /games` 的 `voice`）；勾选但 TTS 服务探测失败
+  直接 400，不会悄悄降到无声。
+- **页面 🔊 开关**：浏览器 autoplay 策略要求先有一次点击手势，开关记在 `localStorage`。
+- **直播**：发言配音经 WS `speech_audio`（逐句，`{seq, part, url, duration}`）帧按序入队播放，
+  `speech_audio_end` 标记某句已出完；聚光牌（`SpeakerSpotlight`）播放时标「发言中 🔊」。
+- **回放**：按音频门控推进——遇到有配音的发言先暂停游标定时器，按句播完再继续；关掉 🔊 则
+  照常按倍速推进、不等待。暂停/拖动回放游标会取消正在排队/播放的配音。
+- **落盘**：音频存 `backend/data/audio/<game_id>/<seq>-<part>.wav`；删局（`DELETE /games/{id}`）
+  连带删除该局音频目录。
 
 ## 游戏逻辑要点
 

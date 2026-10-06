@@ -1,0 +1,6 @@
+[project]
+name = "agenthowl-tts"
+version = "0.1.0"
+description = "AgentHowl 本地 TTS 服务：mlx-audio（Apple Silicon）暴露 OpenAI /v1/audio/speech"
+requires-python = ">=3.11"
+dependencies = ["mlx-audio[server,tts]>=0.2"]
