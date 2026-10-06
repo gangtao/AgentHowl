@@ -529,10 +529,20 @@ def audio_part_endpoint(
     seq: int,
     part: int,
     request: Request,
+    token: str | None = Query(default=None),
     info: TokenInfo | None = Depends(optional_token),
+    tokens: TokenRegistry = Depends(get_tokens),
     games: GameRegistry = Depends(get_games),
 ) -> FileResponse:
-    """发言音频文件（issue #103）；权限同 /replay。"""
+    """发言音频文件（issue #103）；权限同 /replay，另外接受 `?token=` 查询参数（fix round 1）：
+    浏览器 `<audio>` 元素发不出 Authorization 头，直播期间（未终局）这个端点走
+    `_finished_or_handle` 的「无 token 必须 401」分支——没有这条 query token 后路，
+    直播配音在匿名场景下（含公开历史关闭时的正常对局内观众）一句都放不出来。
+    等价于 WS 端点早就有的 `?token=` 先例（`wsUrl()`）。"""
+    if info is None and token is not None:
+        info = tokens.resolve(token)
+        if info is None:
+            raise HTTPException(status_code=401, detail="token 无效")
     _finished_or_handle(
         games,
         game_id,

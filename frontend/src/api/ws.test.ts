@@ -162,21 +162,27 @@ describe("useLiveEvents", () => {
     expect(FakeWebSocket.instances).toHaveLength(2); // 全程只重连过一次
   });
 
-  it("speech_audio 帧 → useVoice.enqueue；speech_audio_end 被忽略", () => {
+  it("speech_audio 帧 → useVoice.enqueue，url 带本连接的 token；speech_audio_end 被忽略", () => {
     renderHook(() => useLiveEvents({ gameId: "g1", token: "tok", enabled: true }));
     const socket = FakeWebSocket.instances[0]!;
 
     socket.emit({ type: "speech_audio", seq: 3, part: 0, url: "/a/3/0", duration: 1.5 });
 
     expect(useVoice.getState().available).toBe(true);
-    expect(useVoice.getState().queue).toEqual([{ seq: 3, part: 0, url: "/a/3/0", duration: 1.5 }]);
+    // fix round 1（issue #103）：<audio> 发不出 Authorization 头，直播期间该端点匿名必 401，
+    // enqueue 的 url 必须带上 ?token=，否则直播配音一句都放不出来。
+    expect(useVoice.getState().queue).toEqual([
+      { seq: 3, part: 0, url: "/a/3/0?token=tok", duration: 1.5 },
+    ]);
     // game store 不受影响：speech_audio 不是游戏事件，不进 appendEvents
     expect(useGameStore.getState().events).toHaveLength(0);
 
     socket.emit({ type: "speech_audio_end", seq: 3, parts: 1 });
 
     // 忽略：队列/available 均不因 speech_audio_end 改变
-    expect(useVoice.getState().queue).toEqual([{ seq: 3, part: 0, url: "/a/3/0", duration: 1.5 }]);
+    expect(useVoice.getState().queue).toEqual([
+      { seq: 3, part: 0, url: "/a/3/0?token=tok", duration: 1.5 },
+    ]);
   });
 
   it("收到 game_over 后 close 不重连", () => {

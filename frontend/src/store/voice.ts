@@ -128,9 +128,7 @@ export const useVoice = create<VoiceState>((set, get) => ({
     for (const part of parts) {
       if (gen !== generation) return;
       set({ playing: { seq, part: part.part } });
-      const base = audioUrl(gameId, seq, part.part);
-      const url = token ? `${base}?token=${encodeURIComponent(token)}` : base;
-      await getPlayer().play(url);
+      await getPlayer().play(audioUrl(gameId, seq, part.part, token));
       if (gen !== generation) return;
     }
     set({ playing: null });

@@ -139,7 +139,8 @@ describe("rest.ts", () => {
     expect(init1.headers).not.toHaveProperty("Authorization");
   });
 
-  it("audioUrl 拼出音频分段地址（issue #103）", () => {
+  it("audioUrl 拼出音频分段地址；有 token 时追加 ?token=（issue #103 fix round 1）", () => {
     expect(audioUrl("g_x", 57, 0)).toBe("/api/v1/games/g_x/audio/57/0");
+    expect(audioUrl("g_x", 57, 0, "tok-123")).toBe("/api/v1/games/g_x/audio/57/0?token=tok-123");
   });
 });

@@ -160,6 +160,30 @@ def test_voiced_game_streams_frames_and_stores_audio(client: TestClient, tmp_pat
     assert not (tmp_path / "audio" / gid).exists()
 
 
+def test_audio_part_endpoint_accepts_query_token_during_live_game(client: TestClient) -> None:
+    """fix round 1（issue #103）：`<audio>` 元素发不出 Authorization 头，直播期间（未终局）
+    这个端点原先只认 Bearer，匿名必 401——配音一句都放不出来。现在额外接受 `?token=`，
+    等价于 WS 端点早有的先例（`/api/v1/ws?token=`）。"""
+    created = _voiced_game(client)
+    gid = created["game_id"]
+    client.post(f"/api/v1/games/{gid}/start", json={}, headers=_auth(created["host_token"]))
+    url: str | None = None
+    with client.websocket_connect(f"/api/v1/ws?token={created['spectator_token']}") as ws:
+        while url is None:
+            f = ws.receive_json()
+            if f["type"] == "speech_audio":
+                url = f["url"]
+    assert url is not None and url.startswith(f"/api/v1/games/{gid}/audio/")
+
+    # 匿名：未终局，_finished_or_handle 的无 token 分支必 401
+    assert client.get(url).status_code == 401
+    # ?token=<spectator_token>：按 query token 解析出合法 info，放行
+    r = client.get(url, params={"token": created["spectator_token"]})
+    assert r.status_code == 200 and r.headers["content-type"].startswith("audio/wav")
+    # ?token=garbage：解析不出 info，401（而不是被悄悄当成匿名）
+    assert client.get(url, params={"token": "garbage"}).status_code == 401
+
+
 def test_unvoiced_game_has_no_audio(client: TestClient) -> None:
     created = _voiced_game(client, voice=False)
     _finish(client, created)

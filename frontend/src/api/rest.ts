@@ -164,7 +164,11 @@ export function getAudioManifest(
   return req<Record<string, AudioPartInfo[]>>("GET", `/games/${gameId}/audio`, { token });
 }
 
-/** 音频分段文件地址（不经 req：浏览器 <audio>/<source> 直接拉取，鉴权同 query token）。 */
-export function audioUrl(gameId: string, seq: number, part: number): string {
-  return `${API_BASE}/games/${gameId}/audio/${seq}/${part}`;
+/** 音频分段文件地址（不经 req：浏览器 <audio>/<source> 直接拉取，发不出 Authorization 头）。
+ * `token` 非空时拼成 `?token=`——直播期间（未终局）该端点走 /replay 同一道门槛，匿名必 401，
+ * 这条 query token 是 fix round 1 加给后端 `audio_part_endpoint` 的旁路，等价于 WS 端点早有的
+ * `?token=` 先例（`api/ws.ts` 的 `wsUrl()`）。 */
+export function audioUrl(gameId: string, seq: number, part: number, token?: string): string {
+  const base = `${API_BASE}/games/${gameId}/audio/${seq}/${part}`;
+  return token ? `${base}?token=${encodeURIComponent(token)}` : base;
 }

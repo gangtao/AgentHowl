@@ -3,8 +3,9 @@
 // / {type:"phase_change", to, round} / {type:"game_over", winner} / {type:"error", detail}
 // / {type:"action_result", ...} / {type:"your_turn", ...}（后两者本 hook 不消费，观战/上帝视角只读）
 // / {type:"speech_audio", seq, part, url, duration}（配音分段，issue #103：转给 useVoice.enqueue，
-// 不进 appendEvents——零信息过滤原则下也不代表任何游戏状态变化）/ {type:"speech_audio_end", seq, parts}
-// （本 hook 不消费，仅服务端用来标记某句配音已出完）。
+// 不进 appendEvents——零信息过滤原则下也不代表任何游戏状态变化；url 会拼上本连接的 ?token=，
+// 因为直播期间 /audio/{seq}/{part} 匿名必 401，而 <audio> 元素发不出 Authorization 头，fix round 1）
+// / {type:"speech_audio_end", seq, parts}（本 hook 不消费，仅服务端用来标记某句配音已出完）。
 // 关闭码：4401 token 无效、4403 无权、4404 对局不存在、4409 对局尚未开始——均为终局，不重连；
 // 其余意外关闭（如 1006）且未收到 game_over → 指数退避重连，从 lastSeq+1 补发。
 
@@ -145,10 +146,13 @@ export function useLiveEvents({ gameId, token, enabled }: UseLiveEventsArgs): vo
         } else if (frame.type === "error" && frame.detail) {
           useGameStore.getState().setError(frame.detail);
         } else if (frame.type === "speech_audio" && frame.url !== undefined) {
+          // 直播期间该文件端点匿名必 401（fix round 1）：<audio> 发不出 Authorization 头，
+          // 这里把本连接的 token 原样拼到 URL 查询参数上，后端 audio_part_endpoint 认 ?token=。
+          const url = token ? `${frame.url}?token=${encodeURIComponent(token)}` : frame.url;
           useVoice.getState().enqueue({
             seq: frame.seq as number,
             part: frame.part as number,
-            url: frame.url,
+            url,
             duration: frame.duration ?? 0,
           });
         }
