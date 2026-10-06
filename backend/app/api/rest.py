@@ -25,6 +25,7 @@ from app.engine.config import build_preset
 from app.engine.events import Event, EventType, Visibility
 from app.engine.observation import build_observation, visible_events
 from app.engine.phases import Phase
+from app.runtime.agent_library import AgentLibraryStore
 from app.runtime.history import GameSummary, is_finished, list_history
 from app.runtime.player_port import NotYourTurnError, TurnPrompt
 from app.runtime.registry import GameHandle, GameRegistry
@@ -457,11 +458,28 @@ def avatars_endpoint(
             agents, num_players = handle.agents, handle.config.num_players  # 刚开局，meta 尚未落盘
         else:
             agents, num_players = meta.agents, meta.config.num_players
+    # 头像晚于对局加到档案上的（老对局 meta 里 avatar=None）：按档案名在当前档案库里补一次。
+    # 显示的是"该角色现在的头像"而非历史快照——头像是公开资源引用，不涉及任何对局信息。
+    library: AgentLibraryStore = request.app.state.agent_library
+    by_name: dict[str, str] | None = None
     out: dict[str, str] = {}
     for seat in range(num_players):
         p = profile_for(agents, seat)
-        if p is not None and p.avatar is not None:
+        if p is None:
+            continue
+        if p.avatar is not None:
             out[str(seat)] = p.avatar
+            continue
+        if p.name is None:
+            continue
+        if by_name is None:
+            by_name = {
+                s.profile.name: s.profile.avatar
+                for s in library.list()
+                if s.profile.name is not None and s.profile.avatar is not None
+            }
+        if p.name in by_name:
+            out[str(seat)] = by_name[p.name]
     return out
 
 

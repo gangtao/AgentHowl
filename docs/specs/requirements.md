@@ -603,7 +603,7 @@ pydantic，零 IO）：`kind`（`ollama`/`openai`/`anthropic`/`openai_compatible
 | DELETE | `/api/v1/games/{game_id}` | 删除历史对局（issue #100）：删事件文件、摘 registry handle、作废该局 token；进行中/未开局 409；仅在 `AGENTHOWL_PUBLIC_HISTORY=1` 下可用（关则 404），不触碰 Agent 跨局记忆 |
 | PUT | `/api/v1/avatars` | 上传头像（raw body，PNG/JPEG/WebP ≤512 KB，魔数校验）→ `{avatar_id}`，内容寻址幂等（issue #102） |
 | GET | `/api/v1/avatars/{avatar_id}` | 读取头像，immutable 缓存；不鉴权 |
-| GET | `/api/v1/games/{game_id}/avatars` | 座位 → 头像 id；直播中需本局 token，终局公开策略同 `/replay`（issue #102） |
+| GET | `/api/v1/games/{game_id}/avatars` | 座位 → 头像 id；直播中需本局 token，终局公开策略同 `/replay`（issue #102）；对局快照里无头像的座位按档案名在当前档案库回退取（老对局也能显示事后加的头像） |
 
 **Agent 档案库端点**（issue #26；持久化于 `data/agents/`；供 Lobby 建局选档案与 `AgentEditor` 用）：
 

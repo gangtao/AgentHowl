@@ -33,6 +33,7 @@ import PhaseBar from "../components/PhaseBar/PhaseBar";
 import PlayerStatusPanel from "../components/PlayerStatusPanel/PlayerStatusPanel";
 import ReplayBar from "../components/ReplayBar/ReplayBar";
 import SeatCircle from "../components/SeatCircle/SeatCircle";
+import SpeakerSpotlight from "../components/SpeakerSpotlight/SpeakerSpotlight";
 import SpeechFeed from "../components/SpeechFeed/SpeechFeed";
 import VotePanel from "../components/VotePanel/VotePanel";
 import styles from "./GamePage.module.css";
@@ -363,6 +364,8 @@ export default function GamePage({ gameId, token, viewer, replay }: GamePageProp
           <span className={styles.bannerSub}>回放显示到 seq {atSeq}</span>
         </div>
       )}
+
+      <SpeakerSpotlight state={view} seat={speaking} avatars={avatars} />
 
       <div className={styles.body}>
         <div className={styles.left}>

@@ -1,0 +1,72 @@
+/* 发言者聚光牌：视口左下角固定，不挡座位环（座位环在左栏上部）。 */
+
+.root {
+  position: fixed;
+  left: var(--space-5, 20px);
+  bottom: var(--space-5, 20px);
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px 10px 10px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-surface) 92%, transparent);
+  border: 1px solid var(--color-divider);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.28);
+  backdrop-filter: blur(6px);
+  animation: pop 180ms ease-out;
+  pointer-events: none;
+}
+
+.ring {
+  border-radius: 50%;
+  border: 3px solid;
+  padding: 2px;
+  display: grid;
+  place-items: center;
+  box-shadow:
+    0 0 0 2px var(--color-accent),
+    0 0 18px color-mix(in srgb, var(--color-accent) 55%, transparent);
+}
+
+.text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  line-height: 1.2;
+}
+
+.seat {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.name {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.tag {
+  font-size: 11px;
+  color: var(--color-accent);
+}
+
+@keyframes pop {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (max-width: 900px) {
+  .root {
+    left: 12px;
+    bottom: 12px;
+    padding: 8px 12px 8px 8px;
+  }
+}

@@ -87,7 +87,7 @@ class AgentProfile(BaseModel):
 - 显示位置：`SeatCircle` 圆片用 `<Avatar>` 替换角色缩写，缩写缩成左下角标（未知角色仍显示 `?`，
   保持零过滤——角色来自服务端视角数据）；`SpeechFeed` 发言卡头部；`SeatAssignment` 与档案列表行首小头像。
   头像 id 来源：对局页调 `GET /api/v1/games/{id}/avatars`（座位 → id；直播中需本局任意 token，终局公开策略
-  同 `/replay`；来源为已开局的 `GameMeta.agents`，未开局为 `handle.agents`），直播/回放同一条路，取不到只是没图；
+  同 `/replay`；来源为已开局的 `GameMeta.agents`，未开局为 `handle.agents`；快照里无头像的座位按档案名在当前档案库回退），直播/回放同一条路，取不到只是没图；发言时视口左下角有「发言者聚光牌」放大显示头像与名字；
   档案页用 `profile.avatar`。
 
 ### 3.3 测试

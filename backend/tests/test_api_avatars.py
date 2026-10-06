@@ -119,3 +119,27 @@ def test_game_avatars_map_live_and_finished(client: TestClient) -> None:
     assert handle.task is not None and handle.task.done()
     assert client.get(f"/api/v1/games/{gid}/avatars").json() == {"0": aid}  # 终局匿名
     assert client.get("/api/v1/games/g_nope/avatars").status_code == 404
+
+
+def test_game_avatars_fall_back_to_library_by_name(client: TestClient) -> None:
+    """对局 meta 里档案没头像（头像是事后加的）→ 按档案名在当前档案库补；库里也没有则不出现。"""
+    aid = _put(client, PNG).json()["avatar_id"]
+    r = client.post("/api/v1/agents", json={"name": "夜枭", "model": "x", "avatar": aid})
+    assert r.status_code == 201, r.text
+    client.post("/api/v1/agents", json={"name": "无图", "model": "x"})
+    body = client.post(
+        "/api/v1/games",
+        json={
+            "preset": "std_9_kill_side",
+            "config_override": {"seed": 2},
+            # 建局快照里都没有 avatar：0 号同名可补，1 号库里无图，2 号库里没这个名字
+            "agents": {
+                "0": {"model": "x", "name": "夜枭"},
+                "1": {"model": "x", "name": "无图"},
+                "2": {"model": "x", "name": "路人"},
+            },
+        },
+    ).json()
+    gid = body["game_id"]
+    spect = {"Authorization": f"Bearer {body['spectator_token']}"}
+    assert client.get(f"/api/v1/games/{gid}/avatars", headers=spect).json() == {"0": aid}
