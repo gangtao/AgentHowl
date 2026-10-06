@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { renderHook, cleanup } from "@testing-library/react";
 import { useGameStore } from "../store/game";
+import { useVoice } from "../store/voice";
 import { CLOSE_TEXT, useLiveEvents } from "./ws";
 import type { Event, GameMeta } from "../engine/types";
 
@@ -53,6 +54,7 @@ beforeEach(() => {
   FakeWebSocket.instances = [];
   useGameStore.getState().reset();
   useGameStore.getState().load(meta, { gameId: "g1", token: "tok", viewer: "SPECTATOR" });
+  useVoice.setState({ enabled: false, available: false, playing: null, queue: [] });
   vi.useFakeTimers();
   vi.stubGlobal("WebSocket", FakeWebSocket);
   vi.stubGlobal("requestAnimationFrame", (cb: FrameRequestCallback) =>
@@ -158,6 +160,23 @@ describe("useLiveEvents", () => {
     expect(useGameStore.getState().gap).toBeNull();
     expect(useGameStore.getState().events).toHaveLength(160); // 150 + 10，无重复缺口
     expect(FakeWebSocket.instances).toHaveLength(2); // 全程只重连过一次
+  });
+
+  it("speech_audio 帧 → useVoice.enqueue；speech_audio_end 被忽略", () => {
+    renderHook(() => useLiveEvents({ gameId: "g1", token: "tok", enabled: true }));
+    const socket = FakeWebSocket.instances[0]!;
+
+    socket.emit({ type: "speech_audio", seq: 3, part: 0, url: "/a/3/0", duration: 1.5 });
+
+    expect(useVoice.getState().available).toBe(true);
+    expect(useVoice.getState().queue).toEqual([{ seq: 3, part: 0, url: "/a/3/0", duration: 1.5 }]);
+    // game store 不受影响：speech_audio 不是游戏事件，不进 appendEvents
+    expect(useGameStore.getState().events).toHaveLength(0);
+
+    socket.emit({ type: "speech_audio_end", seq: 3, parts: 1 });
+
+    // 忽略：队列/available 均不因 speech_audio_end 改变
+    expect(useVoice.getState().queue).toEqual([{ seq: 3, part: 0, url: "/a/3/0", duration: 1.5 }]);
   });
 
   it("收到 game_over 后 close 不重连", () => {
