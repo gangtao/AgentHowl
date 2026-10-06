@@ -152,6 +152,8 @@ def test_voiced_game_streams_frames_and_stores_audio(client: TestClient, tmp_pat
     r = client.get(f"/api/v1/games/{gid}/audio/{seq}/{part}")
     assert r.status_code == 200 and r.headers["content-type"].startswith("audio/wav")
     assert r.content[:4] == b"RIFF"
+    # token 鉴权资源：缓存头须是 private（不可被共享缓存匿名重放），否则就是 avatars 那种公开资源了
+    assert r.headers["cache-control"] == "private, max-age=31536000, immutable"
     assert client.get(f"/api/v1/games/{gid}/audio/{seq}/99").status_code == 404
     assert client.get(f"/api/v1/games/{gid}/audio/abc/0").status_code == 422
     assert (tmp_path / "audio" / gid).is_dir()

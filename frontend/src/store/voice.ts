@@ -40,8 +40,10 @@ interface VoiceState {
   setEnabled(v: boolean): void;
   markAvailable(): void;
   enqueue(item: AudioQueueItem): void;
-  /** 停播 + 清队列（不改变 enabled，也不改变 available）。 */
-  clear(): void;
+  /** 停播 + 清队列（不改变 enabled）。resetAvailable=true 时也把 available 清回
+   * false——GamePage 引导 effect 卸载/重跑时用，避免上一局配过音的 🔊 开关残留到
+   * 还没探测出清单的下一局（fix round 3 的 Minor 项）。默认不改 available。 */
+  clear(resetAvailable?: boolean): void;
   /** 回放用：顺序播放某个 seq 的全部分段；enabled=false 时立即 resolve。 */
   playSeq(gameId: string, seq: number, parts: readonly AudioPartInfo[], token?: string): Promise<void>;
 }
@@ -116,10 +118,10 @@ export const useVoice = create<VoiceState>((set, get) => ({
     drain(get, set);
   },
 
-  clear() {
+  clear(resetAvailable) {
     generation += 1;
     player?.stop();
-    set({ queue: [], playing: null });
+    set({ queue: [], playing: null, ...(resetAvailable ? { available: false } : {}) });
   },
 
   async playSeq(gameId, seq, parts, token) {

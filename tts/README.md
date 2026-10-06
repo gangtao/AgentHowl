@@ -51,7 +51,9 @@ Qwen3-TTS 变体（如非 6-bit 量化版本，更准但更慢更占内存）。
 
 Linux / NVIDIA 用户用不了 mlx-audio，可换任何暴露 OpenAI `/v1/audio/speech` 的服务（如
 vLLM-Omni，或其它 OpenAI-speech 兼容网关），把 `AGENTHOWL_TTS_KIND` 设成 `generic`
-（声线预置/描述仍走同一套 `voice`/`instruct` 字段，兼容性以目标服务实现为准）：
+（`generic` 只发 `model`/`input`/`voice`（预置 speaker，缺省 `"alloy"`）/`speed`/
+`response_format`，不转发 `instruct`/`instructions` 之类的风格字段——声线描述（`style`）
+会被直接丢弃；要让风格提示生效，用 `mlx_audio` 或 `openai` kind）：
 
 ```bash
 AGENTHOWL_TTS_URL=http://your-host:port

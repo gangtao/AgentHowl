@@ -66,6 +66,14 @@ describe("useVoice", () => {
     await done;
   });
 
+  it("clear() 默认不改 available；clear(true) 把 available 清回 false（fix round 3）", () => {
+    useVoice.setState({ available: true });
+    useVoice.getState().clear();
+    expect(useVoice.getState().available).toBe(true);
+    useVoice.getState().clear(true);
+    expect(useVoice.getState().available).toBe(false);
+  });
+
   it("playSeq 自取消（fix round 2）：新 seq 打断仍在播的旧 seq，不互相串台", async () => {
     const p = fakePlayer();
     useVoice.getState().setPlayer(p);

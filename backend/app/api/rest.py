@@ -561,7 +561,7 @@ def audio_part_endpoint(
     return FileResponse(
         path,
         media_type="audio/wav",
-        headers={"Cache-Control": "public, max-age=31536000, immutable"},
+        headers={"Cache-Control": "private, max-age=31536000, immutable"},
     )
 
 

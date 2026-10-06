@@ -182,6 +182,9 @@ export default function GamePage({ gameId, token, viewer, replay }: GamePageProp
         useGameStore.getState().reset();
         setReady(false);
         setManifest({});
+        // 直播中途离页不会自己停播（只有回放门控的卸载才调 clear()）；这里顺带把
+        // available 也清掉，避免 🔊 开关残留到下一局还没判定出清单的空窗（fix round 3）。
+        useVoice.getState().clear(true);
       };
     }
 
@@ -303,6 +306,8 @@ export default function GamePage({ gameId, token, viewer, replay }: GamePageProp
       useGameStore.getState().reset();
       setReady(false);
       setManifest({});
+      // 同上：直播卸载也要停播 + 清 available（fix round 3）。
+      useVoice.getState().clear(true);
     };
   }, [gameId, token, viewer, replay]);
 
