@@ -2,7 +2,11 @@
 推 WS 帧 → 停留。
 
 帧是**非游戏事件**：不进事件日志、不进 reducer；只承载公开发言的音频引用。
-停留时长 = 从第一句推送起 Σduration + AUDIO_TAIL_SEC（生成快于播放，等待由音频长度主导）。
+停留时长 = 最后一句**预计播完的时刻** + AUDIO_TAIL_SEC：每推一句，播放起点取
+「当前时刻」与「前一句预计播完的时刻」的较晚者（一句不能在推送前开始播、也不能跳过
+排队中的前一句）+= 本句 duration——而不是简单的「首句推送时刻 + Σduration」。
+后者在 TTS 慢于实时（单句合成耗时 > 其自身播放时长）时会把等待算短，导致最后一句还没
+播完就被判定「该往下走」，提前截断播放。
 """
 
 from __future__ import annotations
@@ -49,17 +53,17 @@ class SpeechAudioSink:
     ) -> None:
         """失败不抛：WARNING 后对已推句子照常等待，对局继续。"""
         _check_game_id(game_id)
-        first_ts: float | None = None
-        total = 0.0
+        expected_finish: float | None = None  # 最后一句预计播完的时刻
         parts = 0
         try:
             async for part in self._tts.synthesize_sentences(text, voice):
                 path = self._dir / game_id / f"{seq}-{part.index}.wav"
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_bytes(part.wav)
-                if first_ts is None:
-                    first_ts = time.monotonic()
-                total += part.duration_sec
+                now = time.monotonic()
+                # 本句不可能在推送前开始播，也不会抢在前一句播完前开始——取两者较晚者为起点
+                expected_finish = max(expected_finish if expected_finish is not None else now, now)
+                expected_finish += part.duration_sec
                 parts += 1
                 if connections is not None:
                     await connections.broadcast_frame(
@@ -77,8 +81,8 @@ class SpeechAudioSink:
             await connections.broadcast_frame(
                 {"type": "speech_audio_end", "seq": seq, "parts": parts}
             )
-        if first_ts is not None:
-            await asyncio.sleep(max(0.0, first_ts + total + AUDIO_TAIL_SEC - time.monotonic()))
+        if expected_finish is not None:
+            await asyncio.sleep(max(0.0, expected_finish + AUDIO_TAIL_SEC - time.monotonic()))
 
     # ---------- 读取 / 清理 ----------
 

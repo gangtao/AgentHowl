@@ -1,5 +1,6 @@
 """SpeechAudioSink（issue #103）：逐句落盘 + 推帧 + 停留时长；失败不炸；清单/删除。"""
 
+import asyncio
 import io
 import time
 import wave
@@ -46,6 +47,22 @@ class FakeTts:
         return TtsStatus(enabled=True, ok=True, url="fake")
 
 
+class SlowTts:
+    """合成本身比播放慢：每句先 sleep delay 秒再吐出一个 duration 更短的 part。"""
+
+    def __init__(self, delay: float, duration: float) -> None:
+        self.delay = delay
+        self.duration = duration
+
+    async def synthesize_sentences(self, text: str, voice: VoiceSpec) -> AsyncIterator[AudioPart]:
+        for i in range(2):
+            await asyncio.sleep(self.delay)
+            yield AudioPart(index=i, wav=_wav(self.duration), duration_sec=self.duration)
+
+    async def probe(self) -> TtsStatus:
+        return TtsStatus(enabled=True, ok=True, url="fake")
+
+
 def _state() -> GameState:
     return create_game(build_preset("std_9_kill_side").model_copy(update={"seed": 1}), "g1").state
 
@@ -82,6 +99,20 @@ async def test_speak_writes_parts_pushes_frames_and_waits(tmp_path: Path) -> Non
     assert list(m) == ["57"] and [p["part"] for p in m["57"]] == [0, 1]
     assert sink.path_for("g1", 57, 1) is not None and sink.path_for("g1", 57, 9) is None
     assert sink.path_for("g1", 57, 0).read_bytes()[:4] == b"RIFF"  # type: ignore[union-attr]
+
+
+@pytest.mark.asyncio
+async def test_speak_waits_past_last_part_when_tts_slower_than_realtime(tmp_path: Path) -> None:
+    """issue #103 review：TTS 合成比播放慢时，等待须按「最后一句预计播完时刻」算，
+    不能按「首句推送时刻 + Σduration」算（否则会在最后一句播完前提前截断）。"""
+    sink = SpeechAudioSink(tmp_path / "audio", SlowTts(delay=0.2, duration=0.05))
+    t0 = time.monotonic()
+    await sink.speak("g1", 9, "无所谓什么内容反正会被分成两句。", VOICE, None)
+    elapsed = time.monotonic() - t0
+    # 第二句约在 0.4s 推送，播 0.05s 到 0.45s，再加尾巴
+    assert elapsed >= 0.2 + 0.2 + 0.05 + AUDIO_TAIL_SEC - 0.05
+    # 旧公式（首句推送时刻 0.2 + Σduration 0.1 + 尾巴 0.3 ≈ 0.6）必须被打破
+    assert elapsed > 0.2 + 0.1 + AUDIO_TAIL_SEC
 
 
 @pytest.mark.asyncio
