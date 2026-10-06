@@ -66,6 +66,47 @@ describe("useVoice", () => {
     await done;
   });
 
+  it("playSeq 自取消（fix round 2）：新 seq 打断仍在播的旧 seq，不互相串台", async () => {
+    const p = fakePlayer();
+    useVoice.getState().setPlayer(p);
+    useVoice.getState().setEnabled(true);
+
+    // A 开始播 part0，还挂着没播完
+    const doneA = useVoice
+      .getState()
+      .playSeq("g", 1, [{ part: 0, duration: 1 }, { part: 1, duration: 1 }], undefined);
+    expect(p.calls).toEqual(["/api/v1/games/g/audio/1/0"]);
+    expect(useVoice.getState().playing).toEqual({ seq: 1, part: 0 });
+
+    // B 在 A 播完之前开始：A 挂起的 play() promise 被 B 的 clear()→player.stop() 结清，
+    // 但 A 的 generation 已经不是最新，续行后直接退出——不会再播 A 的 part1。
+    const doneB = useVoice
+      .getState()
+      .playSeq("g", 2, [{ part: 0, duration: 1 }, { part: 1, duration: 1 }], undefined);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(p.calls).toEqual(["/api/v1/games/g/audio/1/0", "/api/v1/games/g/audio/2/0"]);
+    expect(useVoice.getState().playing).toEqual({ seq: 2, part: 0 });
+
+    p.finishOne();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(p.calls[2]).toBe("/api/v1/games/g/audio/2/1");
+    p.finishOne();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(useVoice.getState().playing).toBeNull();
+    // A 从未播出过 part1：全程只有 A 的 part0 + B 的两个 part。
+    expect(p.calls).toEqual([
+      "/api/v1/games/g/audio/1/0",
+      "/api/v1/games/g/audio/2/0",
+      "/api/v1/games/g/audio/2/1",
+    ]);
+    await doneA;
+    await doneB;
+  });
+
   it("setEnabled 写 localStorage", () => {
     useVoice.getState().setEnabled(true);
     expect(localStorage.getItem("agenthowl.voice")).toBe("1");

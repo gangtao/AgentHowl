@@ -124,6 +124,12 @@ export const useVoice = create<VoiceState>((set, get) => ({
 
   async playSeq(gameId, seq, parts, token) {
     if (!get().enabled) return;
+    // 自取消（fix round 2）：新的一组 part 总是取代旧的——先打断任何仍在进行的
+    // playSeq/drain 循环（含它们正挂在同一个 <audio> 元素上等待的 player.play() promise），
+    // 否则两条协程会共享同一个播放器互相 settle() 对方的挂起 promise，
+    // 把 playing/播放顺序搞乱（GamePage 在游标拖动/翻页时会对不同 seq 连续调用 playSeq）。
+    // clear() 已经做了「generation += 1 + player.stop() + 清 queue/playing」，直接复用。
+    get().clear();
     const gen = generation;
     for (const part of parts) {
       if (gen !== generation) return;
