@@ -209,6 +209,8 @@ make fe-check         # 或 cd frontend && npm run check —— 确认 TS reduce
 **Agent 档案库**：`/api/v1/agents` CRUD（持久化于 `backend/data/agents/`）+ `/skills`（内置/
 外部技能包清单）+ `/presets`（四套标准板子摘要），供 Lobby 三步建局挑选/复用档案，及
 `AgentEditor` 编辑人格 / 技能 / 跨局记忆 / 模型（`ModelSelect`，可选绑定 Provider）。
+档案可上传头像（PNG/JPEG/WebP ≤ 512 KB，存 `backend/data/avatars/`，内容寻址），座位环与
+发言卡显示；无头像显示名字首字（issue #102）。
 
 ## 游戏逻辑要点
 

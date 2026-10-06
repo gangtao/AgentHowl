@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ApiError, createGame, getReplay } from "./rest";
+import { ApiError, createGame, getGameAvatars, getReplay } from "./rest";
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -82,5 +82,24 @@ describe("rest.ts", () => {
     const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toBe("/api/v1/games/g1/replay");
     expect(init.headers).not.toHaveProperty("Authorization");
+  });
+
+  it("getGameAvatars：有 token 带 Authorization，无 token 不带", async () => {
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ "0": "a.png" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    expect(await getGameAvatars("g_x", "tok")).toEqual({ "0": "a.png" });
+    expect((fetchMock.mock.calls[0] as unknown as [string, RequestInit])[1].headers).toMatchObject(
+      { Authorization: "Bearer tok" },
+    );
+    await getGameAvatars("g_x");
+    expect(
+      (fetchMock.mock.calls[1] as unknown as [string, RequestInit])[1].headers,
+    ).not.toHaveProperty("Authorization");
   });
 });

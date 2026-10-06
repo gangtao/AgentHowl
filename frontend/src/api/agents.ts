@@ -18,6 +18,7 @@ export interface AgentProfile {
   personality?: PersonalitySpec | null;
   memory_id?: string | null;
   provider?: string | null;
+  avatar?: string | null;
 }
 
 export interface StoredAgent {

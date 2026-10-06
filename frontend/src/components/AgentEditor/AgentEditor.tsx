@@ -4,9 +4,11 @@
 // 本组件只产出 AgentProfile 形状的 body（extra=forbid），由调用方决定 POST 还是 PUT。
 // 唯一性只做即时提示，判决权在后端（409）。
 
-import { useId, useMemo, useState } from "react";
+import { useId, useMemo, useState, type ChangeEvent } from "react";
 import type { AgentProfile, SkillInfo, StoredAgent } from "../../api/agents";
+import { AVATAR_ACCEPT, MAX_AVATAR_BYTES, uploadAvatar } from "../../api/avatars";
 import type { ProviderPublic } from "../../api/providers";
+import { ApiError } from "../../api/rest";
 import { isValidMemoryId, suggestMemoryId } from "../../lib/memoryId";
 import {
   MAX_DESCRIPTION,
@@ -16,6 +18,7 @@ import {
   toPersonalitySpec,
   type PersonalityForm,
 } from "../../lib/personality";
+import Avatar from "../Avatar/Avatar";
 import Drawer from "../Drawer/Drawer";
 import ModelSelect, { type ModelSelectValue } from "../ModelSelect/ModelSelect";
 import PersonalityEditor from "../PersonalityEditor/PersonalityEditor";
@@ -37,6 +40,7 @@ export interface AgentEditorProps {
 
 interface FormState {
   name: string;
+  avatar: string | null;
   models: ModelSelectValue;
   temperature: number;
   thinking: boolean;
@@ -51,6 +55,7 @@ function initialForm(stored: StoredAgent | null, providers: ProviderPublic[]): F
   const fallback = stored === null ? (providers[0] ?? null) : null;
   return {
     name: p?.name ?? "",
+    avatar: p?.avatar ?? null,
     models: {
       provider: p?.provider ?? fallback?.provider_id ?? null,
       model: p?.model ?? fallback?.default_model ?? "",
@@ -77,6 +82,24 @@ export default function AgentEditor({
 }: AgentEditorProps): JSX.Element {
   const uid = useId();
   const [form, setForm] = useState<FormState>(() => initialForm(stored, providers));
+  const [avatarNotice, setAvatarNotice] = useState<string | null>(null);
+
+  async function onAvatarFile(e: ChangeEvent<HTMLInputElement>): Promise<void> {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // 同一文件可重选
+    if (!file) return;
+    if (file.size > MAX_AVATAR_BYTES) {
+      setAvatarNotice(`头像不能超过 ${MAX_AVATAR_BYTES / 1024} KB`);
+      return;
+    }
+    setAvatarNotice(null);
+    try {
+      const up = await uploadAvatar(file);
+      setForm((f) => ({ ...f, avatar: up.avatar_id }));
+    } catch (err) {
+      setAvatarNotice(err instanceof ApiError ? err.detail : String(err));
+    }
+  }
 
   const nameTrimmed = form.name.trim();
   const nameTaken = others.some((a) => a.profile.name === nameTrimmed && nameTrimmed !== "");
@@ -120,6 +143,7 @@ export default function AgentEditor({
       personality: personalitySpec,
       memory_id: form.memoryId || null,
       provider: form.models.provider,
+      avatar: form.avatar,
     };
     onSave(profile);
   }
@@ -159,6 +183,35 @@ export default function AgentEditor({
       <div className={styles.groups}>
         <section className={styles.group}>
           <span className="card-kicker">1 · 基本</span>
+          <div className="field">
+            <label>头像</label>
+            <div className={styles.avatarRow}>
+              <Avatar avatar={form.avatar} name={nameTrimmed} seat={null} size={56} />
+              <label className="btn btn-secondary" htmlFor={`${uid}-avatar`}>
+                上传头像
+                <input
+                  id={`${uid}-avatar`}
+                  type="file"
+                  accept={AVATAR_ACCEPT}
+                  hidden
+                  onChange={(e) => void onAvatarFile(e)}
+                />
+              </label>
+              {form.avatar !== null && (
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  onClick={() => setForm((f) => ({ ...f, avatar: null }))}
+                >
+                  移除头像
+                </button>
+              )}
+              <span className="text-muted" style={{ fontSize: 12 }}>
+                PNG / JPEG / WebP，≤ 512 KB，建议正方形
+              </span>
+            </div>
+            {avatarNotice !== null && <div className={styles.err}>{avatarNotice}</div>}
+          </div>
           <div className="field">
             <label htmlFor={`${uid}-name`}>名字 *</label>
             <input

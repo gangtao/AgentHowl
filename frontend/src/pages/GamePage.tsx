@@ -9,7 +9,7 @@
 //      409 ⇒ 尚未开局：显示「等待开局」，每 2 秒重试整个引导流程。
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ApiError, getMeta, getReplay, getState } from "../api/rest";
+import { ApiError, getGameAvatars, getMeta, getReplay, getState } from "../api/rest";
 import { useLiveEvents } from "../api/ws";
 import { WINNER_ZH, isNight } from "../engine/phases";
 import {
@@ -33,6 +33,7 @@ import PhaseBar from "../components/PhaseBar/PhaseBar";
 import PlayerStatusPanel from "../components/PlayerStatusPanel/PlayerStatusPanel";
 import ReplayBar from "../components/ReplayBar/ReplayBar";
 import SeatCircle from "../components/SeatCircle/SeatCircle";
+import SpeakerSpotlight from "../components/SpeakerSpotlight/SpeakerSpotlight";
 import SpeechFeed from "../components/SpeechFeed/SpeechFeed";
 import VotePanel from "../components/VotePanel/VotePanel";
 import styles from "./GamePage.module.css";
@@ -84,6 +85,7 @@ export default function GamePage({ gameId, token, viewer, replay }: GamePageProp
   const [errorKind, setErrorKind] = useState<ErrorKind | null>(null);
   const [attempt, setAttempt] = useState(0);
   const [detail, setDetail] = useState<string | null>(null);
+  const [avatars, setAvatars] = useState<Record<number, string>>({});
   const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const events = useGameStore((s) => s.events);
@@ -120,6 +122,13 @@ export default function GamePage({ gameId, token, viewer, replay }: GamePageProp
           setErrorKind(null);
           setDetail(null);
           setReady(true);
+          getGameAvatars(gameId)
+            .then((m) => {
+              if (!cancelled) setAvatars(Object.fromEntries(Object.entries(m).map(([k, v]) => [Number(k), v])));
+            })
+            .catch(() => {
+              /* 头像拿不到只是没图：不阻断对局页 */
+            });
         } catch (err) {
           if (cancelled) return;
           if (err instanceof ApiError && err.status === 404) {
@@ -187,6 +196,13 @@ export default function GamePage({ gameId, token, viewer, replay }: GamePageProp
         store.appendEvents(replayEvents);
         setErrorKind(null);
         setReady(true);
+        getGameAvatars(gameId, token || undefined)
+          .then((m) => {
+            if (!cancelled) setAvatars(Object.fromEntries(Object.entries(m).map(([k, v]) => [Number(k), v])));
+          })
+          .catch(() => {
+            /* 头像拿不到只是没图：不阻断对局页 */
+          });
         return;
       } catch (err) {
         if (cancelled) return;
@@ -203,6 +219,13 @@ export default function GamePage({ gameId, token, viewer, replay }: GamePageProp
         setErrorKind(null);
         setDetail(null);
         setReady(true);
+        getGameAvatars(gameId, token || undefined)
+          .then((m) => {
+            if (!cancelled) setAvatars(Object.fromEntries(Object.entries(m).map(([k, v]) => [Number(k), v])));
+          })
+          .catch(() => {
+            /* 头像拿不到只是没图：不阻断对局页 */
+          });
       } catch (err) {
         if (cancelled) return;
         if (fail(err)) return;
@@ -344,11 +367,25 @@ export default function GamePage({ gameId, token, viewer, replay }: GamePageProp
 
       <div className={styles.body}>
         <div className={styles.left}>
-          <SeatCircle state={view} speaking={speaking} votes={votes} nightLines={lines} />
+          <SeatCircle
+            state={view}
+            speaking={speaking}
+            votes={votes}
+            nightLines={lines}
+            avatars={avatars}
+          />
+          {/* 发言者聚光牌占座位环下方的空白区（issue #102 追加） */}
+          <SpeakerSpotlight state={view} seat={speaking} avatars={avatars} />
         </div>
 
         <div className={styles.center}>
-          <SpeechFeed items={items} cursor={cursor} state={view} speakingSeat={speaking} />
+          <SpeechFeed
+            items={items}
+            cursor={cursor}
+            state={view}
+            speakingSeat={speaking}
+            avatars={avatars}
+          />
           <NightOverlay phase={view.phase} viewer={effectiveViewer} />
         </div>
 

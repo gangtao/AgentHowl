@@ -2,6 +2,7 @@
 // 零过滤：角色牌是否翻面完全由 state 决定（是否已应用 ROLES_ASSIGNED），与 viewer 无关——
 // 观众的 state 通常没有角色，所以自然显示 ?；终局回放里服务端把全量事件也发给观众，就照实翻牌。
 
+import Avatar from "../Avatar/Avatar";
 import { ROLE_ABBR, factionColorVar } from "../../engine/phases";
 import { aliveSeats, rolesKnown, wolfSeats } from "../../engine/select";
 import type { NightLink } from "../../engine/select";
@@ -16,6 +17,8 @@ export interface SeatCircleProps {
   votes: Record<number, number>;
   /** 夜间连线（观众流没有夜间事件，自然为空）。 */
   nightLines: NightLink[];
+  /** 座位 → 头像 id（issue #102，缺省 {}）。 */
+  avatars?: Record<number, string>;
 }
 
 interface SeatPos {
@@ -41,6 +44,7 @@ export default function SeatCircle({
   speaking,
   votes,
   nightLines,
+  avatars = {},
 }: SeatCircleProps): JSX.Element {
   const players = [...state.players].sort((a, b) => a.seat - b.seat);
   const pos = positions(players.map((p) => p.seat));
@@ -121,15 +125,22 @@ export default function SeatCircle({
             >
               <div
                 className={`${styles.disc} ${isSpeaking ? styles.speaking : ""}`}
-                style={{
-                  borderColor: color,
-                  color,
-                  background: known
-                    ? `color-mix(in srgb, ${color} 22%, transparent)`
-                    : "var(--color-surface)",
-                }}
+                style={{ borderColor: color }}
               >
-                <span className={styles.abbr}>{abbr}</span>
+                <Avatar
+                  avatar={avatars[p.seat] ?? null}
+                  name={p.display_name}
+                  seat={p.seat}
+                  size={42}
+                  color={
+                    known
+                      ? `color-mix(in srgb, ${color} 55%, var(--color-surface))`
+                      : undefined
+                  }
+                />
+                <span className={styles.abbr} style={{ color, borderColor: color }}>
+                  {abbr}
+                </span>
                 {p.is_sheriff && (
                   <span className={styles.badge} title="警长">
                     ★

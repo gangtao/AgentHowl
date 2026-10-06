@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 
+from app.agent.profile import AgentProfiles, profile_for
 from app.api.deps import (
     TokenInfo,
     TokenRegistry,
@@ -24,6 +25,7 @@ from app.engine.config import build_preset
 from app.engine.events import Event, EventType, Visibility
 from app.engine.observation import build_observation, visible_events
 from app.engine.phases import Phase
+from app.runtime.agent_library import AgentLibraryStore
 from app.runtime.history import GameSummary, is_finished, list_history
 from app.runtime.player_port import NotYourTurnError, TurnPrompt
 from app.runtime.registry import GameHandle, GameRegistry
@@ -414,6 +416,71 @@ def meta_endpoint(
         games, game_id, info, _public_history(request), "PLAYER", "SPECTATOR", "HOST", "GM"
     )
     return games.store.load_meta(game_id)
+
+
+@router.get("/{game_id}/avatars")
+def avatars_endpoint(
+    game_id: str,
+    request: Request,
+    info: TokenInfo | None = Depends(optional_token),
+    games: GameRegistry = Depends(get_games),
+) -> dict[str, str]:
+    """座位 → 头像 id（issue #102）。直播中：本局任意有效 token；终局：公开策略同 /replay。
+
+    来源：已开局取 GameMeta.agents（开局时实际生效的档案，真人占座已剔除），否则取 handle.agents
+    按 profile_for 展开 "*"。只含有头像的座位；头像 id 本就是公开资源引用。
+    """
+    _finished_or_handle(
+        games,
+        game_id,
+        info,
+        _public_history(request),
+        "PLAYER",
+        "SPECTATOR",
+        "HOST",
+        "GM",
+        require_finished=False,
+    )
+    try:
+        handle: GameHandle | None = games.get(game_id)
+    except LookupError:
+        handle = None
+    agents: AgentProfiles
+    num_players: int
+    if handle is not None and not handle.started:
+        agents, num_players = handle.agents, handle.config.num_players
+    else:
+        try:
+            meta = games.store.load_meta(game_id)
+        except (GameNotFoundError, StoreError):
+            if handle is None:
+                raise HTTPException(status_code=404, detail=f"对局不存在：{game_id}") from None
+            agents, num_players = handle.agents, handle.config.num_players  # 刚开局，meta 尚未落盘
+        else:
+            agents, num_players = meta.agents, meta.config.num_players
+    # 头像晚于对局加到档案上的（老对局 meta 里 avatar=None）：按档案名在当前档案库里补一次。
+    # 显示的是"该角色现在的头像"而非历史快照——头像是公开资源引用，不涉及任何对局信息。
+    library: AgentLibraryStore = request.app.state.agent_library
+    by_name: dict[str, str] | None = None
+    out: dict[str, str] = {}
+    for seat in range(num_players):
+        p = profile_for(agents, seat)
+        if p is None:
+            continue
+        if p.avatar is not None:
+            out[str(seat)] = p.avatar
+            continue
+        if p.name is None:
+            continue
+        if by_name is None:
+            by_name = {
+                s.profile.name: s.profile.avatar
+                for s in library.list()
+                if s.profile.name is not None and s.profile.avatar is not None
+            }
+        if p.name in by_name:
+            out[str(seat)] = by_name[p.name]
+    return out
 
 
 @router.post("/{game_id}/actions")

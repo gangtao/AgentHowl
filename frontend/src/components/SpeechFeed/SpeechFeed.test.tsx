@@ -32,4 +32,22 @@ describe("SpeechFeed", () => {
     expect(shown.length).toBe(items.filter((it) => it.seq <= cursor).length);
     expect(screen.getByText(/回放游标之后/)).toBeInTheDocument();
   });
+
+  it("传入头像后该座位的发言卡渲染 img，其余占位", () => {
+    const cardSeats = items
+      .filter((it) => it.kind === "speech" || it.kind === "last_words")
+      .map((it) => it.actor_seat as number);
+    const seat = cardSeats[0] as number;
+    const count = cardSeats.filter((s) => s === seat).length;
+    render(
+      <SpeechFeed
+        items={items}
+        cursor={null}
+        state={finalState}
+        speakingSeat={null}
+        avatars={{ [seat]: "3f9a1c0b7e2d4a66.png" }}
+      />,
+    );
+    expect(screen.getAllByRole("img")).toHaveLength(count);
+  });
 });

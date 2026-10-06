@@ -2,6 +2,7 @@
 // 零过滤：items 是 store 里已有事件的全量映射；cursor 之后的条目按回放语义截断（不是信息隔离）。
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import Avatar from "../Avatar/Avatar";
 import { ROLE_ZH } from "../../engine/phases";
 import type { SpeechItem } from "../../engine/select";
 import type { GameState } from "../../engine/types";
@@ -15,6 +16,8 @@ export interface SpeechFeedProps {
   /** 当前视图状态：只用于取座位名字与阵营色（零过滤，见 seatColor.ts）。 */
   state: GameState;
   speakingSeat: number | null;
+  /** 座位 → 头像 id（issue #102，缺省 {}）。 */
+  avatars?: Record<number, string>;
 }
 
 /** 距底部多少像素以内算「贴着底」——超过则暂停自动滚动并显示新消息胶囊。 */
@@ -25,6 +28,7 @@ export default function SpeechFeed({
   cursor,
   state,
   speakingSeat,
+  avatars = {},
 }: SpeechFeedProps): JSX.Element {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const [stick, setStick] = useState(true);
@@ -103,6 +107,12 @@ export default function SpeechFeed({
                 data-kind={it.kind}
               >
                 <div className={styles.who}>
+                  <Avatar
+                    avatar={seat !== null ? (avatars[seat] ?? null) : null}
+                    name={seat !== null ? (nameOf.get(seat) ?? "") : ""}
+                    seat={seat}
+                    size={36}
+                  />
                   <span className={styles.seat} style={{ color: colorOf(seat) }}>
                     {seat !== null ? `${seat}号` : "—"}
                   </span>

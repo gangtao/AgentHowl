@@ -20,6 +20,12 @@
   min-width: 0;
 }
 
+.nameRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .name {
   font-size: 20px;
   font-weight: 500;
@@ -113,6 +119,13 @@
   align-items: baseline;
   justify-content: space-between;
   gap: 8px;
+}
+
+.compactNameRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
 }
 
 .compactName {

@@ -27,6 +27,9 @@ if TYPE_CHECKING:
 
 STAR = "*"  # 默认档案键：未单独配置的空位
 
+# 头像资源 id（issue #102）：内容 sha256 前 16 位 + 扩展名；触盘前都按此正则校验（路径穿越防护）
+AVATAR_ID_PATTERN = r"^[0-9a-f]{16}\.(png|jpg|webp)$"
+
 
 class AgentProfile(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -44,6 +47,8 @@ class AgentProfile(BaseModel):
     memory_id: str | None = Field(default=None, pattern=MEMORY_ID_PATTERN)
     # 模型服务 id（issue #26）；None = model 含前缀、凭据走环境变量（现状不变）
     provider: str | None = None
+    # 头像资源 id（issue #102）：None = 无头像（前端占位）；不进 LLM 上下文
+    avatar: str | None = Field(default=None, pattern=AVATAR_ID_PATTERN)
 
     @field_validator("name", mode="before")
     @classmethod
