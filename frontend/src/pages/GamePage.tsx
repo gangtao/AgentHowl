@@ -365,8 +365,6 @@ export default function GamePage({ gameId, token, viewer, replay }: GamePageProp
         </div>
       )}
 
-      <SpeakerSpotlight state={view} seat={speaking} avatars={avatars} />
-
       <div className={styles.body}>
         <div className={styles.left}>
           <SeatCircle
@@ -376,6 +374,8 @@ export default function GamePage({ gameId, token, viewer, replay }: GamePageProp
             nightLines={lines}
             avatars={avatars}
           />
+          {/* 发言者聚光牌占座位环下方的空白区（issue #102 追加） */}
+          <SpeakerSpotlight state={view} seat={speaking} avatars={avatars} />
         </div>
 
         <div className={styles.center}>
