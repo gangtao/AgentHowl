@@ -5,6 +5,7 @@ description = "AgentHowl 狼人杀游戏平台后端 — 规则引擎、运行�
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.139.0",
+    "httpx>=0.28.1",
     "instructor>=1.15.4",
     "litellm>=1.92.0",
     "orjson>=3.11.9",

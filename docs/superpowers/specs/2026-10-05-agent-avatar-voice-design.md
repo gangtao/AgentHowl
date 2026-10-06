@@ -159,21 +159,34 @@ OpenAI-speech 兼容服务（vLLM-Omni、Kokoro-FastAPI 等，`AGENTHOWL_TTS_KIN
   if sink and profile_for(seat).voice:
       await sink.speak(game_id, event, text, voice)   # 内部：逐句合成→落盘→推帧→等待
   ```
-  `speak()` 的停留时间 = 从**第一句推送**起累计 `Σ duration_sec` + 0.3 s；生成快于播放，所以等待由
-  音频长度主导。合成失败（`TtsError`）→ WARNING，已推的句子照常等待，未推的跳过，对局继续。
-  随机 bot、真人、无 `voice` 档案的座位不等待（现状）。
+  `speak()` 的停留时间**不是**简单的「首句推送时刻 + Σduration」（那样在 TTS 慢于实时、即单句
+  合成耗时超过其自身播放时长时会把等待算短，导致最后一句还没播完就判定「该往下走」，提前截断
+  播放）。改为对**每一句**都算出它预计播完的时刻：取「当前时刻」与「前一句预计播完的时刻」
+  两者较晚者为这一句的播放起点（一句不能在推送前开始播，也不能抢在前一句播完前开始）再加上
+  这一句的 `duration_sec`；最后一句的预计播完时刻 + 0.3 s（`AUDIO_TAIL_SEC`）即总停留时长。
+  合成失败（`TtsError`）→ WARNING，已推的句子照常等待，未推的跳过，对局继续。随机 bot、
+  真人、无 `voice` 档案的座位不等待（现状）。
 - 音频落盘 `data/audio/<game_id>/<seq>-<k>.wav`（`create_app(audio_dir=...)`，默认 `data/audio`）。
 - WS 帧（经 `ConnectionManager.broadcast`，**不是**游戏事件：不进事件日志、不进 reducer、不进
   golden fixtures）：
 
   ```json
   {"type": "speech_audio", "seq": 57, "part": 0, "url": "/api/v1/games/g_x/audio/57/0",
-   "duration": 2.3, "last": false}
+   "duration": 2.3}
+
+  {"type": "speech_audio_end", "seq": 57, "parts": 3}
   ```
-  `last=true` 标记最后一句。观众/玩家/GM 都收（发言本就公开）。
+  **与本规格的偏离**：原规格的 `last: true/false` 字段改成了独立的 `speech_audio_end{seq, parts}`
+  帧——逐句推送时并不提前知道总句数（`split_sentences` 的结果要在合成失败/提前终止前都不确定
+  是不是最后一句），服务端在合成循环结束后才知道真的推了几句，用一条收尾帧比在每句 `speech_audio`
+  里猜一个可能错的 `last` 更准确，也让消费端（`useVoice`）不必在每句里都判断「这是不是最后一句」。
+  观众/玩家/GM 都收（发言本就公开）。
 - `GET /api/v1/games/{id}/audio` → `{"<seq>": [{"part": 0, "duration": 2.3}, ...]}`（扫目录 + 读 WAV 头）；
   `GET /api/v1/games/{id}/audio/{seq}/{part}` → WAV 文件。两者权限策略**同 `/replay`**
   （`_finished_or_handle`，`require_finished=False`：直播中持 token 也能取，匿名只在终局 + 开关开）。
+  文件端点另外接受 `?token=` 查询参数（与本规格的偏离：`<audio>` 元素发不出 `Authorization`
+  头，直播期间的匿名观众一句都放不出来——等价于 WS 端点早已有的 `?token=` 先例）；前端拼
+  音频 URL 时，持有 token 的视角一律带上 `?token=`。
 - `DELETE /games/{id}` 连带 `rmtree(data/audio/<id>)`；`list_history` 不受影响。
 
 ### 4.3 前端播放
@@ -182,8 +195,11 @@ OpenAI-speech 兼容服务（vLLM-Omni、Kokoro-FastAPI 等，`AGENTHOWL_TTS_KIN
   浏览器 autoplay 策略要求首次有手势）、`queue: SpeechAudio[]`、`playing: {seq, part} | null`、
   `enqueue()`、`clear()`。播放用单个 `HTMLAudioElement`，`ended` 后播下一条；`enabled=false` 时帧照常入队但不播，
   开启时从队尾最新 seq 开始（不补播历史）。
-- 直播：`api/ws.ts` 识别 `speech_audio` 帧 → `useVoice.enqueue`。`SeatCircle` 当前 `playing.seq` 对应的发言座位
-  加 `data-voicing` 动效。
+- 直播：`api/ws.ts` 识别 `speech_audio` 帧 → `useVoice.enqueue`；`speech_audio_end` 帧本 hook 忽略
+  （仅服务端自用的分段计数标记）。**与本规格的偏离**：标记播放中的位置从 `SeatCircle`
+  `data-voicing` 动效改成了 `SpeakerSpotlight`（发言聚光牌）——`playing !== null` 时标签文案由
+  「发言中」变成「发言中 🔊」。原因：聚光牌本就是当前发言座位唯一的高亮载体，同一时刻只会有
+  一句在播，叠加到座位环反而是重复信息；复用已有的发言高亮，不再新增一套座位环动效。
 - 回放：`load(mode="replay")` 时拉 `/audio` 清单；`makeTick` 推进到有音频的发言事件时：暂停定时器，
   按 part 顺序播放，播完恢复；`enabled=false` 则按原 speed 推进不等待。拖动游标 / 暂停 → `clear()` 停止播放。
 - 零过滤：只播服务端推来的 url。

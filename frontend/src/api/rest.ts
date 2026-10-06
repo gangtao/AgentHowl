@@ -70,6 +70,8 @@ export interface CreateGameRequest {
   ai_model?: string | null;
   ai_model_speech?: string | null;
   agents?: Record<string, unknown>;
+  /** 语音播报开关（issue #103）；TTS 探测失败时后端 400。 */
+  voice?: boolean;
 }
 
 export interface CreateGameResponse {
@@ -79,6 +81,7 @@ export interface CreateGameResponse {
   gm_token: string;
   config: Record<string, unknown>;
   agents: Record<string, unknown>;
+  voice: boolean;
 }
 
 export interface StartResponse {
@@ -131,4 +134,41 @@ export function getEvents(gameId: string, token: string, fromSeq = 0): Promise<E
 /** 座位 → 头像 id（issue #102）：直播中需本局 token；终局公开策略同 /replay。 */
 export function getGameAvatars(gameId: string, token?: string): Promise<Record<string, string>> {
   return req<Record<string, string>>("GET", `/games/${gameId}/avatars`, { token });
+}
+
+// ---- 配音（issue #103，app/runtime/tts.py + /tts/status、/games/{id}/audio） ----
+
+/** TTS 服务探测状态：响应绝不含 api key。 */
+export interface TtsStatus {
+  enabled: boolean;
+  ok: boolean;
+  url: string | null;
+  detail: string | null;
+  supports_style: boolean;
+}
+
+export function getTtsStatus(): Promise<TtsStatus> {
+  return req<TtsStatus>("GET", "/tts/status");
+}
+
+export interface AudioPartInfo {
+  part: number;
+  duration: number;
+}
+
+/** 发言音频清单 {seq: [{part, duration}]}；权限同 /replay（终局前需本局 token）。 */
+export function getAudioManifest(
+  gameId: string,
+  token?: string,
+): Promise<Record<string, AudioPartInfo[]>> {
+  return req<Record<string, AudioPartInfo[]>>("GET", `/games/${gameId}/audio`, { token });
+}
+
+/** 音频分段文件地址（不经 req：浏览器 <audio>/<source> 直接拉取，发不出 Authorization 头）。
+ * `token` 非空时拼成 `?token=`——直播期间（未终局）该端点走 /replay 同一道门槛，匿名必 401，
+ * 这条 query token 是 fix round 1 加给后端 `audio_part_endpoint` 的旁路，等价于 WS 端点早有的
+ * `?token=` 先例（`api/ws.ts` 的 `wsUrl()`）。 */
+export function audioUrl(gameId: string, seq: number, part: number, token?: string): string {
+  const base = `${API_BASE}/games/${gameId}/audio/${seq}/${part}`;
+  return token ? `${base}?token=${encodeURIComponent(token)}` : base;
 }

@@ -9,9 +9,9 @@ extra="forbid" 保证未实现的键被拒绝而非静默忽略。
 from __future__ import annotations
 
 from collections.abc import Collection
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.agent.experience import MEMORY_ID_PATTERN
 from app.agent.personality import PersonalitySpec
@@ -29,6 +29,42 @@ STAR = "*"  # 默认档案键：未单独配置的空位
 
 # 头像资源 id（issue #102）：内容 sha256 前 16 位 + 扩展名；触盘前都按此正则校验（路径穿越防护）
 AVATAR_ID_PATTERN = r"^[0-9a-f]{16}\.(png|jpg|webp)$"
+
+# 预置声线（issue #103）：Qwen3-TTS CustomVoice 的中文 speaker；dylan=北京话、eric=四川话
+PRESET_SPEAKERS = ("vivian", "serena", "uncle_fu", "dylan", "eric")
+MAX_VOICE_STYLE_CHARS = 200
+
+
+class VoiceSpec(BaseModel):
+    """声线描述（issue #103）。preset：预置 speaker + 可选情绪/语速指令；design：一句话描述声线。
+    只影响 TTS 请求，不进 LLM 上下文。"""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    mode: Literal["preset", "design"]
+    speaker: str | None = None
+    style: str | None = Field(default=None, max_length=MAX_VOICE_STYLE_CHARS)
+    speed: float = Field(default=1.0, ge=0.5, le=2.0)
+
+    @field_validator("style", mode="before")
+    @classmethod
+    def _strip_style(cls, v: object) -> object:
+        if isinstance(v, str):
+            v = v.strip()
+            return v or None
+        return v
+
+    @model_validator(mode="after")
+    def _check_mode(self) -> VoiceSpec:
+        if self.mode == "preset":
+            if self.speaker is None or self.speaker not in PRESET_SPEAKERS:
+                raise ValueError(f"preset 声线须指定 speaker ∈ {PRESET_SPEAKERS}")
+        else:
+            if self.style is None:
+                raise ValueError("design 声线须给出 style（声线描述）")
+            if self.speaker is not None:
+                raise ValueError("design 声线不能同时指定 speaker")
+        return self
 
 
 class AgentProfile(BaseModel):
@@ -49,6 +85,8 @@ class AgentProfile(BaseModel):
     provider: str | None = None
     # 头像资源 id（issue #102）：None = 无头像（前端占位）；不进 LLM 上下文
     avatar: str | None = Field(default=None, pattern=AVATAR_ID_PATTERN)
+    # 声线（issue #103）：None = 不配音；不进 LLM 上下文
+    voice: VoiceSpec | None = None
 
     @field_validator("name", mode="before")
     @classmethod

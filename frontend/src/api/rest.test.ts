@@ -1,5 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ApiError, createGame, getGameAvatars, getReplay } from "./rest";
+import {
+  ApiError,
+  audioUrl,
+  createGame,
+  getAudioManifest,
+  getGameAvatars,
+  getReplay,
+  getTtsStatus,
+} from "./rest";
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -101,5 +109,38 @@ describe("rest.ts", () => {
     expect(
       (fetchMock.mock.calls[1] as unknown as [string, RequestInit])[1].headers,
     ).not.toHaveProperty("Authorization");
+  });
+
+  it("getTtsStatus 请求 GET /api/v1/tts/status（issue #103）", async () => {
+    const fetchMock = vi.fn(async () =>
+      jsonResponse(200, { enabled: true, ok: true, url: "http://x", detail: null, supports_style: true }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const status = await getTtsStatus();
+
+    expect(status).toEqual({ enabled: true, ok: true, url: "http://x", detail: null, supports_style: true });
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe("/api/v1/tts/status");
+    expect(init.method).toBe("GET");
+  });
+
+  it("getAudioManifest：有 token 带 Authorization，无 token 不带（issue #103）", async () => {
+    const fetchMock = vi.fn(async () => jsonResponse(200, { "0": [{ part: 0, duration: 1.2 }] }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    expect(await getAudioManifest("g_x", "tok")).toEqual({ "0": [{ part: 0, duration: 1.2 }] });
+    const [url0, init0] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url0).toBe("/api/v1/games/g_x/audio");
+    expect(init0.headers).toMatchObject({ Authorization: "Bearer tok" });
+
+    await getAudioManifest("g_x");
+    const [, init1] = fetchMock.mock.calls[1] as unknown as [string, RequestInit];
+    expect(init1.headers).not.toHaveProperty("Authorization");
+  });
+
+  it("audioUrl 拼出音频分段地址；有 token 时追加 ?token=（issue #103 fix round 1）", () => {
+    expect(audioUrl("g_x", 57, 0)).toBe("/api/v1/games/g_x/audio/57/0");
+    expect(audioUrl("g_x", 57, 0, "tok-123")).toBe("/api/v1/games/g_x/audio/57/0?token=tok-123");
   });
 });

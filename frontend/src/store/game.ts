@@ -42,6 +42,10 @@ interface GameStoreState {
   playing: boolean;
   /** 播放速度：事件/秒（brief 未规定单位，本实现选定“事件/秒”，见 task-6-report.md）。 */
   speed: number;
+  /** 回放门控（issue #103）：推进到某个 seq 时若该句配音还没播完，返回一个挂起的 Promise，
+   * makeTick 会在它 resolve 前暂停后续 tick——由 GamePage 装入，指向 useVoice.playSeq()。
+   * 无需门控（该 seq 没有配音）返回 null。 */
+  replayGate: ((seq: number) => Promise<void> | null) | null;
 
   load(meta: GameMeta, opts?: LoadOptions): void;
   appendEvents(batch: readonly Event[]): void;
@@ -57,6 +61,7 @@ interface GameStoreState {
   setConnection(connection: ConnectionState): void;
   setError(error: string | null): void;
   clearGap(): void;
+  setReplayGate(gate: ((seq: number) => Promise<void> | null) | null): void;
   reset(): void;
 }
 
@@ -74,14 +79,21 @@ function clearPlayTimer(): void {
   }
 }
 
+/** 回放门控开关（issue #103）：true 表示正在等某个 replayGate() 返回的 Promise resolve，
+ * 其间 makeTick 直接跳过（时钟不前进）。模块级而非 store 字段——纯粹是 tick 之间的节流状态，
+ * 不需要响应式、也不该被当成可序列化的 state 序列化/比较。 */
+let gating = false;
+
 function lastSeqOf(events: readonly Event[]): number {
   return events.length > 0 ? (events[events.length - 1] as Event).seq : 0;
 }
 
-/** play()/setSpeed() 共用的播放节拍：走到末尾（cur >= lastSeq）就 pause()，否则单步前进。
+/** play()/setSpeed() 共用的播放节拍：走到末尾（cur >= lastSeq）就 pause()，否则单步前进；
+ * 前进后若新游标命中 replayGate（该 seq 有配音在播），则卡住后续 tick 直到配音播完。
  * 抽成模块级函数避免两处维护同一份逻辑（review Minor-5）。 */
 function makeTick(get: () => GameStoreState): () => void {
   return () => {
+    if (gating) return;
     const state = get();
     const lastSeq = lastSeqOf(state.events);
     const cur = state.cursor ?? lastSeq;
@@ -90,6 +102,14 @@ function makeTick(get: () => GameStoreState): () => void {
       return;
     }
     get().stepForward();
+    const next = get().cursor;
+    const p = next !== null ? (get().replayGate?.(next) ?? null) : null;
+    if (p) {
+      gating = true;
+      void p.catch(() => undefined).finally(() => {
+        gating = false;
+      });
+    }
   };
 }
 
@@ -125,6 +145,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
   gap: null,
   playing: false,
   speed: 2,
+  replayGate: null,
 
   load(meta, opts) {
     clearPlayTimer();
@@ -186,6 +207,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
   },
 
   setCursor(seq) {
+    gating = false;
     const clamped =
       seq === null ? null : Math.min(Math.max(seq, 0), lastSeqOf(get().events));
     if (get().cursor === clamped) return;
@@ -226,6 +248,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
 
   pause() {
     clearPlayTimer();
+    gating = false;
     set({ playing: false });
   },
 
@@ -266,8 +289,13 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     set({ gap: null });
   },
 
+  setReplayGate(gate) {
+    set({ replayGate: gate });
+  },
+
   reset() {
     clearPlayTimer();
+    gating = false;
     viewCache = null;
     set({
       gameId: null,
@@ -284,6 +312,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       gap: null,
       playing: false,
       speed: 2,
+      replayGate: null,
     });
   },
 }));

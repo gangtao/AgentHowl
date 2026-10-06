@@ -512,6 +512,13 @@ class PlayerObservation(BaseModel):
 
 **头像**：`AgentProfile.avatar`（可选，`avatar_id` 字符串，经 `PUT /api/v1/avatars` 上传得到）标识该档案的头像图片，仅供前端座位环 / 发言卡 / 档案卡渲染，不参与裁决、不进入 LLM prompt（issue #102）。
 
+**声线**（issue #103）：`AgentProfile.voice`（可选，`VoiceSpec`）给该档案配公开发言的配音；
+`None` = 不配音，不影响其它任何行为。`mode="preset"` 指定 `speaker` ∈ 5 个预置声线（vivian /
+serena / uncle_fu / dylan / eric；方言目前只有 `dylan`=北京话、`eric`=四川话两种），`style`
+可选补一句情绪/语气指令；`mode="design"` 则必须给 `style`（≤200 字的自由文本声线描述，走
+Qwen3-TTS VoiceDesign）且不能同时给 `speaker`。`speed` 语速，0.5–2.0，默认 1.0。只影响 TTS
+请求体（`app/runtime/tts.py`），不进入 LLM prompt、不参与裁决。
+
 #### 4.4.3 model-agnostic LLM 调用层（方案对比与推荐）
 
 调研对比五个候选：
@@ -604,6 +611,9 @@ pydantic，零 IO）：`kind`（`ollama`/`openai`/`anthropic`/`openai_compatible
 | PUT | `/api/v1/avatars` | 上传头像（raw body，PNG/JPEG/WebP ≤512 KB，魔数校验）→ `{avatar_id}`，内容寻址幂等（issue #102） |
 | GET | `/api/v1/avatars/{avatar_id}` | 读取头像，immutable 缓存；不鉴权 |
 | GET | `/api/v1/games/{game_id}/avatars` | 座位 → 头像 id；直播中需本局 token，终局公开策略同 `/replay`（issue #102）；对局快照里无头像的座位按档案名在当前档案库回退取（老对局也能显示事后加的头像） |
+| GET | `/api/v1/games/{game_id}/audio` | 发言配音清单 `{"<seq>": [{"part": 0, "duration": 2.3}, ...]}`（扫目录 + 读 WAV 头）；权限同 `/replay`（issue #103） |
+| GET | `/api/v1/games/{game_id}/audio/{seq}/{part}` | 发言配音 WAV 文件；权限同 `/replay`，另接受 `?token=` 查询参数（`<audio>` 元素发不出 `Authorization` 头，等价于 WS 端点的 `?token=` 先例，issue #103） |
+| GET | `/api/v1/tts/status` | TTS 服务探测状态 `TtsStatus{enabled, ok, url, detail, supports_style}`；响应绝不含 api key（issue #103） |
 
 **Agent 档案库端点**（issue #26；持久化于 `data/agents/`；供 Lobby 建局选档案与 `AgentEditor` 用）：
 
@@ -663,6 +673,12 @@ POST /api/v1/games
 `personality` 含越权或改规则短语同为 422（pydantic 校验失败）。响应体 `agents` 字段
 回显解析后的最终映射（含旧字段折叠结果）。开局时实际建成 Agent 端口的座位（真人占座与随机 bot 除外，`"*"` 展开为具体座位）→ 档案的映射写入事件日志首行 `GameMeta.agents`（issue #64），供回放与档案评估（#60）使用，经 `/meta` 端点在终局后读取；不经 observation 暴露。Agent 行动首条事件的 `meta["skills"]`（issue #58/#60，逗号分隔技能名）同样只供 GM 视角与离线分析：`/events` 对非 GM 视角过滤掉该键，`/replay` 终局后全量返回（含 `meta.skills`）。
 
+`voice: bool = False`（issue #103）：开启后台公开发言配音。`voice=True` 但 `GET /tts/status`
+探测不可用（`ok=false`）→ 建局 400「TTS 服务不可用」，不悄悄降级为无声；`CreateGameResponse`
+回显 `voice`。该开关只决定是否调用 TTS 并推 `speech_audio` 帧——不影响引擎、不进事件日志；
+`voice=False`（缺省）时整条链路零改动（无 TTS 探测、无音频落盘、无 WS 帧）。各座位是否真的
+出声进一步取决于其 `AgentProfile.voice`（见 §4.4.2）是否配置。
+
 **加入对局**：
 ```json
 POST /api/v1/games/g_a1b2c3/join
@@ -708,12 +724,24 @@ Authorization: Bearer tok_p7
   "state_version": 88, "rejected_reason": null }
 
 { "type": "error", "detail": "该连接无行动权限或座位无端口" }
+
+{ "type": "speech_audio", "seq": 57, "part": 0,
+  "url": "/api/v1/games/g_a1b2c3/audio/57/0", "duration": 2.3 }
+
+{ "type": "speech_audio_end", "seq": 57, "parts": 3 }
 ```
 `your_turn` 无顶层 `phase` 字段——阶段在 `observation.phase` 里；`phase_change` 不带 `from`
 （只有 `to`/`round`）；`game_over` 不带 `roles_reveal`（终局身份揭示走 `/replay`/`/meta`，
 上帝视角本就全程可见身份）；`game_event.event` 是 `Event` 的完整 `model_dump`（`seq`/
 `game_id`/`ts`/`type`/`actor_seat`/`payload`/`visibility`/`meta`），并非扁平化的
 `{type, seat, content}`。
+
+`speech_audio` / `speech_audio_end`（issue #103）是**非游戏事件**：开启语音播报（建局
+`voice=True`）后，某句公开发言配音每合成完一句就推一条 `speech_audio`（`seq`=该发言事件的
+`seq`，`part` 从 0 递增，`url` 即 `GET /api/v1/games/{game_id}/audio/{seq}/{part}`，`duration`
+秒），最后一句推完后再推一条 `speech_audio_end{seq, parts}` 收尾；两种帧都不进事件日志、不进
+`reduce()`、不进 `/replay`/`/events`——只是直播/回放播放器的音频引用，内容本就是公开发言，
+所有视角（含观众）都收。
 
 **客户端 → 服务器**：直接发送 `ToolCall`（`{"tool": ..., "arguments": {...}}`），与
 `POST /actions` 同 schema 同信封，`actor_seat` 一律取自 token；仅 `PLAYER` token 的座位有

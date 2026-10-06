@@ -9,7 +9,7 @@ import asyncio
 import logging
 import secrets
 from collections.abc import Callable
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from app.agent.experience import AgentExperience
 from app.agent.profile import (
@@ -37,6 +37,11 @@ from app.runtime.postgame import opponents_for, run_postgame, seat_memory_ids
 from app.runtime.provider_store import InMemoryProviderStore, ProviderStore
 from app.store.event_store import EventStore
 
+if TYPE_CHECKING:
+    # 仅类型标注用：speech_audio 模块不依赖 registry，直接 import 也不会循环，
+    # 用 TYPE_CHECKING 与 game_runner.py 保持一致风格更稳。
+    from app.runtime.speech_audio import SpeechAudioSink
+
 logger = logging.getLogger(__name__)
 
 
@@ -51,12 +56,14 @@ class GameHandle:
         allow_spectators: bool,
         num_ai_players: int | None,
         agents: AgentProfiles,
+        voice_enabled: bool = False,
     ) -> None:
         self.game_id = game_id
         self.config = config
         self.allow_spectators = allow_spectators
         self.num_ai_players = num_ai_players
         self.agents = agents
+        self.voice_enabled = voice_enabled
         self.lobby = GameLobby(config, game_id)
         self.ports: dict[int, PlayerPort] = {}
         self.human_ports: dict[int, HumanPlayerPort] = {}
@@ -99,6 +106,7 @@ class GameRegistry:
         skill_library: SkillLibrary | None = None,
         experience_store: ExperienceStore | None = None,
         provider_store: ProviderStore | None = None,
+        speech_audio: SpeechAudioSink | None = None,
     ) -> None:
         self._store = store
         self._timeouts = timeouts
@@ -111,6 +119,7 @@ class GameRegistry:
         self._provider_store: ProviderStore = (
             provider_store if provider_store is not None else InMemoryProviderStore()
         )
+        self._speech_audio = speech_audio
 
     @property
     def skill_library(self) -> SkillLibrary:
@@ -129,6 +138,7 @@ class GameRegistry:
         agents: AgentProfiles | None = None,
         ai_model: str | None = None,
         ai_model_speech: str | None = None,
+        voice: bool = False,
     ) -> GameHandle:
         # 旧入口 ai_model 折叠为 "*" 默认档案；与显式 agents["*"] 冲突、座位键非法 → ValueError
         resolved = merge_profiles(agents, legacy_to_profiles(ai_model, ai_model_speech))
@@ -145,6 +155,7 @@ class GameRegistry:
             allow_spectators=allow_spectators,
             num_ai_players=num_ai_players,
             agents=resolved,
+            voice_enabled=voice,
         )
         self._games[game_id] = handle
         return handle
@@ -234,6 +245,7 @@ class GameRegistry:
             connections=handle.connections,
             timeouts=self._timeouts,
             agents=effective,
+            speech_audio=self._speech_audio if handle.voice_enabled else None,
         )
         handle.runner = runner
         # 订阅须在 create_task 之前完成，否则 GAME_CREATED/ROLES_ASSIGNED 首批事件漏投

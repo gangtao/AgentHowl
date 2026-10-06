@@ -7,7 +7,7 @@ import time
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import ValidationError
 
 from app.agent.profile import AgentProfiles, profile_for
@@ -29,6 +29,8 @@ from app.runtime.agent_library import AgentLibraryStore
 from app.runtime.history import GameSummary, is_finished, list_history
 from app.runtime.player_port import NotYourTurnError, TurnPrompt
 from app.runtime.registry import GameHandle, GameRegistry
+from app.runtime.speech_audio import SpeechAudioSink
+from app.runtime.tts import TtsClient, TtsStatus
 from app.schemas.actions import (
     ActionResponse,
     ToolCall,
@@ -57,11 +59,13 @@ from app.store.event_store import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/games", tags=["games"])
+tts_router = APIRouter(prefix="/tts", tags=["tts"])
 
 
 @router.post("")
-def create_game_endpoint(
+async def create_game_endpoint(
     req: CreateGameRequest,
+    request: Request,
     games: GameRegistry = Depends(get_games),
     tokens: TokenRegistry = Depends(get_tokens),
 ) -> CreateGameResponse:
@@ -70,6 +74,15 @@ def create_game_endpoint(
         config = type(config).model_validate(config.model_dump())  # override 后全量校验
     except (KeyError, ValueError, ValidationError) as exc:
         raise ToolCallError(f"preset/config_override 非法：{exc}") from exc
+    # 发言配音（issue #103）：开局前探测，不可用则 400，不悄悄降级
+    tts: TtsClient = request.app.state.tts
+    if req.voice:
+        status = await tts.probe()
+        if not status.ok:
+            raise HTTPException(
+                status_code=400,
+                detail=f"TTS 服务不可用，无法开启语音：{status.detail or ''}".rstrip("："),
+            )
     try:
         handle = games.create(
             config,
@@ -78,6 +91,7 @@ def create_game_endpoint(
             agents=req.agents,
             ai_model=req.ai_model,
             ai_model_speech=req.ai_model_speech,
+            voice=req.voice,
         )
     except ValueError as exc:
         raise ToolCallError(f"agents 非法：{exc}") from exc
@@ -96,6 +110,7 @@ def create_game_endpoint(
         # 回显 handle.config 而非请求侧 config：未指定 seed 时 registry 会抽一个随机种子写入
         config=handle.config.model_dump(mode="json"),
         agents=handle.agents,
+        voice=handle.voice_enabled,
     )
 
 
@@ -182,6 +197,8 @@ def delete_game_endpoint(
         # 真删不掉（权限、磁盘）：不能装作成功把 handle/token 清掉，也不把文件名/OS 错误回给调用方
         logger.error("删除对局 %s 的事件文件失败：%s", game_id, exc)
         raise HTTPException(status_code=500, detail="删除失败，请查看服务端日志") from exc
+    # 发言配音（issue #103）：事件文件删成功后连带清音频目录；SpeechAudioSink.delete_game 幂等
+    request.app.state.speech_audio.delete_game(game_id)
     if handle is not None:
         games.remove(game_id)
     tokens.revoke_game(game_id)
@@ -481,6 +498,78 @@ def avatars_endpoint(
         if p.name in by_name:
             out[str(seat)] = by_name[p.name]
     return out
+
+
+@router.get("/{game_id}/audio")
+def audio_manifest_endpoint(
+    game_id: str,
+    request: Request,
+    info: TokenInfo | None = Depends(optional_token),
+    games: GameRegistry = Depends(get_games),
+) -> dict[str, list[dict[str, Any]]]:
+    """发言音频清单 {seq: [{part, duration}]}（issue #103）；权限同 /replay。"""
+    _finished_or_handle(
+        games,
+        game_id,
+        info,
+        _public_history(request),
+        "PLAYER",
+        "SPECTATOR",
+        "HOST",
+        "GM",
+        require_finished=False,
+    )
+    sink: SpeechAudioSink = request.app.state.speech_audio
+    return sink.manifest(game_id)
+
+
+@router.get("/{game_id}/audio/{seq}/{part}")
+def audio_part_endpoint(
+    game_id: str,
+    seq: int,
+    part: int,
+    request: Request,
+    token: str | None = Query(default=None),
+    info: TokenInfo | None = Depends(optional_token),
+    tokens: TokenRegistry = Depends(get_tokens),
+    games: GameRegistry = Depends(get_games),
+) -> FileResponse:
+    """发言音频文件（issue #103）；权限同 /replay，另外接受 `?token=` 查询参数（fix round 1）：
+    浏览器 `<audio>` 元素发不出 Authorization 头，直播期间（未终局）这个端点走
+    `_finished_or_handle` 的「无 token 必须 401」分支——没有这条 query token 后路，
+    直播配音在匿名场景下（含公开历史关闭时的正常对局内观众）一句都放不出来。
+    等价于 WS 端点早就有的 `?token=` 先例（`wsUrl()`）。"""
+    if info is None and token is not None:
+        info = tokens.resolve(token)
+        if info is None:
+            raise HTTPException(status_code=401, detail="token 无效")
+    _finished_or_handle(
+        games,
+        game_id,
+        info,
+        _public_history(request),
+        "PLAYER",
+        "SPECTATOR",
+        "HOST",
+        "GM",
+        require_finished=False,
+    )
+    sink: SpeechAudioSink = request.app.state.speech_audio
+    path = sink.path_for(game_id, seq, part)
+    if path is None:
+        raise HTTPException(status_code=404, detail="音频不存在")
+    return FileResponse(
+        path,
+        media_type="audio/wav",
+        headers={"Cache-Control": "private, max-age=31536000, immutable"},
+    )
+
+
+@tts_router.get("/status")
+async def tts_status_endpoint(request: Request) -> TtsStatus:
+    """TTS 服务探测状态（issue #103）；响应绝不含 api key。"""
+    tts: TtsClient = request.app.state.tts
+    return await tts.probe()
 
 
 @router.post("/{game_id}/actions")

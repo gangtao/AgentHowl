@@ -14,6 +14,7 @@ services:
     environment:
       # 容器内的 localhost 不是宿主机：本地 Ollama / 宿主机代理请用 host.docker.internal
       - OLLAMA_API_BASE=${OLLAMA_API_BASE:-http://host.docker.internal:11434}
+      # 语音：AGENTHOWL_TTS_URL 请在 .env 里设成 http://host.docker.internal:8880（TTS 在宿主机跑）
     extra_hosts:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped

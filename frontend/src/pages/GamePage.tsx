@@ -9,8 +9,18 @@
 //      409 ⇒ 尚未开局：显示「等待开局」，每 2 秒重试整个引导流程。
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ApiError, getGameAvatars, getMeta, getReplay, getState } from "../api/rest";
+import {
+  ApiError,
+  getAudioManifest,
+  getGameAvatars,
+  getMeta,
+  getReplay,
+  getState,
+} from "../api/rest";
+import type { AudioPartInfo } from "../api/rest";
 import { useLiveEvents } from "../api/ws";
+import { replayControls } from "../lib/replayControls";
+import { useVoice } from "../store/voice";
 import { WINNER_ZH, isNight } from "../engine/phases";
 import {
   currentSpeaker,
@@ -35,6 +45,7 @@ import ReplayBar from "../components/ReplayBar/ReplayBar";
 import SeatCircle from "../components/SeatCircle/SeatCircle";
 import SpeakerSpotlight from "../components/SpeakerSpotlight/SpeakerSpotlight";
 import SpeechFeed from "../components/SpeechFeed/SpeechFeed";
+import VoiceToggle from "../components/VoiceToggle/VoiceToggle";
 import VotePanel from "../components/VotePanel/VotePanel";
 import styles from "./GamePage.module.css";
 
@@ -86,6 +97,15 @@ export default function GamePage({ gameId, token, viewer, replay }: GamePageProp
   const [attempt, setAttempt] = useState(0);
   const [detail, setDetail] = useState<string | null>(null);
   const [avatars, setAvatars] = useState<Record<number, string>>({});
+  /** 发言音频清单 {seq: [{part, duration}]}（issue #103）：回放门控据此判断某个 seq 要不要
+   * 等配音播完才放行；拿不到（没开语音/探测失败）就是空对象，门控天然退化成不卡任何 seq。 */
+  const [manifest, setManifest] = useState<Record<string, AudioPartInfo[]>>({});
+  // 门控 effect（下方）读这个 ref 而不是直接读 manifest state：清单在拉取完成前短暂为
+  // 空对象、之后被 setManifest 换成真正内容，如果把 manifest 放进该 effect 的依赖数组，
+  // 这次刷新会把 gate 拆了重装一遍——若恰好卡在某个 seq 的配音中途，相当于半路换了一个新
+  // 的 gate 闭包，没有真正打断旧 playSeq（fix round 2 的 Minor 项）。ref 让 effect 的依赖
+  // 只剩 [mode, gameId, token]，manifest 更新不触发重装，gate 闭包始终读到最新清单。
+  const manifestRef = useRef<Record<string, AudioPartInfo[]>>(manifest);
   const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const events = useGameStore((s) => s.events);
@@ -129,6 +149,15 @@ export default function GamePage({ gameId, token, viewer, replay }: GamePageProp
             .catch(() => {
               /* 头像拿不到只是没图：不阻断对局页 */
             });
+          getAudioManifest(gameId)
+            .then((m) => {
+              if (cancelled) return;
+              setManifest(m);
+              if (Object.keys(m).length > 0) useVoice.getState().markAvailable();
+            })
+            .catch(() => {
+              /* 清单拿不到就是没有配音：不阻断对局页 */
+            });
         } catch (err) {
           if (cancelled) return;
           if (err instanceof ApiError && err.status === 404) {
@@ -152,6 +181,10 @@ export default function GamePage({ gameId, token, viewer, replay }: GamePageProp
         cancelled = true;
         useGameStore.getState().reset();
         setReady(false);
+        setManifest({});
+        // 直播中途离页不会自己停播（只有回放门控的卸载才调 clear()）；这里顺带把
+        // available 也清掉，避免 🔊 开关残留到下一局还没判定出清单的空窗（fix round 3）。
+        useVoice.getState().clear(true);
       };
     }
 
@@ -203,6 +236,15 @@ export default function GamePage({ gameId, token, viewer, replay }: GamePageProp
           .catch(() => {
             /* 头像拿不到只是没图：不阻断对局页 */
           });
+        getAudioManifest(gameId, token || undefined)
+          .then((m) => {
+            if (cancelled) return;
+            setManifest(m);
+            if (Object.keys(m).length > 0) useVoice.getState().markAvailable();
+          })
+          .catch(() => {
+            /* 清单拿不到就是没有配音：不阻断对局页 */
+          });
         return;
       } catch (err) {
         if (cancelled) return;
@@ -225,6 +267,15 @@ export default function GamePage({ gameId, token, viewer, replay }: GamePageProp
           })
           .catch(() => {
             /* 头像拿不到只是没图：不阻断对局页 */
+          });
+        getAudioManifest(gameId, token || undefined)
+          .then((m) => {
+            if (cancelled) return;
+            setManifest(m);
+            if (Object.keys(m).length > 0) useVoice.getState().markAvailable();
+          })
+          .catch(() => {
+            /* 清单拿不到就是没有配音：不阻断对局页 */
           });
       } catch (err) {
         if (cancelled) return;
@@ -254,8 +305,31 @@ export default function GamePage({ gameId, token, viewer, replay }: GamePageProp
       }
       useGameStore.getState().reset();
       setReady(false);
+      setManifest({});
+      // 同上：直播卸载也要停播 + 清 available（fix round 3）。
+      useVoice.getState().clear(true);
     };
   }, [gameId, token, viewer, replay]);
+
+  useEffect(() => {
+    manifestRef.current = manifest;
+  }, [manifest]);
+
+  // ---- 回放门控（issue #103）：mode==="replay" 时，游标推进到某个 seq 若清单里有这句的配音，
+  // 就顺序播完它的全部分段再放行时钟继续（store/game.ts 的 makeTick 消费 replayGate）。
+  // 直播模式不装（声音已经跟着 WS 帧实时播，不需要卡时钟）。依赖数组特意不含 manifest——
+  // 见上面 manifestRef 声明处的注释。
+  useEffect(() => {
+    if (mode !== "replay" || !gameId) return;
+    useGameStore.getState().setReplayGate((seq) => {
+      const parts = manifestRef.current[String(seq)];
+      return parts ? useVoice.getState().playSeq(gameId, seq, parts, token || undefined) : null;
+    });
+    return () => {
+      useGameStore.getState().setReplayGate(null);
+      useVoice.getState().clear();
+    };
+  }, [mode, gameId, token]);
 
   // ---- 直播订阅（回放模式不连） ----
   // 同时要求 head 非空：引导重跑时 store 会被 reset（head=null、mode 回到 "live"），
@@ -337,6 +411,8 @@ export default function GamePage({ gameId, token, viewer, replay }: GamePageProp
   );
 
   const store = useGameStore.getState();
+  // 游标拖动/翻页/暂停时打断仍在播的配音（fix round 2，见 lib/replayControls.ts 头注释）。
+  const controls = replayControls(store, useVoice.getState());
 
   return (
     <div className={`${styles.root} ${over ? styles.rootOver : ""}`}>
@@ -367,6 +443,7 @@ export default function GamePage({ gameId, token, viewer, replay }: GamePageProp
 
       <div className={styles.body}>
         <div className={styles.left}>
+          <VoiceToggle />
           <SeatCircle
             state={view}
             speaking={speaking}
@@ -401,12 +478,12 @@ export default function GamePage({ gameId, token, viewer, replay }: GamePageProp
         speed={speed}
         segments={segments}
         live={mode === "live"}
-        onCursor={(seq) => store.setCursor(seq)}
-        onPlay={() => store.play()}
-        onPause={() => store.pause()}
-        onSpeed={(s) => store.setSpeed(s)}
-        onStep={(d) => (d === 1 ? store.stepForward() : store.stepBack())}
-        onLive={() => store.setCursor(null)}
+        onCursor={controls.onCursor}
+        onPlay={controls.onPlay}
+        onPause={controls.onPause}
+        onSpeed={controls.onSpeed}
+        onStep={controls.onStep}
+        onLive={controls.onLive}
       />
     </div>
   );
