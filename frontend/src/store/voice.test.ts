@@ -115,6 +115,31 @@ describe("useVoice", () => {
     await doneB;
   });
 
+  it("voicingSeq 从首段开播到末段播完保持不变，分段之间不闪 null；清空后为 null", async () => {
+    const p = fakePlayer();
+    useVoice.getState().setPlayer(p);
+    useVoice.getState().setEnabled(true);
+    expect(useVoice.getState().voicingSeq).toBeNull();
+    useVoice.getState().enqueue({ seq: 6, part: 0, url: "/a/6/0", duration: 1 });
+    useVoice.getState().enqueue({ seq: 6, part: 1, url: "/a/6/1", duration: 1 });
+    await Promise.resolve();
+    expect(useVoice.getState().voicingSeq).toBe(6);
+    p.finishOne();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(useVoice.getState().voicingSeq).toBe(6); // 第二段开播，仍是 6
+    p.finishOne();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(useVoice.getState().voicingSeq).toBeNull();
+    // 回放路径同样
+    const done = useVoice.getState().playSeq("g", 9, [{ part: 0, duration: 1 }], undefined);
+    await Promise.resolve();
+    expect(useVoice.getState().voicingSeq).toBe(9);
+    useVoice.getState().clear();
+    await done;
+    expect(useVoice.getState().voicingSeq).toBeNull();
+  });
   it("setEnabled 写 localStorage", () => {
     useVoice.getState().setEnabled(true);
     expect(localStorage.getItem("agenthowl.voice")).toBe("1");

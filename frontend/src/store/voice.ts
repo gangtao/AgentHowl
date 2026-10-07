@@ -33,6 +33,10 @@ interface VoiceState {
   /** 收到过帧或清单非空即为 true；VoiceToggle 据此决定是否渲染（没有音频就没有开关）。 */
   available: boolean;
   playing: { seq: number; part: number } | null;
+  /** 当前"正在配音"的发言 seq：从该 seq 第一段开播起、到最后一段播完为止保持不变
+   * （分段之间不闪成 null）。GamePage 用它把发言高亮/聚光牌对准正在出声的人，而不是
+   * state 里已经轮到的下一位——引擎提交发言后立刻把发言权交给下一位，但音频还在播上一位。 */
+  voicingSeq: number | null;
   queue: AudioQueueItem[];
 
   /** 测试注入假播放器；生产环境不调用，播放器按需懒建。 */
@@ -66,13 +70,14 @@ function drain(get: () => VoiceState, set: (partial: Partial<VoiceState>) => voi
   const { enabled, playing, queue } = get();
   if (!enabled || playing !== null || queue.length === 0) return;
   const item = queue[0] as AudioQueueItem;
-  set({ queue: queue.slice(1), playing: { seq: item.seq, part: item.part } });
+  set({ queue: queue.slice(1), playing: { seq: item.seq, part: item.part }, voicingSeq: item.seq });
   const gen = generation;
   getPlayer()
     .play(item.url)
     .then(() => {
       if (gen !== generation) return; // 期间被 clear() 打断，播放态已经被重置过
-      set({ playing: null });
+      // 队列还有后续分段时保持 voicingSeq（下一次 drain 会按新 seq 覆盖），播完才清
+      set({ playing: null, ...(get().queue.length === 0 ? { voicingSeq: null } : {}) });
       drain(get, set);
     });
 }
@@ -81,6 +86,7 @@ export const useVoice = create<VoiceState>((set, get) => ({
   enabled: readEnabled(),
   available: false,
   playing: null,
+  voicingSeq: null,
   queue: [],
 
   setPlayer(p) {
@@ -121,7 +127,12 @@ export const useVoice = create<VoiceState>((set, get) => ({
   clear(resetAvailable) {
     generation += 1;
     player?.stop();
-    set({ queue: [], playing: null, ...(resetAvailable ? { available: false } : {}) });
+    set({
+      queue: [],
+      playing: null,
+      voicingSeq: null,
+      ...(resetAvailable ? { available: false } : {}),
+    });
   },
 
   async playSeq(gameId, seq, parts, token) {
@@ -133,12 +144,13 @@ export const useVoice = create<VoiceState>((set, get) => ({
     // clear() 已经做了「generation += 1 + player.stop() + 清 queue/playing」，直接复用。
     get().clear();
     const gen = generation;
+    set({ voicingSeq: seq });
     for (const part of parts) {
       if (gen !== generation) return;
       set({ playing: { seq, part: part.part } });
       await getPlayer().play(audioUrl(gameId, seq, part.part, token));
       if (gen !== generation) return;
     }
-    set({ playing: null });
+    set({ playing: null, voicingSeq: null });
   },
 }));

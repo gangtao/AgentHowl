@@ -354,7 +354,17 @@ export default function GamePage({ gameId, token, viewer, replay }: GamePageProp
   const totalSeq = events.length > 0 ? (events[events.length - 1] as Event).seq : 0;
   const atSeq = cursor ?? totalSeq;
 
-  const speaking = view !== null && SPEAKING_PHASES.has(view.phase) ? currentSpeaker(view) : null;
+  const turnSpeaker =
+    view !== null && SPEAKING_PHASES.has(view.phase) ? currentSpeaker(view) : null;
+  // 正在出声的发言优先于"轮到谁"：引擎提交发言后立刻把发言权交给下一位，而音频还在播上一位，
+  // 高亮/聚光牌若只看 state 会跑到下一位身上（issue #103 用户反馈）。零过滤：seq 来自服务端帧。
+  const voicingSeq = useVoice((s) => s.voicingSeq);
+  const voicingSeat = useMemo<number | null>(() => {
+    if (voicingSeq === null) return null;
+    const e = events.find((x) => x.seq === voicingSeq);
+    return e?.actor_seat ?? null;
+  }, [events, voicingSeq]);
+  const speaking = voicingSeat ?? turnSpeaker;
 
   // 票数小标只在投票类阶段显示——否则会把上一轮遗留的票箱画在座位上。
   const votes = useMemo<Record<number, number>>(() => {
