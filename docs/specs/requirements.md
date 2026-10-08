@@ -614,6 +614,8 @@ pydantic，零 IO）：`kind`（`ollama`/`openai`/`anthropic`/`openai_compatible
 | GET | `/api/v1/games/{game_id}/audio` | 发言配音清单 `{"<seq>": [{"part": 0, "duration": 2.3}, ...]}`（扫目录 + 读 WAV 头）；权限同 `/replay`（issue #103） |
 | GET | `/api/v1/games/{game_id}/audio/{seq}/{part}` | 发言配音 WAV 文件；权限同 `/replay`，另接受 `?token=` 查询参数（`<audio>` 元素发不出 `Authorization` 头，等价于 WS 端点的 `?token=` 先例，issue #103） |
 | GET | `/api/v1/tts/status` | TTS 服务探测状态 `TtsStatus{enabled, ok, url, detail, supports_style}`；响应绝不含 api key（issue #103） |
+| POST | `/api/v1/voices/design` | 按描述生成一个锚点声线样本 `{anchor_id, url}`（每次重新设计；TTS 不可用 503）；档案 `voice.anchor` 保存后，对局里每句以它为参考克隆，音色一致 |
+| GET | `/api/v1/voices/{anchor_id}` | 读取锚点音频（公开样本，不鉴权，immutable 缓存）；非法/不存在 404 |
 
 **Agent 档案库端点**（issue #26；持久化于 `data/agents/`；供 Lobby 建局选档案与 `AgentEditor` 用）：
 

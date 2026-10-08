@@ -226,3 +226,13 @@ OpenAI-speech 兼容服务（vLLM-Omni、Kokoro-FastAPI 等，`AGENTHOWL_TTS_KIN
 
 - 旧档案 JSON 无新字段 → `None`。旧对局无音频目录 → 清单空，回放按原 speed。
 - `voice=False`（默认）的对局与现状逐字一致；未配置 `AGENTHOWL_TTS_URL` 时 `/tts/status.enabled=False`，建局页不显示语音开关。
+
+## 7. 补充：描述声线的锚点克隆（2026-10-08）
+
+VoiceDesign 每次请求都按描述重新采样一个说话人，逐句合成会句句换人（用户实测反馈）。改为：
+`VoiceSpec.anchor`（`^[0-9a-f]{16}\.wav$`，内容寻址，存 `data/voices/`）；`POST /api/v1/voices/design {style}`
+用 VoiceDesign 念固定锚点句 `ANCHOR_TEXT` 生成样本并返回 URL 供试听；之后每句请求改为
+`model=AGENTHOWL_TTS_MODEL_CLONE`（默认 Qwen3-TTS 1.7B Base）+ `ref_audio=锚点` + `ref_text=ANCHOR_TEXT`，
+不再传描述。老档案无 anchor → 运行期按描述哈希自动生成 `auto-<hash>.wav` 并缓存；锚点生成失败退回逐句设计。
+mlx-audio 只接受服务端本地路径作 `ref_audio`，`AGENTHOWL_TTS_REF_DIR` 指定 TTS 眼中的锚点目录（compose 自动填
+宿主机的 `backend/data/voices`）。本机实测：1.7B 克隆 RTF≈1、0.6B≈0.6–1，首句晚 1–2 s；预置声线不受影响。

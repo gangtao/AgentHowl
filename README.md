@@ -235,6 +235,12 @@ make fe-check         # 或 cd frontend && npm run check —— 确认 TS reduce
 - **落盘**：音频存 `backend/data/audio/<game_id>/<seq>-<part>.wav`；删局（`DELETE /games/{id}`）
   连带删除该局音频目录。
 
+**描述声线为什么要「生成声线试听」**：描述只约束风格（性别、年龄、沙哑…），VoiceDesign 每次请求都会重新"设计"
+一个人；逐句合成就会一段话里换好几个人。所以描述模式会先用描述念一遍固定的锚点句，存成锚点音频
+（`backend/data/voices/`，内容寻址），之后每句都用克隆模型以锚点为参考——音色句句一致。编辑器里点
+「生成声线试听」听满意再保存（不满意「换一个」）；没生成的老档案开局时自动生成一次并缓存。Docker 下
+TTS 在宿主机，compose 已把 `AGENTHOWL_TTS_REF_DIR` 填成宿主机的 `backend/data/voices`。
+
 ## 游戏逻辑要点
 
 - 夜间行动窗口可并行开放，但按 `night_order` **串行结算**（女巫必须先看到狼刀结果）
