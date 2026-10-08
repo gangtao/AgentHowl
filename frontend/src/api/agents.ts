@@ -12,6 +12,8 @@ export interface VoiceSpec {
   speaker?: string | null;
   style?: string | null;
   speed?: number;
+  /** 描述声线的锚点音频 id（POST /voices/design 生成）：有它才能句句同一个人；null = 运行时自动生成。 */
+  anchor?: string | null;
 }
 
 /** 预置声线标签（与后端 PRESET_SPEAKERS 同步，issue #103；Qwen3-TTS CustomVoice 中文声线）。 */

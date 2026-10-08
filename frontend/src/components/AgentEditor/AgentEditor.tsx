@@ -8,7 +8,7 @@ import { useId, useMemo, useState, type ChangeEvent } from "react";
 import { PRESET_SPEAKERS, type AgentProfile, type SkillInfo, type StoredAgent } from "../../api/agents";
 import { AVATAR_ACCEPT, MAX_AVATAR_BYTES, uploadAvatar } from "../../api/avatars";
 import type { ProviderPublic } from "../../api/providers";
-import { ApiError } from "../../api/rest";
+import { ApiError, designVoice, voiceAnchorUrl } from "../../api/rest";
 import { isValidMemoryId, suggestMemoryId } from "../../lib/memoryId";
 import {
   MAX_DESCRIPTION,
@@ -47,7 +47,14 @@ interface FormState {
   skills: string[];
   personality: PersonalityForm;
   memoryId: string;
-  voice: { mode: "none" | "preset" | "design"; speaker: string; style: string; speed: number };
+  voice: {
+    mode: "none" | "preset" | "design";
+    speaker: string;
+    style: string;
+    speed: number;
+    /** 描述声线的锚点 id；描述一改就清空（锚点与旧描述绑定）。 */
+    anchor: string | null;
+  };
 }
 
 function initialForm(stored: StoredAgent | null, providers: ProviderPublic[]): FormState {
@@ -74,8 +81,9 @@ function initialForm(stored: StoredAgent | null, providers: ProviderPublic[]): F
           speaker: p.voice.speaker ?? "dylan",
           style: p.voice.style ?? "",
           speed: p.voice.speed ?? 1,
+          anchor: p.voice.anchor ?? null,
         }
-      : { mode: "none", speaker: "dylan", style: "", speed: 1 },
+      : { mode: "none", speaker: "dylan", style: "", speed: 1, anchor: null },
   };
 }
 
@@ -142,6 +150,24 @@ export default function AgentEditor({
     tooLong ||
     voiceBad;
 
+  const [designing, setDesigning] = useState(false);
+  const [designError, setDesignError] = useState<string | null>(null);
+
+  async function designAnchor(): Promise<void> {
+    const style = form.voice.style.trim();
+    if (style === "" || designing) return;
+    setDesigning(true);
+    setDesignError(null);
+    try {
+      const res = await designVoice(style);
+      setForm((f) => ({ ...f, voice: { ...f.voice, anchor: res.anchor_id } }));
+    } catch (err) {
+      setDesignError(err instanceof ApiError ? err.detail : String(err));
+    } finally {
+      setDesigning(false);
+    }
+  }
+
   function submit(): void {
     if (blocked || saving) return;
     const voice: AgentProfile["voice"] =
@@ -154,7 +180,12 @@ export default function AgentEditor({
               style: form.voice.style.trim() || null,
               speed: form.voice.speed,
             }
-          : { mode: "design", style: form.voice.style.trim(), speed: form.voice.speed };
+          : {
+              mode: "design",
+              style: form.voice.style.trim(),
+              speed: form.voice.speed,
+              anchor: form.voice.anchor,
+            };
     const profile: AgentProfile = {
       name: nameTrimmed,
       model: form.models.model.trim(),
@@ -401,10 +432,38 @@ export default function AgentEditor({
                 placeholder="沙哑低沉的中年东北男声，语速快"
                 value={form.voice.style}
                 onChange={(e) =>
-                  setForm({ ...form, voice: { ...form.voice, style: e.target.value } })
+                  // 描述一改，旧锚点就不再代表这段描述：清掉，提示重新生成
+                  setForm({
+                    ...form,
+                    voice: { ...form.voice, style: e.target.value, anchor: null },
+                  })
                 }
               />
               {voiceBad && <span className={styles.err}>声线描述必填。</span>}
+              <div className={styles.anchorRow}>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  disabled={voiceBad || designing}
+                  onClick={() => void designAnchor()}
+                >
+                  {designing ? "生成中…" : form.voice.anchor ? "换一个" : "生成声线试听"}
+                </button>
+                {form.voice.anchor !== null && (
+                  <audio
+                    controls
+                    preload="none"
+                    src={voiceAnchorUrl(form.voice.anchor)}
+                    aria-label="声线试听"
+                  />
+                )}
+              </div>
+              {designError !== null && <span className={styles.err}>{designError}</span>}
+              <span className={styles.hint}>
+                {form.voice.anchor
+                  ? "已固定这个声线：对局里每句话都用它。想换就再点「换一个」。"
+                  : "描述只约束风格，具体是谁每次生成都不同——先「生成声线试听」把人定下来再保存；不生成则开局时自动定一次。"}
+              </span>
             </div>
           )}
           {form.voice.mode !== "none" && (

@@ -151,6 +151,20 @@ export function getTtsStatus(): Promise<TtsStatus> {
   return req<TtsStatus>("GET", "/tts/status");
 }
 
+export interface VoiceDesignResult {
+  anchor_id: string;
+  url: string;
+}
+
+/** 按描述生成一个锚点声线样本（每次都是重新设计，不满意再点一次）；TTS 不可用 → 503。 */
+export function designVoice(style: string): Promise<VoiceDesignResult> {
+  return req<VoiceDesignResult>("POST", "/voices/design", { body: { style } });
+}
+
+export function voiceAnchorUrl(anchorId: string): string {
+  return `${API_BASE}/voices/${anchorId}`;
+}
+
 export interface AudioPartInfo {
   part: number;
   duration: number;

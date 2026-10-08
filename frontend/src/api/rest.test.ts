@@ -6,8 +6,7 @@ import {
   getAudioManifest,
   getGameAvatars,
   getReplay,
-  getTtsStatus,
-} from "./rest";
+  getTtsStatus, designVoice, voiceAnchorUrl } from "./rest";
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -143,4 +142,20 @@ describe("rest.ts", () => {
     expect(audioUrl("g_x", 57, 0)).toBe("/api/v1/games/g_x/audio/57/0");
     expect(audioUrl("g_x", 57, 0, "tok-123")).toBe("/api/v1/games/g_x/audio/57/0?token=tok-123");
   });
+});
+
+it("designVoice POST /voices/design；voiceAnchorUrl 形状", async () => {
+  const fetchMock = vi.fn(
+    async () =>
+      new Response(JSON.stringify({ anchor_id: "a.wav", url: "/api/v1/voices/a.wav" }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+  );
+  vi.stubGlobal("fetch", fetchMock);
+  expect(await designVoice("沙哑")).toEqual({ anchor_id: "a.wav", url: "/api/v1/voices/a.wav" });
+  const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+  expect(url).toContain("/api/v1/voices/design");
+  expect(init.method).toBe("POST");
+  expect(voiceAnchorUrl("0123456789abcdef.wav")).toBe("/api/v1/voices/0123456789abcdef.wav");
 });

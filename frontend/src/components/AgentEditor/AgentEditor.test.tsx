@@ -213,4 +213,39 @@ describe("AgentEditor", () => {
     fireEvent.click(screen.getByRole("button", { name: "保存" }));
     expect(create).toHaveBeenLastCalledWith(expect.objectContaining({ voice: null }));
   });
+
+  it("描述声线：生成试听得到锚点并随保存写入；改描述清空锚点（issue #103 跟进）", async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(JSON.stringify({ anchor_id: "0123456789abcdef.wav", url: "/api/v1/voices/0123456789abcdef.wav" }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const { create } = renderEditor();
+    fill("名字 *", "夜枭");
+    fill("LiteLLM 模型串", "ollama/qwen2.5:7b");
+    fireEvent.change(screen.getByLabelText(/声线模式/), { target: { value: "design" } });
+    expect(screen.getByRole("button", { name: /生成声线试听/ })).toBeDisabled(); // 描述为空
+    fireEvent.change(screen.getByLabelText(/声线描述/), { target: { value: "沙哑老头" } });
+    fireEvent.click(screen.getByRole("button", { name: /生成声线试听/ }));
+    await waitFor(() => expect(screen.getByLabelText("声线试听")).toBeInTheDocument());
+    expect(screen.getByLabelText("声线试听")).toHaveAttribute("src", "/api/v1/voices/0123456789abcdef.wav");
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toContain("/api/v1/voices/design");
+    expect(JSON.parse(String(init.body))).toEqual({ style: "沙哑老头" });
+    expect(screen.getByRole("button", { name: /换一个/ })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+    expect(create).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        voice: { mode: "design", style: "沙哑老头", speed: 1, anchor: "0123456789abcdef.wav" },
+      }),
+    );
+    fireEvent.change(screen.getByLabelText(/声线描述/), { target: { value: "沙哑老头，带笑" } });
+    expect(screen.queryByLabelText("声线试听")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+    expect(create).toHaveBeenLastCalledWith(
+      expect.objectContaining({ voice: expect.objectContaining({ anchor: null }) }),
+    );
+  });
 });
