@@ -188,6 +188,8 @@ def test_voice_spec_validation() -> None:
     assert ok.voice is not None and ok.voice.speed == 1.0
     VoiceSpec(mode="preset", speaker="eric", style="非常愤怒，语速快", speed=1.5)
     VoiceSpec(mode="design", style="沙哑低沉的老爷爷")
+    anchored = VoiceSpec(mode="design", style="x", anchor="0123456789abcdef.wav")
+    assert anchored.anchor == "0123456789abcdef.wav"
     for bad in (
         {"mode": "preset"},  # 缺 speaker
         {"mode": "preset", "speaker": "nobody"},
@@ -198,6 +200,10 @@ def test_voice_spec_validation() -> None:
         {"mode": "preset", "speaker": "vivian", "speed": 0.4},
         {"mode": "preset", "speaker": "vivian", "speed": 2.1},
         {"mode": "clone", "style": "x"},
+        # preset 不用 anchor
+        {"mode": "preset", "speaker": "vivian", "anchor": "0123456789abcdef.wav"},
+        {"mode": "design", "style": "x", "anchor": "../x.wav"},
+        {"mode": "design", "style": "x", "anchor": "0123456789abcdef.mp3"},
     ):
         with pytest.raises(ValidationError):
             VoiceSpec.model_validate(bad)

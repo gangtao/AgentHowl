@@ -11,7 +11,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from app.agent.skills import BUILTIN_SKILLS_DIR, SkillLibrary
-from app.api import agents, avatars, providers, rest, ws
+from app.api import agents, avatars, providers, rest, voices, ws
 from app.api.deps import TokenRegistry
 from app.runtime.agent_library import AgentLibraryStore, JsonFileAgentLibrary
 from app.runtime.avatar_store import AvatarStore, FileAvatarStore
@@ -23,6 +23,7 @@ from app.runtime.provider_store import JsonFileProviderStore, ProviderStore
 from app.runtime.registry import GameRegistry
 from app.runtime.speech_audio import SpeechAudioSink
 from app.runtime.tts import TtsClient, TtsConfig, build_tts_client
+from app.runtime.voice_anchors import VoiceAnchorStore
 from app.schemas.actions import ToolCallError
 from app.store.event_store import EventStore, JsonFileEventStore, StoreError
 
@@ -45,6 +46,7 @@ def create_app(
     provider_store: ProviderStore | None = None,
     provider_probe: ProviderProbe | None = None,
     avatars_dir: Path | None = None,
+    voices_dir: Path | None = None,
     avatar_store: AvatarStore | None = None,
     frontend_dist: Path | None = None,
     public_history: bool | None = None,
@@ -67,7 +69,11 @@ def create_app(
     # 发言配音（issue #103）：TTS 客户端只认 OpenAI-speech 协议；未配置 URL → Disabled
     tts = tts_client or build_tts_client(tts_config or TtsConfig.from_env())
     app.state.tts = tts
-    app.state.speech_audio = SpeechAudioSink(audio_dir or Path("data/audio"), tts)
+    # 描述声线锚点（句句同一个人）：data/voices
+    app.state.voice_anchors = VoiceAnchorStore(voices_dir or Path("data/voices"))
+    app.state.speech_audio = SpeechAudioSink(
+        audio_dir or Path("data/audio"), tts, app.state.voice_anchors
+    )
     # 跨局记忆目录（issue #59）：惰性建目录，无 memory_id 的运行永不落盘
     app.state.games = GameRegistry(
         store=store or JsonFileEventStore(data_dir or Path("data/games")),
@@ -96,6 +102,7 @@ def create_app(
     app.include_router(agents.router, prefix="/api/v1")
     app.include_router(providers.router, prefix="/api/v1")
     app.include_router(avatars.router, prefix="/api/v1")
+    app.include_router(voices.router, prefix="/api/v1")
 
     def _handler(status: int):  # type: ignore[no-untyped-def]
         async def h(request: Request, exc: Exception) -> JSONResponse:

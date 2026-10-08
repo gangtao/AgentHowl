@@ -36,7 +36,9 @@ class FakeTts:
         self.fail_at = fail_at
         self.calls: list[str] = []
 
-    async def synthesize_sentences(self, text: str, voice: VoiceSpec) -> AsyncIterator[AudioPart]:
+    async def synthesize_sentences(
+        self, text: str, voice: VoiceSpec, ref_audio: object = None
+    ) -> AsyncIterator[AudioPart]:
         self.calls.append(text)
         for i, _s in enumerate(["第一句话够长了吧。", "第二句话也够长了。"]):
             if self.fail_at == i:
@@ -54,7 +56,9 @@ class SlowTts:
         self.delay = delay
         self.duration = duration
 
-    async def synthesize_sentences(self, text: str, voice: VoiceSpec) -> AsyncIterator[AudioPart]:
+    async def synthesize_sentences(
+        self, text: str, voice: VoiceSpec, ref_audio: object = None
+    ) -> AsyncIterator[AudioPart]:
         for i in range(2):
             await asyncio.sleep(self.delay)
             yield AudioPart(index=i, wav=_wav(self.duration), duration_sec=self.duration)

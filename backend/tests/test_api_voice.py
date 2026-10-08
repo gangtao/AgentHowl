@@ -15,7 +15,7 @@ from app.main import create_app
 from app.runtime.agent_library import InMemoryAgentLibrary
 from app.runtime.game_runner import RunnerTimeouts
 from app.runtime.player_port import BotPlayerPort
-from app.runtime.tts import AudioPart, TtsStatus
+from app.runtime.tts import AudioPart, TtsError, TtsStatus
 from app.store.event_store import InMemoryEventStore
 
 
@@ -33,8 +33,15 @@ class FakeTts:
     def __init__(self, ok: bool = True) -> None:
         self.ok = ok
 
-    async def synthesize_sentences(self, text: str, voice: VoiceSpec) -> AsyncIterator[AudioPart]:
+    async def synthesize_sentences(
+        self, text: str, voice: VoiceSpec, ref_audio: object = None
+    ) -> AsyncIterator[AudioPart]:
         yield AudioPart(index=0, wav=_wav(0.02), duration_sec=0.02)
+
+    async def design_anchor(self, style: str) -> bytes:
+        if not self.ok:
+            raise TtsError("down")
+        return _wav(0.05 + 0.001 * len(style))
 
     async def probe(self) -> TtsStatus:
         return TtsStatus(
@@ -54,6 +61,7 @@ def _app(tmp_path: Path, tts: Any, public_history: bool | None = None) -> TestCl
         agent_port_factory=lambda seat, h: BotPlayerPort(state_provider=h.live_state),
         tts_client=tts,
         audio_dir=tmp_path / "audio",
+        voices_dir=tmp_path / "voices",
         public_history=public_history,
     )
     return TestClient(app)
@@ -217,3 +225,29 @@ def test_audio_endpoints_follow_replay_policy(tmp_path: Path) -> None:
         # 开关关：终局匿名仍 401
         assert c.get(f"/api/v1/games/{gid}/audio").status_code == 401
     assert c.get("/api/v1/games/g_nope/audio").status_code in (401, 404)
+
+
+def test_voice_design_preview_and_fetch(client: TestClient, tmp_path: Path) -> None:
+    """描述声线试听：生成锚点 → 可播放 URL（不鉴权）；同描述再点一次是新的随机结果（这里假 TTS 内容
+    相同故 id 相同，只验幂等不炸）；非法/不存在 404；空描述 422。"""
+    r = client.post("/api/v1/voices/design", json={"style": "沙哑低沉的老爷爷"})
+    assert r.status_code == 200, r.text
+    aid, url = r.json()["anchor_id"], r.json()["url"]
+    assert url == f"/api/v1/voices/{aid}" and aid.endswith(".wav")
+    g = client.get(url)
+    assert g.status_code == 200 and g.content[:4] == b"RIFF"
+    assert g.headers["content-type"].startswith("audio/wav")
+    assert (tmp_path / "voices" / aid).is_file()
+    assert client.post("/api/v1/voices/design", json={"style": "  "}).status_code == 422
+    assert client.get("/api/v1/voices/..%2Fx.wav").status_code == 404
+    assert client.get("/api/v1/voices/0000000000000000.wav").status_code == 404
+    # 档案可以保存该 anchor
+    voice = {"mode": "design", "style": "沙哑低沉的老爷爷", "anchor": aid}
+    r = client.post("/api/v1/agents", json={"name": "沙哑", "model": "x", "voice": voice})
+    assert r.status_code == 201 and r.json()["profile"]["voice"]["anchor"] == aid
+
+
+def test_voice_design_503_when_tts_down(tmp_path: Path) -> None:
+    with _app(tmp_path, FakeTts(ok=False)) as c:
+        r = c.post("/api/v1/voices/design", json={"style": "x"})
+        assert r.status_code == 503 and "TTS" in r.json()["detail"]

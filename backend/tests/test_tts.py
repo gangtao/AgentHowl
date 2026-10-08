@@ -3,12 +3,14 @@
 import io
 import json
 import wave
+from pathlib import Path
 
 import httpx
 import pytest
 
 from app.agent.profile import VoiceSpec
 from app.runtime.tts import (
+    ANCHOR_TEXT,
     SENTENCE_LIMIT,
     DisabledTtsClient,
     HttpTtsClient,
@@ -217,3 +219,66 @@ def test_config_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
     assert cfg.model_preset.startswith("mlx-community/Qwen3-TTS") and cfg.model_design.endswith(
         "VoiceDesign-6bit"
     )
+
+
+@pytest.mark.asyncio
+async def test_clone_mapping_with_anchor_and_ref_dir(tmp_path: Path) -> None:
+    seen: list[dict] = []
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        seen.append(json.loads(req.content))
+        return httpx.Response(200, content=_wav(0.2))
+
+    ref = tmp_path / "0123456789abcdef.wav"
+    ref.write_bytes(_wav(0.1))
+    c = _client("mlx_audio", handler)
+    v = VoiceSpec(mode="design", style="沙哑老头", anchor="0123456789abcdef.wav")
+    [p async for p in c.synthesize_sentences("这是第一句够长的话。", v, ref)]
+    body = seen[0]
+    assert body["ref_audio"] == str(ref.resolve()) and body["ref_text"] == ANCHOR_TEXT
+    assert "instruct" not in body and "voice" not in body and body["lang_code"] == "chinese"
+    assert body["model"].endswith("Base-6bit")  # 默认克隆模型
+    # ref_dir：按文件名映射到 TTS 服务眼中的目录
+    cfg = TtsConfig(url="http://tts.local", model_clone="m-clone", ref_dir="/host/voices/")
+    c2 = HttpTtsClient(cfg, transport=httpx.MockTransport(handler))
+    seen.clear()
+    [p async for p in c2.synthesize_sentences("这是第一句够长的话。", v, ref)]
+    assert seen[0]["ref_audio"] == "/host/voices/0123456789abcdef.wav"
+    assert seen[0]["model"] == "m-clone"
+    # 没有锚点：仍走设计模型 + instruct
+    seen.clear()
+    [p async for p in c.synthesize_sentences("这是第一句够长的话。", v)]
+    assert seen[0]["model"] == "m-design" and seen[0]["instruct"] == "沙哑老头"
+
+
+@pytest.mark.asyncio
+async def test_design_anchor_uses_design_model_and_anchor_text() -> None:
+    seen: list[dict] = []
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        seen.append(json.loads(req.content))
+        return httpx.Response(200, content=_wav(0.3))
+
+    wav = await _client("mlx_audio", handler).design_anchor("甜美少女")
+    assert wav[:4] == b"RIFF" and seen[0]["model"] == "m-design" and seen[0]["input"] == ANCHOR_TEXT
+    assert seen[0]["instruct"] == "甜美少女"
+
+    def not_wav(req: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=b"nope")
+
+    with pytest.raises(TtsError):
+        await _client("mlx_audio", not_wav).design_anchor("x")
+    with pytest.raises(TtsError):
+        await DisabledTtsClient().design_anchor("x")
+
+
+def test_config_from_env_clone_and_ref_dir(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("AGENTHOWL_TTS_URL", "http://127.0.0.1:8880")
+    monkeypatch.setenv("AGENTHOWL_TTS_MODEL_CLONE", "x/clone")
+    monkeypatch.setenv("AGENTHOWL_TTS_REF_DIR", "/host/voices/")
+    cfg = TtsConfig.from_env()
+    assert cfg.model_clone == "x/clone" and cfg.ref_dir == "/host/voices"
+    monkeypatch.delenv("AGENTHOWL_TTS_MODEL_CLONE")
+    monkeypatch.delenv("AGENTHOWL_TTS_REF_DIR")
+    cfg = TtsConfig.from_env()
+    assert cfg.model_clone.endswith("Base-6bit") and cfg.ref_dir is None

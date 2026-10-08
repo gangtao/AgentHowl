@@ -33,6 +33,7 @@ AVATAR_ID_PATTERN = r"^[0-9a-f]{16}\.(png|jpg|webp)$"
 # 预置声线（issue #103）：Qwen3-TTS CustomVoice 的中文 speaker；dylan=北京话、eric=四川话
 PRESET_SPEAKERS = ("vivian", "serena", "uncle_fu", "dylan", "eric")
 MAX_VOICE_STYLE_CHARS = 200
+ANCHOR_ID_PATTERN = r"^[0-9a-f]{16}\.wav$"
 
 
 class VoiceSpec(BaseModel):
@@ -45,6 +46,10 @@ class VoiceSpec(BaseModel):
     speaker: str | None = None
     style: str | None = Field(default=None, max_length=MAX_VOICE_STYLE_CHARS)
     speed: float = Field(default=1.0, ge=0.5, le=2.0)
+    # 描述声线的锚点音频 id（内容寻址，存 data/voices/<id>.wav）：描述模式每次请求都会重新"设计"
+    # 一个人，锚点把这个人定下来——之后每句都以它为参考克隆，音色才一致。None = 运行时按描述
+    # 自动生成一次并缓存（老档案兼容）。
+    anchor: str | None = Field(default=None, pattern=ANCHOR_ID_PATTERN)
 
     @field_validator("style", mode="before")
     @classmethod
@@ -64,6 +69,8 @@ class VoiceSpec(BaseModel):
                 raise ValueError("design 声线须给出 style（声线描述）")
             if self.speaker is not None:
                 raise ValueError("design 声线不能同时指定 speaker")
+        if self.mode == "preset" and self.anchor is not None:
+            raise ValueError("preset 声线不使用 anchor")
         return self
 
 

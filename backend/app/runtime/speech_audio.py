@@ -22,6 +22,7 @@ from typing import Any
 from app.agent.profile import VoiceSpec
 from app.runtime.connection import ConnectionManager
 from app.runtime.tts import TtsClient, TtsError, wav_duration
+from app.runtime.voice_anchors import VoiceAnchorStore
 
 logger = logging.getLogger(__name__)
 
@@ -37,9 +38,12 @@ def _check_game_id(game_id: str) -> None:
 
 
 class SpeechAudioSink:
-    def __init__(self, audio_dir: Path, tts: TtsClient) -> None:
+    def __init__(
+        self, audio_dir: Path, tts: TtsClient, anchors: VoiceAnchorStore | None = None
+    ) -> None:
         self._dir = audio_dir
         self._tts = tts
+        self._anchors = anchors
 
     # ---------- 合成 + 推帧 + 停留 ----------
 
@@ -55,8 +59,15 @@ class SpeechAudioSink:
         _check_game_id(game_id)
         expected_finish: float | None = None  # 最后一句预计播完的时刻
         parts = 0
+        ref_audio: Path | None = None
+        if voice.mode == "design" and self._anchors is not None:
+            try:
+                ref_audio = await self._anchors.ensure_for(voice, self._tts)
+            except TtsError as exc:
+                # 拿不到锚点就退回每句单独设计（音色可能不一致，但不至于没声）
+                logger.warning("game=%s seq=%d 锚点生成失败，退回逐句设计：%s", game_id, seq, exc)
         try:
-            async for part in self._tts.synthesize_sentences(text, voice):
+            async for part in self._tts.synthesize_sentences(text, voice, ref_audio):
                 path = self._dir / game_id / f"{seq}-{part.index}.wav"
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_bytes(part.wav)

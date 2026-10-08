@@ -9,6 +9,7 @@ import logging
 import os
 import re
 from collections.abc import AsyncIterator
+from pathlib import Path
 from typing import Literal, Protocol
 
 import httpx
@@ -25,6 +26,9 @@ REQUEST_TIMEOUT_SEC = 20.0
 PROBE_TIMEOUT_SEC = 2.0
 DEFAULT_MODEL_PRESET = "mlx-community/Qwen3-TTS-12Hz-1.7B-CustomVoice-6bit"
 DEFAULT_MODEL_DESIGN = "mlx-community/Qwen3-TTS-12Hz-1.7B-VoiceDesign-6bit"
+DEFAULT_MODEL_CLONE = "mlx-community/Qwen3-TTS-12Hz-1.7B-Base-6bit"
+# 描述声线的锚点句：VoiceDesign 只念这一句，之后每句都用克隆模型以它为参考（音色一致）
+ANCHOR_TEXT = "大家好，我是本局的玩家，接下来请听我的分析。"
 _SPLIT_RE = re.compile(r"(?<=[。！？；\n])")
 
 
@@ -37,7 +41,11 @@ class TtsConfig(BaseModel):
     kind: TtsKind = "mlx_audio"
     model_preset: str = DEFAULT_MODEL_PRESET
     model_design: str = DEFAULT_MODEL_DESIGN
+    model_clone: str = DEFAULT_MODEL_CLONE
     api_key: str | None = None
+    # TTS 服务眼中的锚点目录（mlx-audio 只接受服务端本地路径作 ref_audio）；None = 直接用后端的
+    # 绝对路径（同机 make serve）。Docker 下设成宿主机的 backend/data/voices。
+    ref_dir: str | None = None
 
     @classmethod
     def from_env(cls) -> TtsConfig:
@@ -50,7 +58,10 @@ class TtsConfig(BaseModel):
             or DEFAULT_MODEL_PRESET,
             model_design=os.environ.get("AGENTHOWL_TTS_MODEL_DESIGN", "").strip()
             or DEFAULT_MODEL_DESIGN,
+            model_clone=os.environ.get("AGENTHOWL_TTS_MODEL_CLONE", "").strip()
+            or DEFAULT_MODEL_CLONE,
             api_key=os.environ.get("AGENTHOWL_TTS_API_KEY", "").strip() or None,
+            ref_dir=os.environ.get("AGENTHOWL_TTS_REF_DIR", "").strip().rstrip("/") or None,
         )
 
 
@@ -121,7 +132,11 @@ def wav_duration(wav: bytes) -> float:
 
 
 class TtsClient(Protocol):
-    def synthesize_sentences(self, text: str, voice: VoiceSpec) -> AsyncIterator[AudioPart]: ...
+    def synthesize_sentences(
+        self, text: str, voice: VoiceSpec, ref_audio: Path | None = None
+    ) -> AsyncIterator[AudioPart]: ...
+
+    async def design_anchor(self, style: str) -> bytes: ...
 
     async def probe(self) -> TtsStatus: ...
 
@@ -129,9 +144,14 @@ class TtsClient(Protocol):
 class DisabledTtsClient:
     """未配置 AGENTHOWL_TTS_URL：status 报 enabled=False；合成直接报错（调用方不该走到这）。"""
 
-    async def synthesize_sentences(self, text: str, voice: VoiceSpec) -> AsyncIterator[AudioPart]:
+    async def synthesize_sentences(
+        self, text: str, voice: VoiceSpec, ref_audio: Path | None = None
+    ) -> AsyncIterator[AudioPart]:
         raise TtsError("TTS 未配置（AGENTHOWL_TTS_URL 为空）")
         yield  # pragma: no cover  # 让函数成为 async generator
+
+    async def design_anchor(self, style: str) -> bytes:
+        raise TtsError("TTS 未配置（AGENTHOWL_TTS_URL 为空）")
 
     async def probe(self) -> TtsStatus:
         return TtsStatus(enabled=False, ok=False, url=None, detail="未配置 AGENTHOWL_TTS_URL")
@@ -156,48 +176,72 @@ class HttpTtsClient:
             h["Authorization"] = f"Bearer {self._cfg.api_key}"
         return h
 
-    def _body(self, sentence: str, voice: VoiceSpec) -> dict[str, object]:
+    def _ref_path(self, ref_audio: Path) -> str:
+        """锚点文件在 TTS 服务眼中的路径：配置了 ref_dir 就按文件名拼到那边，否则用本机绝对路径。"""
+        if self._cfg.ref_dir:
+            return f"{self._cfg.ref_dir.rstrip('/')}/{ref_audio.name}"
+        return str(ref_audio.resolve())
+
+    def _body(
+        self, sentence: str, voice: VoiceSpec, ref_audio: Path | None = None
+    ) -> dict[str, object]:
         kind = self._cfg.kind
         body: dict[str, object] = {
-            "model": (
-                self._cfg.model_design
-                if (kind == "mlx_audio" and voice.mode == "design")
-                else self._cfg.model_preset
-            ),
             "input": sentence,
             "speed": voice.speed,
             "response_format": "wav",
         }
         if kind == "mlx_audio":
-            if voice.mode == "preset":
-                body["voice"] = voice.speaker
-            if voice.style:
-                body["instruct"] = voice.style
+            if voice.mode == "design" and ref_audio is not None:
+                # 克隆：音色完全由锚点决定，不再传描述（传了反而会让模型重新"设计"）
+                body["model"] = self._cfg.model_clone
+                body["ref_audio"] = self._ref_path(ref_audio)
+                body["ref_text"] = ANCHOR_TEXT
+            else:
+                body["model"] = (
+                    self._cfg.model_design if voice.mode == "design" else self._cfg.model_preset
+                )
+                if voice.mode == "preset":
+                    body["voice"] = voice.speaker
+                if voice.style:
+                    body["instruct"] = voice.style
             body["lang_code"] = "chinese"
         else:
+            body["model"] = self._cfg.model_preset
             body["voice"] = voice.speaker or "alloy"
             if kind == "openai" and voice.style:
                 body["instructions"] = voice.style
         return body
 
-    async def synthesize_sentences(self, text: str, voice: VoiceSpec) -> AsyncIterator[AudioPart]:
+    async def _post_speech(self, client: httpx.AsyncClient, body: dict[str, object]) -> bytes:
+        try:
+            resp = await client.post("/v1/audio/speech", json=body, headers=self._headers())
+        except httpx.HTTPError as exc:
+            raise TtsError(f"TTS 请求失败：{type(exc).__name__}") from exc
+        if resp.status_code >= 300:
+            # 不回显响应正文：可能含上游错误里的敏感信息
+            raise TtsError(f"TTS 服务返回 {resp.status_code}")
+        return resp.content
+
+    async def design_anchor(self, style: str) -> bytes:
+        """按描述用 VoiceDesign 念一遍锚点句，返回 WAV——这就是这条声线以后的"本人"。"""
+        voice = VoiceSpec(mode="design", style=style)
+        async with httpx.AsyncClient(
+            base_url=self._cfg.url or "", timeout=REQUEST_TIMEOUT_SEC, transport=self._transport
+        ) as client:
+            wav = await self._post_speech(client, self._body(ANCHOR_TEXT, voice))
+        wav_duration(wav)  # 非 WAV → TtsError
+        return wav
+
+    async def synthesize_sentences(
+        self, text: str, voice: VoiceSpec, ref_audio: Path | None = None
+    ) -> AsyncIterator[AudioPart]:
         sentences = split_sentences(text)
         async with httpx.AsyncClient(
             base_url=self._cfg.url or "", timeout=REQUEST_TIMEOUT_SEC, transport=self._transport
         ) as client:
             for i, sentence in enumerate(sentences):
-                try:
-                    resp = await client.post(
-                        "/v1/audio/speech",
-                        json=self._body(sentence, voice),
-                        headers=self._headers(),
-                    )
-                except httpx.HTTPError as exc:
-                    raise TtsError(f"TTS 请求失败：{type(exc).__name__}") from exc
-                if resp.status_code >= 300:
-                    # 不回显响应正文：可能含上游错误里的敏感信息
-                    raise TtsError(f"TTS 服务返回 {resp.status_code}")
-                wav = resp.content
+                wav = await self._post_speech(client, self._body(sentence, voice, ref_audio))
                 yield AudioPart(index=i, wav=wav, duration_sec=wav_duration(wav))
 
     async def probe(self) -> TtsStatus:
