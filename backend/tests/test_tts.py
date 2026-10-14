@@ -215,7 +215,12 @@ def test_config_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("AGENTHOWL_TTS_KIND", "openai")
     monkeypatch.setenv("AGENTHOWL_TTS_API_KEY", "k")
     cfg = TtsConfig.from_env()
-    assert cfg.url == "http://127.0.0.1:8880" and cfg.kind == "openai" and cfg.api_key == "k"
+    assert (
+        cfg.url == "http://127.0.0.1:8880"
+        and cfg.kind == "openai"
+        and cfg.api_key is not None
+        and cfg.api_key.get_secret_value() == "k"
+    )
     assert cfg.model_preset.startswith("mlx-community/Qwen3-TTS") and cfg.model_design.endswith(
         "VoiceDesign-6bit"
     )
