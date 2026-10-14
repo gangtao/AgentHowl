@@ -89,3 +89,16 @@
   gap: var(--space-3);
   flex-wrap: wrap;
 }
+
+.anchorRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  margin-top: var(--space-2);
+}
+
+.anchorRow audio {
+  height: 32px;
+  max-width: 260px;
+}

@@ -24,6 +24,7 @@ const PROFILE_KEYS = [
   "memory_id",
   "provider",
   "avatar",
+  "voice",
 ] as const;
 
 /**

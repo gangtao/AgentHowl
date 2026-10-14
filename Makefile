@@ -90,6 +90,12 @@ RELOAD ?=   # 设为 1 开启 uvicorn 热重载（改源码即重启；对局与
 serve: ## 启动 API 服务（uvicorn，http://localhost:8000；RELOAD=1 热重载，会打断进行中的对局）
 	cd $(BACKEND) && $(UV) uvicorn app.main:app $(if $(RELOAD),--reload)
 
+TTS_PORT ?= 8880
+
+.PHONY: tts
+tts: ## 启动本地 TTS 服务（mlx-audio，Apple Silicon；http://127.0.0.1:8880；后端设 AGENTHOWL_TTS_URL 指向它）
+	cd tts && uv run python -m mlx_audio.server --host 127.0.0.1 --port $(TTS_PORT)
+
 .PHONY: watch
 watch: ## 终端看局（可选 SEED= VIEW=gm|spectator|seat:N AI_MODEL= THINKING=1 WOLF_RULE= WOLF_ROUNDS= AGENTS= SKILLS_DIR= ARGS=）
 	cd $(BACKEND) && $(UV) python -m app.cli.play --seed $(SEED) --view $(VIEW) $(_AIFLAGS) $(_WOLFFLAGS) $(ARGS)

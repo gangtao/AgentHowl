@@ -6,7 +6,14 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { AgentProfile } from "../api/agents";
-import { ApiError, createGame, startGame, type CreateGameRequest } from "../api/rest";
+import {
+  ApiError,
+  createGame,
+  getTtsStatus,
+  startGame,
+  type CreateGameRequest,
+  type TtsStatus,
+} from "../api/rest";
 import AgentEditor from "../components/AgentEditor/AgentEditor";
 import PresetCard from "../components/PresetCard/PresetCard";
 import SeatAssignment from "../components/SeatAssignment/SeatAssignment";
@@ -28,6 +35,8 @@ interface Created {
   spectatorToken: string | null;
 }
 
+const TTS_DISABLED: TtsStatus = { enabled: false, ok: false, url: null, detail: null, supports_style: false };
+
 export default function Lobby(): JSX.Element {
   const { items, skills, presets, error, refresh, create } = useAgentLibrary();
   const providers = useProviders((s) => s.items);
@@ -43,10 +52,16 @@ export default function Lobby(): JSX.Element {
   const [created, setCreated] = useState<Created | null>(null);
   const [newAgentOpen, setNewAgentOpen] = useState(false);
   const [newAgentError, setNewAgentError] = useState<string | null>(null);
+  const [tts, setTts] = useState<TtsStatus>(TTS_DISABLED);
+  const [voice, setVoice] = useState(false);
 
   useEffect(() => {
     void refresh();
     void refreshProviders();
+    // 探测失败（服务未起、网络错误等）按「未开启语音」处理：建局本身不受影响（issue #103）。
+    getTtsStatus()
+      .then(setTts)
+      .catch(() => setTts(TTS_DISABLED));
   }, [refresh, refreshProviders]);
 
   const preset = presets.find((p) => p.name === presetName) ?? null;
@@ -99,7 +114,7 @@ export default function Lobby(): JSX.Element {
     setCreating(true);
     setCreateError(null);
     try {
-      const body: CreateGameRequest = { preset: preset.name, agents: agentsPayload };
+      const body: CreateGameRequest = { preset: preset.name, agents: agentsPayload, voice };
       const seedTrimmed = seed.trim();
       if (seedTrimmed !== "") {
         const n = Number(seedTrimmed);
@@ -167,6 +182,17 @@ export default function Lobby(): JSX.Element {
             {summary.filled && fillAgent ? `其余由「${fillAgent.profile.name}」填满（*）· ` : ""}
             seed {seed.trim() === "" ? "随机" : seed.trim()}
           </span>
+          {tts.enabled && (
+            <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5 }}>
+              <input
+                type="checkbox"
+                checked={voice}
+                disabled={!tts.ok}
+                onChange={(e) => setVoice(e.target.checked)}
+              />
+              语音播报{tts.ok ? "" : `（TTS 不可用：${tts.detail ?? ""}）`}
+            </label>
+          )}
           <button
             type="button"
             className="btn btn-primary"

@@ -1,5 +1,7 @@
 """ConnectionManager：按视角过滤广播，复用引擎 visible_events 口径（issue #29）。"""
 
+import pytest
+
 from app.engine.config import Faction, RoleType, build_preset
 from app.engine.events import (
     Event,
@@ -119,3 +121,25 @@ async def test_raising_subscriber_is_evicted_others_delivered() -> None:
     assert got == [1]  # bad 抛错不影响 good
     await mgr.broadcast([_evt(2, Visibility.PUBLIC)])
     assert got == [1, 2]  # bad 已被摘除，不再触发
+
+
+@pytest.mark.asyncio
+async def test_broadcast_frame_reaches_all_and_drops_bad_subscriber() -> None:
+    """issue #103：原始帧（非事件）广播给所有帧订阅者，不经可见性过滤；坏订阅者摘除。"""
+    cm = ConnectionManager(state_provider=_state)
+    got: list[dict] = []
+
+    async def good(frame: dict) -> None:
+        got.append(frame)
+
+    async def bad(frame: dict) -> None:
+        raise RuntimeError("boom")
+
+    cm.subscribe_frames(good)
+    cm.subscribe_frames(bad)
+    await cm.broadcast_frame({"type": "speech_audio", "seq": 1})
+    await cm.broadcast_frame({"type": "speech_audio_end", "seq": 1, "parts": 1})
+    assert [f["type"] for f in got] == ["speech_audio", "speech_audio_end"]
+    cm.unsubscribe_frames(good)
+    await cm.broadcast_frame({"type": "speech_audio", "seq": 2})
+    assert len(got) == 2

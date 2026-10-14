@@ -132,4 +132,62 @@ describe("useGameStore", () => {
     const view = useGameStore.getState().viewState();
     expect(normalizeState(view!)).toEqual(normalizeState(states[states.length - 1]!));
   });
+
+  it("replayGate 命中 seq 时暂停时钟，直到 gate 的 promise resolve 才继续", async () => {
+    vi.useFakeTimers();
+    useGameStore.getState().load(meta, { mode: "replay" });
+    useGameStore.getState().appendEvents(events.slice(0, 4));
+
+    const resolvers: (() => void)[] = [];
+    useGameStore.getState().setReplayGate((seq) => {
+      if (seq !== 2) return null;
+      return new Promise<void>((r) => {
+        resolvers.push(r);
+      });
+    });
+
+    useGameStore.getState().setCursor(0);
+    useGameStore.getState().setSpeed(1000); // 加快节奏，避免测试等太久
+    useGameStore.getState().play();
+
+    vi.advanceTimersByTime(1); // 第一拍：cursor 0→1，无 gate
+    expect(useGameStore.getState().cursor).toBe(1);
+
+    vi.advanceTimersByTime(1); // 第二拍：cursor 1→2，命中 gate，卡住
+    expect(useGameStore.getState().cursor).toBe(2);
+
+    vi.advanceTimersByTime(50); // 再推进多拍：仍卡在 2，gate 没 resolve 时钟不动
+    expect(useGameStore.getState().cursor).toBe(2);
+
+    resolvers.shift()?.();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    vi.advanceTimersByTime(1); // gate 解开后下一拍：cursor 2→3
+    expect(useGameStore.getState().cursor).toBe(3);
+  });
+
+  it("pause() 清空门控：卡住期间 pause() 后重新 play() 不再被旧 gate 卡住", () => {
+    vi.useFakeTimers();
+    useGameStore.getState().load(meta, { mode: "replay" });
+    useGameStore.getState().appendEvents(events.slice(0, 4));
+
+    useGameStore.getState().setReplayGate((seq) =>
+      seq === 2 ? new Promise<void>(() => undefined) : null,
+    ); // 永远不 resolve 的 gate
+
+    useGameStore.getState().setCursor(0);
+    useGameStore.getState().setSpeed(1000);
+    useGameStore.getState().play();
+
+    vi.advanceTimersByTime(2); // 两拍：cursor 0→1→2，第二拍命中 gate 并永久卡住
+    expect(useGameStore.getState().cursor).toBe(2);
+
+    useGameStore.getState().pause();
+    expect(useGameStore.getState().playing).toBe(false);
+
+    useGameStore.getState().play();
+    vi.advanceTimersByTime(1); // 重新播放：不该再被那个永不 resolve 的旧 gate 卡住
+    expect(useGameStore.getState().cursor).toBe(3);
+  });
 });

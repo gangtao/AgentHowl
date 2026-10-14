@@ -105,6 +105,11 @@ describe("toProfilePayload", () => {
     const out = toProfilePayload({ model: "m" }) as unknown as Record<string, unknown>;
     expect("avatar" in out).toBe(false);
   });
+
+  it("保留 voice（issue #103）", () => {
+    const out = toProfilePayload({ model: "m", voice: { mode: "preset", speaker: "dylan" } });
+    expect(out).toEqual({ model: "m", voice: { mode: "preset", speaker: "dylan" } });
+  });
 });
 
 describe("memoryConflicts", () => {

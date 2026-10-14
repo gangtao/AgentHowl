@@ -18,11 +18,14 @@ function jsonResponse(status: number, body: unknown): Response {
   });
 }
 
-/** 按路径分发的 fetch 桩：/meta 返回 metaRes()，/replay 返回事件流。 */
+/** 按路径分发的 fetch 桩：/meta 返回 metaRes()，/replay 返回事件流，
+ * /audio（发言音频清单，issue #103）返回空清单——本文件不测配音，给个空对象足够。 */
 function stubFetch(metaRes: () => Response): ReturnType<typeof vi.fn> {
-  const fetchMock = vi.fn(async (url: string) =>
-    url.endsWith("/meta") ? metaRes() : jsonResponse(200, events),
-  );
+  const fetchMock = vi.fn(async (url: string) => {
+    if (url.endsWith("/meta")) return metaRes();
+    if (url.endsWith("/audio")) return jsonResponse(200, {});
+    return jsonResponse(200, events);
+  });
   vi.stubGlobal("fetch", fetchMock);
   return fetchMock;
 }
@@ -64,9 +67,9 @@ describe("GamePage 回放模式（无 token）", () => {
     expect(useGameStore.getState().mode).toBe("replay");
     expect(wsCtor).not.toHaveBeenCalled();
 
-    // 所有请求（含引导成功后补拉的 /avatars）都不带 Authorization（已结束对局公开回放）。
+    // 所有请求（含引导成功后补拉的 /avatars、/audio 清单）都不带 Authorization（已结束对局公开回放）。
     for (const [url, init] of fetchMock.mock.calls as unknown as [string, RequestInit][]) {
-      expect(url).toMatch(/\/api\/v1\/games\/g_x\/(meta|replay|avatars)$/);
+      expect(url).toMatch(/\/api\/v1\/games\/g_x\/(meta|replay|avatars|audio)$/);
       expect(init.headers).not.toHaveProperty("Authorization");
     }
   });

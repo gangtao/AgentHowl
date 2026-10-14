@@ -110,10 +110,14 @@ async def ws_endpoint(
         for frame in _build_event_frames(events, lambda _e: handle.live_state().round, viewer):
             out_q.put_nowait(frame)
 
+    async def on_frame(frame: dict[str, Any]) -> None:
+        out_q.put_nowait(frame)  # speech_audio / speech_audio_end：公开内容，所有视角都收
+
     # ---- 关键同步块：先订阅、后读历史、再把历史帧入队，中间不 await ----
     # 单线程事件循环上，此顺序保证 subscribe 之后提交的事件只经 on_events 到达，
     # 之前的只存在于 history 里；不丢不重（issue #30 复审 Critical #1）。
     handle.connections.subscribe(viewer, on_events)
+    handle.connections.subscribe_frames(on_frame)
     history = games.store.load_events(info.game_id, from_seq=from_seq)
     round_map = _seq_round_map(games.store.load_events(info.game_id))
     backfill = visible_events(handle.live_state(), history, viewer)
@@ -171,6 +175,7 @@ async def ws_endpoint(
     finally:
         # 先做不可跳过的清理，再回收 sender 任务（其死因与 teardown 无关，一律吞掉）
         handle.connections.unsubscribe(viewer, on_events)
+        handle.connections.unsubscribe_frames(on_frame)
         if port is not None and sender_cb is not None:
             port.detach_sender(sender_cb)
         sender_task.cancel()

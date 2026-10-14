@@ -12,6 +12,7 @@ version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "fastapi" },
+    { name = "httpx" },
     { name = "instructor" },
     { name = "litellm" },
     { name = "orjson" },
@@ -39,6 +40,7 @@ dev = [
 requires-dist = [
     { name = "boto3", marker = "extra == 'bedrock'", specifier = ">=1.43.51" },
     { name = "fastapi", specifier = ">=0.139.0" },
+    { name = "httpx", specifier = ">=0.28.1" },
     { name = "instructor", specifier = ">=1.15.4" },
     { name = "litellm", specifier = ">=1.92.0" },
     { name = "orjson", specifier = ">=3.11.9" },

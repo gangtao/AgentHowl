@@ -6,6 +6,25 @@ export interface PersonalitySpec {
   [key: string]: unknown;
 }
 
+/** 与 app/agent/profile.py::VoiceSpec 对应（extra=forbid）。 */
+export interface VoiceSpec {
+  mode: "preset" | "design";
+  speaker?: string | null;
+  style?: string | null;
+  speed?: number;
+  /** 描述声线的锚点音频 id（POST /voices/design 生成）：有它才能句句同一个人；null = 运行时自动生成。 */
+  anchor?: string | null;
+}
+
+/** 预置声线标签（与后端 PRESET_SPEAKERS 同步，issue #103；Qwen3-TTS CustomVoice 中文声线）。 */
+export const PRESET_SPEAKERS: { id: string; label: string }[] = [
+  { id: "vivian", label: "Vivian · 女 · 明亮年轻" },
+  { id: "serena", label: "Serena · 女 · 温柔" },
+  { id: "uncle_fu", label: "Uncle Fu · 男 · 低沉成熟" },
+  { id: "dylan", label: "Dylan · 男 · 北京话" },
+  { id: "eric", label: "Eric · 男 · 四川话" },
+];
+
 /** 与 app/agent/profile.py::AgentProfile 对应（extra=forbid，字段名逐一对齐）。 */
 export interface AgentProfile {
   name?: string | null;
@@ -19,6 +38,7 @@ export interface AgentProfile {
   memory_id?: string | null;
   provider?: string | null;
   avatar?: string | null;
+  voice?: VoiceSpec | null;
 }
 
 export interface StoredAgent {

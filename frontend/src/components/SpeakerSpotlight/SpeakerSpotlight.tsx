@@ -1,7 +1,10 @@
 // 当前发言者聚光牌（issue #102 追加）：放在左栏座位环下方的空白区，放大显示发言座位的头像与名字。
 // 零过滤：座位来自 state 的发言游标，头像 id 来自服务端 /games/{id}/avatars；无发言者不渲染。
+// issue #103 追加：playing !== null（useVoice 正在播某句配音，不区分是不是这一座位——同一时刻
+// 只会有一句在播，而这张牌本就只在当前发言座位上显示）时标签多个 🔊，提示这句正在配音播放。
 
 import type { GameState } from "../../engine/types";
+import { useVoice } from "../../store/voice";
 import Avatar from "../Avatar/Avatar";
 import { seatColor } from "../seatColor";
 import styles from "./SpeakerSpotlight.module.css";
@@ -18,6 +21,7 @@ export default function SpeakerSpotlight({
   seat,
   avatars,
 }: SpeakerSpotlightProps): JSX.Element | null {
+  const voicePlaying = useVoice((s) => s.playing);
   if (seat === null) return null;
   const player = state.players.find((p) => p.seat === seat);
   if (!player) return null;
@@ -32,7 +36,7 @@ export default function SpeakerSpotlight({
           {seat}号
         </span>
         <span className={styles.name}>{player.display_name}</span>
-        <span className={styles.tag}>发言中</span>
+        <span className={styles.tag}>{voicePlaying !== null ? "发言中 🔊" : "发言中"}</span>
       </div>
     </div>
   );
