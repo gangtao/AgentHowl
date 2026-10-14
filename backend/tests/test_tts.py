@@ -282,3 +282,35 @@ def test_config_from_env_clone_and_ref_dir(monkeypatch: pytest.MonkeyPatch) -> N
     monkeypatch.delenv("AGENTHOWL_TTS_REF_DIR")
     cfg = TtsConfig.from_env()
     assert cfg.model_clone.endswith("Base-6bit") and cfg.ref_dir is None
+
+
+@pytest.mark.asyncio
+async def test_retry_on_timeout_and_skip_failed_sentence() -> None:
+    """冷启动超时再试一次；单句失败跳过不拖累整段；全部失败才抛。"""
+    calls: list[str] = []
+
+    def flaky(req: httpx.Request) -> httpx.Response:
+        sentence = json.loads(req.content)["input"]
+        calls.append(sentence)
+        if sentence.startswith("第一句") and calls.count(sentence) == 1:
+            raise httpx.ReadTimeout("slow")  # 第一次超时，重试成功
+        if sentence.startswith("第二句"):
+            return httpx.Response(500, text="boom")  # 两次都 5xx → 这句丢弃
+        return httpx.Response(200, content=_wav(0.2))
+
+    c = _client("generic", flaky)
+    v = VoiceSpec(mode="preset", speaker="vivian")
+    text = "第一句话够长了吧。第二句也够长了吧。第三句照常出声。"
+    parts = [p async for p in c.synthesize_sentences(text, v)]
+    assert [p.index for p in parts] == [0, 2]
+    assert calls.count("第一句话够长了吧。") == 2 and calls.count("第二句也够长了吧。") == 2
+
+    def always_400(req: httpx.Request) -> httpx.Response:
+        calls.append("x")
+        return httpx.Response(400)
+
+    calls.clear()
+    with pytest.raises(TtsError):
+        bad = _client("generic", always_400)
+        [p async for p in bad.synthesize_sentences("全军覆没的一句话。", v)]
+    assert calls == ["x"]  # 4xx 不重试

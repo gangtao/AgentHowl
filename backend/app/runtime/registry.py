@@ -74,6 +74,7 @@ class GameHandle:
         self.seat_memory_ids: dict[int, str] = {}
         self.experiences: dict[int, AgentExperience] = {}
         self.postgame_task: asyncio.Task[dict[str, AgentExperience]] | None = None
+        self.warm_task: asyncio.Task[None] | None = None  # 声线预热（issue #103）
         # 座位 → Provider（issue #26）：start() 按 profile.provider 装配，供 agent 端口工厂使用
         self.providers: dict[int, Provider] = {}
 
@@ -253,6 +254,10 @@ class GameRegistry:
             if isinstance(port, SupportsEventIngest):
                 handle.connections.subscribe(seat, port.on_events)
         handle.task = asyncio.create_task(runner.run())
+        if handle.voice_enabled and self._speech_audio is not None:
+            # 预热与对局并行：夜一行动期间把模型 / 锚点准备好，上警发言不再撞冷启动
+            voices = [p.voice for p in effective.values() if p.voice is not None]
+            handle.warm_task = asyncio.create_task(self._speech_audio.warm(voices))
         handle.task.add_done_callback(lambda t: _log_runner_exit(handle.game_id, t))
         if handle.seat_memory_ids:
             handle.task.add_done_callback(lambda t: self._schedule_postgame(handle, t))

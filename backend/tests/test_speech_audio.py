@@ -165,3 +165,19 @@ def test_manifest_ignores_junk_and_delete_is_idempotent(tmp_path: Path) -> None:
     sink.delete_game("g2")
     sink.delete_game("g2")
     assert not d.exists()
+
+
+@pytest.mark.asyncio
+async def test_warm_synthesizes_each_distinct_voice_once_and_tolerates_failure(
+    tmp_path: Path,
+) -> None:
+    from app.runtime.speech_audio import WARM_TEXT
+
+    tts = FakeTts(per_sentence=0.0)
+    sink = SpeechAudioSink(tmp_path / "audio", tts)
+    a = VoiceSpec(mode="preset", speaker="dylan")
+    b = VoiceSpec(mode="preset", speaker="dylan", style="高兴")  # 同 speaker 视为同一声线
+    c = VoiceSpec(mode="design", style="沙哑")
+    await sink.warm([a, b, c, a])
+    assert tts.calls == [WARM_TEXT, WARM_TEXT]
+    await SpeechAudioSink(tmp_path / "audio", FakeTts(fail_at=0)).warm([a])  # 不抛

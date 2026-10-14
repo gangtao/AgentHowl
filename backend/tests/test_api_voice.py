@@ -32,10 +32,12 @@ def _wav(seconds: float) -> bytes:
 class FakeTts:
     def __init__(self, ok: bool = True) -> None:
         self.ok = ok
+        self.texts: list[str] = []
 
     async def synthesize_sentences(
         self, text: str, voice: VoiceSpec, ref_audio: object = None
     ) -> AsyncIterator[AudioPart]:
+        self.texts.append(text)
         yield AudioPart(index=0, wav=_wav(0.02), duration_sec=0.02)
 
     async def design_anchor(self, style: str) -> bytes:
@@ -251,3 +253,16 @@ def test_voice_design_503_when_tts_down(tmp_path: Path) -> None:
     with _app(tmp_path, FakeTts(ok=False)) as c:
         r = c.post("/api/v1/voices/design", json={"style": "x"})
         assert r.status_code == 503 and "TTS" in r.json()["detail"]
+
+
+def test_voiced_game_start_warms_voices(tmp_path: Path) -> None:
+    """开局即预热：本局声线各合成一句短话（和对局并行），上警发言不撞冷启动。"""
+    from app.runtime.speech_audio import WARM_TEXT
+
+    tts = FakeTts()
+    with _app(tmp_path, tts) as c:
+        created = _voiced_game(c)
+        _finish(c, created)
+        handle = c.app.state.games.get(created["game_id"])  # type: ignore[attr-defined]
+        assert handle.warm_task is not None and handle.warm_task.done()
+        assert tts.texts[0] == WARM_TEXT and tts.texts.count(WARM_TEXT) == 1

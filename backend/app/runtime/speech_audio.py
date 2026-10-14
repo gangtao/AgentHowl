@@ -27,6 +27,7 @@ from app.runtime.voice_anchors import VoiceAnchorStore
 logger = logging.getLogger(__name__)
 
 AUDIO_TAIL_SEC = 0.3
+WARM_TEXT = "大家好。"
 _PART_RE = re.compile(r"^(\d+)-(\d+)\.wav$")
 _GAME_ID_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 
@@ -44,6 +45,29 @@ class SpeechAudioSink:
         self._dir = audio_dir
         self._tts = tts
         self._anchors = anchors
+
+    # ---------- 预热 ----------
+
+    async def warm(self, voices: list[VoiceSpec]) -> None:
+        """开局时把本局用到的声线各合成一句短话（丢弃结果）：让 TTS 把模型装进内存、设计声线的锚点
+        提前生成——否则第一轮上警发言会撞上冷启动。失败只告警（真正发言时还会再试）。"""
+        seen: set[tuple[str | None, str | None, str | None]] = set()
+        for voice in voices:
+            # 预置声线只看 speaker（情绪指令不影响装载）；描述声线看锚点 / 描述
+            key = (
+                (voice.mode, voice.speaker, None)
+                if voice.mode == "preset"
+                else (voice.mode, None, voice.anchor or voice.style)
+            )
+            if key in seen:
+                continue
+            seen.add(key)
+            try:
+                ref = await self._anchors.ensure_for(voice, self._tts) if self._anchors else None
+                async for _ in self._tts.synthesize_sentences(WARM_TEXT, voice, ref):
+                    pass
+            except TtsError as exc:
+                logger.warning("声线预热失败（%s）：%s", key, exc)
 
     # ---------- 合成 + 推帧 + 停留 ----------
 

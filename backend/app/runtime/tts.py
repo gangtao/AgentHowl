@@ -22,7 +22,9 @@ logger = logging.getLogger(__name__)
 TtsKind = Literal["mlx_audio", "openai", "generic"]
 SENTENCE_LIMIT = 40
 MIN_SENTENCE_CHARS = 8
-REQUEST_TIMEOUT_SEC = 20.0
+# 冷启动首次请求要把 2 GB 权重读进内存，20 s 不够（曾导致上警发言整段无声）
+REQUEST_TIMEOUT_SEC = 60.0
+REQUEST_RETRIES = 1  # 超时 / 连接错误 / 5xx 再试一次
 PROBE_TIMEOUT_SEC = 2.0
 DEFAULT_MODEL_PRESET = "mlx-community/Qwen3-TTS-12Hz-1.7B-CustomVoice-6bit"
 DEFAULT_MODEL_DESIGN = "mlx-community/Qwen3-TTS-12Hz-1.7B-VoiceDesign-6bit"
@@ -214,14 +216,25 @@ class HttpTtsClient:
         return body
 
     async def _post_speech(self, client: httpx.AsyncClient, body: dict[str, object]) -> bytes:
-        try:
-            resp = await client.post("/v1/audio/speech", json=body, headers=self._headers())
-        except httpx.HTTPError as exc:
-            raise TtsError(f"TTS 请求失败：{type(exc).__name__}") from exc
-        if resp.status_code >= 300:
-            # 不回显响应正文：可能含上游错误里的敏感信息
-            raise TtsError(f"TTS 服务返回 {resp.status_code}")
-        return resp.content
+        """一次合成请求；超时 / 连接错误 / 5xx 重试 REQUEST_RETRIES 次，4xx 不重试。"""
+        last: TtsError | None = None
+        for attempt in range(REQUEST_RETRIES + 1):
+            try:
+                resp = await client.post("/v1/audio/speech", json=body, headers=self._headers())
+            except httpx.HTTPError as exc:
+                last = TtsError(f"TTS 请求失败：{type(exc).__name__}")
+                last.__cause__ = exc
+            else:
+                if resp.status_code < 300:
+                    return resp.content
+                # 不回显响应正文：可能含上游错误里的敏感信息
+                last = TtsError(f"TTS 服务返回 {resp.status_code}")
+                if resp.status_code < 500:
+                    break
+            if attempt < REQUEST_RETRIES:
+                logger.warning("TTS 请求失败，重试：%s", last)
+        assert last is not None
+        raise last
 
     async def design_anchor(self, style: str) -> bytes:
         """按描述用 VoiceDesign 念一遍锚点句，返回 WAV——这就是这条声线以后的"本人"。"""
@@ -240,9 +253,19 @@ class HttpTtsClient:
         async with httpx.AsyncClient(
             base_url=self._cfg.url or "", timeout=REQUEST_TIMEOUT_SEC, transport=self._transport
         ) as client:
+            failures = 0
+            last: TtsError | None = None
             for i, sentence in enumerate(sentences):
-                wav = await self._post_speech(client, self._body(sentence, voice, ref_audio))
-                yield AudioPart(index=i, wav=wav, duration_sec=wav_duration(wav))
+                # 单句失败只丢这一句，后面的照常出声——以前一句超时整段发言就哑了
+                try:
+                    wav = await self._post_speech(client, self._body(sentence, voice, ref_audio))
+                    yield AudioPart(index=i, wav=wav, duration_sec=wav_duration(wav))
+                except TtsError as exc:
+                    failures += 1
+                    last = exc
+                    logger.warning("第 %d 句合成失败，跳过：%s", i, exc)
+            if failures and failures == len(sentences) and last is not None:
+                raise last
 
     async def probe(self) -> TtsStatus:
         try:
