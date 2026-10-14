@@ -21,10 +21,12 @@ from app.engine.phases import ElectionStage, Phase, is_badge_only_window, speech
 from app.engine.state import GameState, living_seats, player_at
 
 TIMEOUT_SPEECH = "（超时，未发言）"
+REJECTED_SPEECH = "（连续提交非法行动，未发言）"
 
 
-def default_action(state: GameState, seat: int) -> Action:
-    """座位 seat 在当前窗口的默认行动（PRD §5.5 表）。"""
+def default_action(state: GameState, seat: int, *, speech: str = TIMEOUT_SPEECH) -> Action:
+    """座位 seat 在当前窗口的默认行动（PRD §5.5 表）。`speech` 是发言窗口落默认时写入的占位正文
+    （超时 / 连续非法行动文案不同，UI 不再把被拒误标成超时）。"""
     ph = state.phase
     pl = player_at(state, seat)
     seed = state.config.seed if state.config.seed is not None else 0
@@ -40,7 +42,7 @@ def default_action(state: GameState, seat: int) -> Action:
 
     # 发言队列型窗口（PK 发言 / 上警发言，issue #47）：空发言跳过
     if speech_queue_pending(state):
-        return Speak(actor_seat=seat, content=TIMEOUT_SPEECH)
+        return Speak(actor_seat=seat, content=speech)
 
     if ph in (Phase.NIGHT_GUARD, Phase.NIGHT_WITCH):
         # 守卫=空守；女巫=不用药
@@ -69,13 +71,13 @@ def default_action(state: GameState, seat: int) -> Action:
         return NightAction(actor_seat=seat, action_type=NightActionType.SKIP)
 
     if ph == Phase.DAY_SPEECH:
-        return Speak(actor_seat=seat, content=TIMEOUT_SPEECH)
+        return Speak(actor_seat=seat, content=speech)
     if ph == Phase.LAST_WORDS:
         badge_window = is_badge_only_window(ph, state.resume_token)
         if pl.is_sheriff and (badge_window or not state.config.sheriff.night_death_badge_window):
             # 警徽处置窗口（或旧的一步制）：默认撕掉（警徽流失）；两步制的遗言回合走空发言
             return SheriffAction(actor_seat=seat, action_type=SheriffActionType.TEAR_BADGE)
-        return Speak(actor_seat=seat, content=TIMEOUT_SPEECH)
+        return Speak(actor_seat=seat, content=speech)
 
     if ph in (Phase.VOTE, Phase.VOTE_PK):
         return DayVote(actor_seat=seat, abstain=True)
@@ -110,4 +112,4 @@ def default_action(state: GameState, seat: int) -> Action:
         )
 
     # 兜底：一切发言型窗口空发言（与 bot 的兜底同构）
-    return Speak(actor_seat=seat, content=TIMEOUT_SPEECH)
+    return Speak(actor_seat=seat, content=speech)

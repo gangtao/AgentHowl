@@ -484,3 +484,48 @@ async def test_rejection_reason_is_fed_into_next_prompt_once() -> None:
     assert "上一次提交被引擎拒绝" not in prompts[0]
     assert "BADGE_FLOW_INVALID" in prompts[1]
     assert "上一次提交被引擎拒绝" not in prompts[2]  # 只带一次
+
+
+async def test_campaign_badge_flow_is_sanitized_before_submit() -> None:
+    """真机局：上警发言报了 3 个座位的警徽流（上限 2）/含自己/含死人/重复 → 引擎三连拒整段丢失。
+    端口按引擎规则在提交前修正，并在 prompt 里告诉模型上限。"""
+    from app.agent.decisions import SpeechDecision
+
+    def script(rm: type[BaseModel], system: str, user: str) -> BaseModel:
+        return SpeechDecision(
+            reasoning="r",
+            content="我是预言家",
+            claim_role=RoleType.SEER,
+            badge_flow=[0, 7, 7, 5, 4, 3],
+        )
+
+    port, client = _port(script)
+    obs = _obs("SHERIFF_ELECTION", role=RoleType.SEER, election_stage="speech")
+    obs = obs.model_copy(
+        update={"seats": [{"seat": i, "alive": i != 5, "is_sheriff": False} for i in range(9)]}
+    )
+    act = await port.act(obs, time.time() + 60)
+    assert isinstance(act, Speak)
+    assert act.badge_flow == (7, 4)  # 去自己(0)、去重、去死人(5)、截到上限 2
+    assert "最多 2 个座位" in client.calls[-1][2]
+
+
+async def test_badge_flow_rejection_resubmits_without_flow_and_without_llm_call() -> None:
+    from app.agent.decisions import SpeechDecision
+
+    def script(rm: type[BaseModel], system: str, user: str) -> BaseModel:
+        return SpeechDecision(reasoning="r", content="我是预言家", badge_flow=[7, 4])
+
+    port, client = _port(script)
+    obs = _obs("SHERIFF_ELECTION", role=RoleType.SEER, election_stage="speech")
+    first = await port.act(obs, time.time() + 60)
+    assert isinstance(first, Speak) and first.badge_flow == (7, 4)
+    port.notify_result("BADGE_FLOW_INVALID", 10, None)
+    second = await port.act(obs, time.time() + 60)
+    assert isinstance(second, Speak)
+    assert second.content == first.content and second.badge_flow == ()
+    assert len(client.calls) == 1  # 没有再调模型
+    # 之后恢复正常决策（不会一直重交旧发言）
+    port.notify_result(None, 11, "evt_00011")
+    third = await port.act(obs, time.time() + 60)
+    assert isinstance(third, Speak) and third.badge_flow == (7, 4) and len(client.calls) == 2
