@@ -11,9 +11,10 @@ import re
 from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Literal, Protocol
+from urllib.parse import urlsplit, urlunsplit
 
 import httpx
-from pydantic import BaseModel
+from pydantic import BaseModel, SecretStr
 
 from app.agent.profile import VoiceSpec
 
@@ -34,6 +35,18 @@ ANCHOR_TEXT = "大家好，我是本局的玩家，接下来请听我的分析�
 _SPLIT_RE = re.compile(r"(?<=[。！？；\n])")
 
 
+def public_url(url: str | None) -> str | None:
+    """回显给前端的 TTS 地址：剥掉 userinfo（`http://u:p@host` → `http://host`）。
+    /tts/status 无鉴权，带凭据的 URL 不能原样回显。"""
+    if url is None:
+        return None
+    parts = urlsplit(url)
+    if "@" not in parts.netloc:
+        return url
+    host = parts.netloc.rsplit("@", 1)[1]
+    return urlunsplit((parts.scheme, host, parts.path, parts.query, parts.fragment))
+
+
 class TtsError(Exception):
     """TTS 请求失败（超时 / 非 2xx / 非 WAV / 服务未配置）。"""
 
@@ -44,7 +57,7 @@ class TtsConfig(BaseModel):
     model_preset: str = DEFAULT_MODEL_PRESET
     model_design: str = DEFAULT_MODEL_DESIGN
     model_clone: str = DEFAULT_MODEL_CLONE
-    api_key: str | None = None
+    api_key: SecretStr | None = None  # 密钥：repr/model_dump 只显示 ********，永不落日志
     # TTS 服务眼中的锚点目录（mlx-audio 只接受服务端本地路径作 ref_audio）；None = 直接用后端的
     # 绝对路径（同机 make serve）。Docker 下设成宿主机的 backend/data/voices。
     ref_dir: str | None = None
@@ -62,7 +75,9 @@ class TtsConfig(BaseModel):
             or DEFAULT_MODEL_DESIGN,
             model_clone=os.environ.get("AGENTHOWL_TTS_MODEL_CLONE", "").strip()
             or DEFAULT_MODEL_CLONE,
-            api_key=os.environ.get("AGENTHOWL_TTS_API_KEY", "").strip() or None,
+            api_key=SecretStr(k)
+            if (k := os.environ.get("AGENTHOWL_TTS_API_KEY", "").strip())
+            else None,
             ref_dir=os.environ.get("AGENTHOWL_TTS_REF_DIR", "").strip().rstrip("/") or None,
         )
 
@@ -125,7 +140,8 @@ def wav_duration(wav: bytes) -> float:
         if cid == b"fmt " and pos + 20 <= len(wav):
             byte_rate = int.from_bytes(wav[pos + 16 : pos + 20], "little")
         elif cid == b"data":
-            data_len = min(size, len(wav) - pos - 8)
+            # 信 data 块声明的长度：manifest 只读文件头部几十 KB 也能算出整段时长（issue #108）
+            data_len = size
             break
         pos += 8 + size + (size & 1)
     if not byte_rate or data_len is None:
@@ -174,8 +190,9 @@ class HttpTtsClient:
 
     def _headers(self) -> dict[str, str]:
         h = {"Content-Type": "application/json"}
-        if self._cfg.kind == "openai" and self._cfg.api_key:
-            h["Authorization"] = f"Bearer {self._cfg.api_key}"
+        if self._cfg.api_key is not None:
+            # 配置了就发：openai 本尊和不少 generic 的 OpenAI-speech 网关都要 Bearer（issue #108）
+            h["Authorization"] = f"Bearer {self._cfg.api_key.get_secret_value()}"
         return h
 
     def _ref_path(self, ref_audio: Path) -> str:
@@ -280,7 +297,7 @@ class HttpTtsClient:
         return TtsStatus(
             enabled=True,
             ok=ok,
-            url=self._cfg.url,
+            url=public_url(self._cfg.url),
             detail=detail,
             supports_style=self.supports_style,
         )

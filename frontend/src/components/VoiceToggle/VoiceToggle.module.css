@@ -45,3 +45,9 @@
     opacity: 1;
   }
 }
+
+.hint {
+  font-size: 12px;
+  color: var(--color-accent);
+  margin-right: 8px;
+}

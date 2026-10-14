@@ -181,3 +181,30 @@ async def test_warm_synthesizes_each_distinct_voice_once_and_tolerates_failure(
     await sink.warm([a, b, c, a])
     assert tts.calls == [WARM_TEXT, WARM_TEXT]
     await SpeechAudioSink(tmp_path / "audio", FakeTts(fail_at=0)).warm([a])  # 不抛
+
+
+def test_manifest_reads_only_wav_header(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """大局清单不整文件读入：只取头部仍算出完整时长（issue #108）。"""
+    import app.runtime.speech_audio as sa
+
+    d = tmp_path / "audio" / "g9"
+    d.mkdir(parents=True)
+    (d / "1-0.wav").write_bytes(_wav(10.0))  # 8 kHz 16-bit mono：160 KB > 64 KB 头
+    reads: list[int] = []
+    real_open = Path.open
+
+    def spy_open(self: Path, *a: object, **k: object):  # type: ignore[no-untyped-def]
+        f = real_open(self, *a, **k)
+        orig = f.read
+
+        def read(n: int = -1) -> bytes:
+            reads.append(n)
+            return orig(n)
+
+        f.read = read  # type: ignore[method-assign]
+        return f
+
+    monkeypatch.setattr(Path, "open", spy_open)
+    m = SpeechAudioSink(tmp_path / "audio", FakeTts()).manifest("g9")
+    assert m == {"1": [{"part": 0, "duration": pytest.approx(10.0, abs=0.01)}]}
+    assert reads == [sa.WAV_HEADER_BYTES]

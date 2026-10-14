@@ -8,7 +8,7 @@
 import { create } from "zustand";
 import { audioUrl } from "../api/rest";
 import type { AudioPartInfo } from "../api/rest";
-import { createAudioPlayer } from "../lib/audioPlayer";
+import { AutoplayBlockedError, createAudioPlayer } from "../lib/audioPlayer";
 import type { AudioPlayer } from "../lib/audioPlayer";
 
 const STORAGE_KEY = "agenthowl.voice";
@@ -37,6 +37,8 @@ interface VoiceState {
    * （分段之间不闪成 null）。GamePage 用它把发言高亮/聚光牌对准正在出声的人，而不是
    * state 里已经轮到的下一位——引擎提交发言后立刻把发言权交给下一位，但音频还在播上一位。 */
   voicingSeq: number | null;
+  /** 浏览器拒绝了自动播放（🔊 之前记住为开，但本页还没有点击手势）：已自动关闭，等用户再点一次。 */
+  blocked: boolean;
   queue: AudioQueueItem[];
 
   /** 测试注入假播放器；生产环境不调用，播放器按需懒建。 */
@@ -79,7 +81,21 @@ function drain(get: () => VoiceState, set: (partial: Partial<VoiceState>) => voi
       // 队列还有后续分段时保持 voicingSeq（下一次 drain 会按新 seq 覆盖），播完才清
       set({ playing: null, ...(get().queue.length === 0 ? { voicingSeq: null } : {}) });
       drain(get, set);
+    })
+    .catch((err: unknown) => {
+      if (err instanceof AutoplayBlockedError) onAutoplayBlocked(get, set);
     });
+}
+
+/** 自动播放被拒：关掉开关（不写 localStorage——用户的意愿仍是"开"，只是本页缺手势），
+ * 标记 blocked 让 VoiceToggle 提示再点一次。 */
+function onAutoplayBlocked(
+  _get: () => VoiceState,
+  set: (partial: Partial<VoiceState>) => void,
+): void {
+  generation += 1;
+  player?.stop();
+  set({ enabled: false, blocked: true, queue: [], playing: null, voicingSeq: null });
 }
 
 export const useVoice = create<VoiceState>((set, get) => ({
@@ -87,6 +103,7 @@ export const useVoice = create<VoiceState>((set, get) => ({
   available: false,
   playing: null,
   voicingSeq: null,
+  blocked: false,
   queue: [],
 
   setPlayer(p) {
@@ -99,7 +116,7 @@ export const useVoice = create<VoiceState>((set, get) => ({
     } catch {
       // 同 readEnabled：写不进去就只记在本次会话里
     }
-    set({ enabled: v });
+    set({ enabled: v, blocked: false });
     if (v) {
       // 开启瞬间清空积压队列，避免把关闭期间错过的一堆旧句一次性补播出来
       set({ queue: [] });
@@ -148,7 +165,12 @@ export const useVoice = create<VoiceState>((set, get) => ({
     for (const part of parts) {
       if (gen !== generation) return;
       set({ playing: { seq, part: part.part } });
-      await getPlayer().play(audioUrl(gameId, seq, part.part, token));
+      try {
+        await getPlayer().play(audioUrl(gameId, seq, part.part, token));
+      } catch (err) {
+        if (err instanceof AutoplayBlockedError) onAutoplayBlocked(get, set);
+        return;
+      }
       if (gen !== generation) return;
     }
     set({ playing: null, voicingSeq: null });

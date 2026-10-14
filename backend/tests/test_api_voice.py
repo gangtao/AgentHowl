@@ -266,3 +266,27 @@ def test_voiced_game_start_warms_voices(tmp_path: Path) -> None:
         handle = c.app.state.games.get(created["game_id"])  # type: ignore[attr-defined]
         assert handle.warm_task is not None and handle.warm_task.done()
         assert tts.texts[0] == WARM_TEXT and tts.texts.count(WARM_TEXT) == 1
+
+
+def test_access_log_filter_masks_token() -> None:
+    import logging
+
+    from app.main import install_access_log_filter
+
+    flt = install_access_log_filter()
+    assert install_access_log_filter() is flt  # 幂等
+    rec = logging.LogRecord(
+        "uvicorn.access",
+        logging.INFO,
+        "",
+        0,
+        '%s - "%s %s HTTP/%s" %d',
+        ("127.0.0.1:1", "GET", "/api/v1/games/g_x/audio/1/0?token=abcSECRET&x=1", "1.1", 200),
+        None,
+    )
+    assert flt.filter(rec)
+    msg = rec.getMessage()
+    assert "abcSECRET" not in msg and "token=***&x=1" in msg
+    rec2 = logging.LogRecord("uvicorn.access", logging.INFO, "", 0, "ws ?token=zzz", (), None)
+    flt.filter(rec2)
+    assert rec2.getMessage() == "ws ?token=***"

@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import logging
 import os
+import re
 from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -31,6 +33,33 @@ if TYPE_CHECKING:
     from app.runtime.registry import GameHandle
 
 
+_TOKEN_RE = re.compile(r"(token=)[^&\s\"]+")
+
+
+class _MaskTokenFilter(logging.Filter):
+    """uvicorn access log 里的 `?token=…`（/ws、/audio 文件端点）脱敏为 token=***（issue #108）。"""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if record.args and isinstance(record.args, tuple):
+            record.args = tuple(
+                _TOKEN_RE.sub(r"\1***", a) if isinstance(a, str) else a for a in record.args
+            )
+        if isinstance(record.msg, str) and "token=" in record.msg:
+            record.msg = _TOKEN_RE.sub(r"\1***", record.msg)
+        return True
+
+
+def install_access_log_filter() -> logging.Filter:
+    """幂等：同一个 logger 只挂一个。"""
+    log = logging.getLogger("uvicorn.access")
+    for f in log.filters:
+        if isinstance(f, _MaskTokenFilter):
+            return f
+    flt = _MaskTokenFilter()
+    log.addFilter(flt)
+    return flt
+
+
 def create_app(
     *,
     store: EventStore | None = None,
@@ -55,6 +84,7 @@ def create_app(
     audio_dir: Path | None = None,
 ) -> FastAPI:
     app = FastAPI(title="AgentHowl API", version="0.1.0")
+    install_access_log_filter()
     # 内置目录允许缺失（打包场景，容忍过滤）；显式指定的外部目录原样传给 load，
     # 不存在则 fail-loud（终审 F3：此前 is_dir() 过滤会静默吞掉打错的路径）。
     dirs: list[Path] = [BUILTIN_SKILLS_DIR] if BUILTIN_SKILLS_DIR.is_dir() else []
