@@ -46,7 +46,7 @@ from app.agent.skills import (
     select_skills,
     skills_index_text,
 )
-from app.engine.actions import Action
+from app.engine.actions import Action, RejectedReason, Speak
 from app.engine.config import GameConfig, RoleType
 from app.engine.events import Event
 from app.engine.observation import PlayerObservation
@@ -104,6 +104,9 @@ class AgentPlayerPort:
         self.last_skills_used: tuple[str, ...] = ()
         self._call_seconds: float | None = None  # 单次决策生成耗时的滑动均值（issue #86）
         self._last_rejection: str | None = None  # runner 回填的上次拒绝原因，下次 prompt 带上
+        self._last_speak: Speak | None = (
+            None  # 上次提交的发言：BADGE_FLOW_INVALID 时去掉警徽流直接重交
+        )
 
     def notify_result(
         self, rejected_reason: str | None, state_version: int, event_id: str | None
@@ -162,6 +165,25 @@ class AgentPlayerPort:
         if remaining <= self._cfg.deadline_margin_s:
             raise TimeoutError(f"座位 {self._seat} 行动窗口剩余不足（{remaining:.1f}s）")
 
+        # 警徽流被拒：发言正文本身没问题，去掉警徽流原样重交——不再花一次生成、也不会三连拒
+        # 把整段发言丢掉（真机局 4 号上警发言因此"超时"）。
+        if (
+            self._last_rejection == str(RejectedReason.BADGE_FLOW_INVALID)
+            and self._last_speak is not None
+            and self._last_speak.badge_flow
+            and self._last_speak.actor_seat == observation.my_seat
+        ):
+            logger.warning(
+                "seat=%d phase=%s 警徽流 %s 被拒，去掉警徽流重交发言",
+                self._seat,
+                observation.phase,
+                self._last_speak.badge_flow,
+            )
+            self._last_rejection = None
+            action: Action = self._last_speak.model_copy(update={"badge_flow": ()})
+            self._last_speak = None
+            return action
+
         # 惰性反思：只在时间宽裕时补做，失败由 memory 内部降级
         if (
             remaining > self._cfg.reflection_min_remaining_s
@@ -198,6 +220,12 @@ class AgentPlayerPort:
                 skills_text=skills_text,
             )
 
+        allow_bf = badge_flow_allowed(observation)
+        if allow_bf:
+            user_prompt += (
+                f"\n\nbadge_flow（警徽流）最多 {self._badge_flow_max()} 个座位，"
+                "须存活、不重复、不含自己；不是预言家或不想报就留空。"
+            )
         if self._last_rejection:
             user_prompt += (
                 f"\n\n== 上一次提交被引擎拒绝 ==\n原因：{self._last_rejection}。"
@@ -224,7 +252,6 @@ class AgentPlayerPort:
         self._note_call_seconds(time.monotonic() - started)
         if isinstance(decision, WolfDeliberation):
             self.memory.note_night_private(decision.analysis, observation.round)
-        allow_bf = badge_flow_allowed(observation)
         if not allow_bf and getattr(decision, "badge_flow", None):
             logger.info(
                 "seat=%d phase=%s 非竞选发言携带 badge_flow=%s，已剥除",
@@ -232,7 +259,36 @@ class AgentPlayerPort:
                 observation.phase,
                 decision.badge_flow,  # type: ignore[attr-defined]
             )
-        return to_action(kind, decision, observation.my_seat, allow_badge_flow=allow_bf)
+        elif allow_bf and getattr(decision, "badge_flow", None):
+            raw = list(decision.badge_flow)  # type: ignore[attr-defined]
+            cleaned = self._sanitize_badge_flow(raw, observation)
+            if cleaned != raw:
+                logger.warning(
+                    "seat=%d phase=%s 警徽流 %s 不合规（上限 %d/存活/不重复/不含自己），修正为 %s",
+                    self._seat,
+                    observation.phase,
+                    raw,
+                    self._badge_flow_max(),
+                    cleaned,
+                )
+                decision = decision.model_copy(update={"badge_flow": cleaned})
+        action = to_action(kind, decision, observation.my_seat, allow_badge_flow=allow_bf)
+        self._last_speak = action if isinstance(action, Speak) else None
+        return action
+
+    def _badge_flow_max(self) -> int:
+        return self._game_config.sheriff.badge_flow_max_length
+
+    def _sanitize_badge_flow(self, flow: list[int], obs: PlayerObservation) -> list[int]:
+        """按引擎规则（engine._validate 的 BADGE_FLOW_INVALID 条件）在提交前修正：
+        去重、剔除自己与非存活座位、截到上限。模型只知道"未来几夜的验人顺序"，不知道上限是 2。"""
+        alive = {int(p["seat"]) for p in obs.seats if p.get("alive")}
+        out: list[int] = []
+        for seat in flow:
+            if seat == obs.my_seat or seat not in alive or seat in out:
+                continue
+            out.append(seat)
+        return out[: self._badge_flow_max()]
 
     async def reflect_on_game(
         self, reveal: GameReveal, *, timeout_s: float = 120.0

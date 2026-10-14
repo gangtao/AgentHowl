@@ -23,7 +23,7 @@ from app.engine.observation import build_observation
 from app.engine.phases import ElectionStage, Phase, expected_actors, speech_queue_pending
 from app.engine.state import GameState
 from app.runtime.connection import ConnectionManager
-from app.runtime.defaults import default_action
+from app.runtime.defaults import REJECTED_SPEECH, TIMEOUT_SPEECH, default_action
 from app.runtime.player_port import PlayerPort, SupportsResultFeedback
 from app.store.event_store import EventStore, GameMeta, SeatName
 
@@ -256,7 +256,9 @@ class GameRunner:
                         if rejections >= MAX_REJECTIONS
                         else "重试中窗口耗尽",
                     )
-                    await self._apply_default(seat)
+                    await self._apply_default(
+                        seat, reason="rejected" if rejections >= MAX_REJECTIONS else "timeout"
+                    )
                     return
                 try:
                     action = await asyncio.wait_for(
@@ -272,7 +274,8 @@ class GameRunner:
                 if isinstance(port, SupportsResultFeedback):
                     port.notify_result(str(res.rejection), self.state.state_version, None)
                 rejections += 1  # 非法 intent：截止前重试（M2.3 真人重试路径）
-                logger.info(
+                # WARNING：真机局里"三连拒落默认"排查全靠这条，INFO 在默认日志级别下看不到
+                logger.warning(
                     "seat=%d phase=%s 行动被拒（第 %d 次）：%s %s",
                     seat,
                     self.state.phase,
@@ -311,15 +314,22 @@ class GameRunner:
                     logger.warning("seat=%d seq=%d 配音异常，跳过等待", seat, e.seq, exc_info=True)
                 return
 
-    async def _apply_default(self, seat: int) -> None:
-        res = step(self.state, default_action(self.state, seat))
+    async def _apply_default(
+        self, seat: int, *, reason: Literal["timeout", "rejected"] = "timeout"
+    ) -> None:
+        speech = REJECTED_SPEECH if reason == "rejected" else TIMEOUT_SPEECH
+        res = step(self.state, default_action(self.state, seat, speech=speech))
         if res.rejection is not None:
             raise RuntimeError(f"默认行动被拒（不变量破坏）：{res.rejection} @ {self.state.phase}")
         self._state = res.state
-        await self._commit(res.events, timed_out=True)
+        await self._commit(res.events, timed_out=True, default_reason=reason)
 
     async def _commit(
-        self, events: list[Event], timed_out: bool = False, skills: Sequence[str] = ()
+        self,
+        events: list[Event],
+        timed_out: bool = False,
+        skills: Sequence[str] = (),
+        default_reason: str | None = None,
     ) -> None:
         """meta 充实 → 落库 → 广播，同序。runtime 对事件的唯一合法改写点。"""
         wall_ts = datetime.now(UTC).isoformat()
@@ -327,7 +337,9 @@ class GameRunner:
         for i, e in enumerate(events):
             meta = {**e.meta, "wall_ts": wall_ts}
             if timed_out:
-                meta["timeout"] = "true"
+                meta["timeout"] = "true"  # 历史键：所有落默认都标（前端/统计沿用）
+                if default_reason is not None:
+                    meta["default_reason"] = default_reason  # timeout | rejected
             if skills and i == 0:  # 只标首条：一次行动记一次装配（issue #60）
                 meta["skills"] = ",".join(skills)
             enriched.append(e.model_copy(update={"meta": meta}))

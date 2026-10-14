@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from app.engine.events import Event
 
-PUBLIC_META_KEYS: frozenset[str] = frozenset({"wall_ts", "timeout"})
+PUBLIC_META_KEYS: frozenset[str] = frozenset({"wall_ts", "timeout", "default_reason"})
 
 
 def event_json_for_viewer(event: Event, viewer: Any) -> dict[str, Any]:

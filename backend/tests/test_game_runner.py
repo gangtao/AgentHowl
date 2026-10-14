@@ -262,7 +262,13 @@ class TestTimeoutAndRetry:
         assert final.phase == Phase.GAME_OVER
         assert evil.calls >= 3  # 至少被重试到上限一次
         events = store.load_events("g1")
-        assert any(e.meta.get("timeout") == "true" for e in events)
+        rejected = [e for e in events if e.meta.get("default_reason") == "rejected"]
+        assert rejected and all(e.meta.get("timeout") == "true" for e in rejected)
+        from app.runtime.defaults import REJECTED_SPEECH, TIMEOUT_SPEECH
+
+        spoke = [e for e in rejected if e.type == EventType.PLAYER_SPOKE]
+        assert spoke and all(e.payload.content == REJECTED_SPEECH for e in spoke)  # type: ignore[attr-defined]
+        assert all(e.payload.content != TIMEOUT_SPEECH for e in spoke)  # type: ignore[attr-defined]
 
     async def test_retry_then_valid_needs_no_default(self) -> None:
         store = InMemoryEventStore()
