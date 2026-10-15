@@ -130,6 +130,7 @@ class GameRunner:
         timeouts: RunnerTimeouts | None = None,
         agents: AgentProfiles | None = None,
         speech_audio: SpeechAudioSink | None = None,
+        narration_enabled: bool = False,
     ) -> None:
         self._store = store
         self._config = config
@@ -142,6 +143,7 @@ class GameRunner:
         self._timeouts = timeouts or RunnerTimeouts.from_config(config)
         self._state: GameState | None = None
         self._speech_audio = speech_audio
+        self._narration_enabled = narration_enabled
 
     @property
     def state(self) -> GameState:
@@ -162,6 +164,7 @@ class GameRunner:
         res = create_game(self._config, self._game_id, roster=self._roster)
         self._state = res.state
         await self._commit(res.events)
+        await self._voice(res.events)
 
         guard = 0
         while self.state.phase != Phase.GAME_OVER:
@@ -288,31 +291,37 @@ class GameRunner:
             # 技能装配记录（issue #60）：端口若暴露 last_skills_used，写进本次提交的首条事件 meta
             skills = tuple(getattr(self._ports[seat], "last_skills_used", ()))
             await self._commit(res.events, skills=skills)
-            await self._maybe_speak(seat, res.events)
+            await self._voice(res.events)
             port = self._ports[seat]
             if isinstance(port, SupportsResultFeedback):
                 event_id = f"evt_{res.events[0].seq:05d}" if res.events else None
                 port.notify_result(None, self._state.state_version, event_id)
             return
 
-    async def _maybe_speak(self, seat: int, events: list[Event]) -> None:
-        """发言配音（issue #103）：该座位档案有 voice 且本次提交含公开发言 → 交给 sink 合成并等待。
-        sink 自身吞 TtsError；这里再兜一层任何异常，配音永远不能让对局陪葬。"""
+    async def _voice(self, events: list[Event]) -> None:
+        """配音统一调度（issue #103 / #110）：按 seq 顺序，发言事件走该座位档案的声线，
+        其余事件交给旁白（白名单判断在 sink 内）。同一提交常是 [PLAYER_SPOKE, PHASE_CHANGED]，
+        必须先放发言再放「进入投票」。sink 自身吞 TtsError；这里再兜一层任何异常，
+        配音永远不能让对局陪葬。"""
         if self._speech_audio is None:
             return
-        profile = profile_for(self._agents, seat)
-        if profile is None or profile.voice is None:
-            return
         for e in events:
-            if e.type in (EventType.PLAYER_SPOKE, EventType.LAST_WORDS):
-                text = str(e.payload.content)  # type: ignore[attr-defined]
-                try:
+            try:
+                if e.type in (EventType.PLAYER_SPOKE, EventType.LAST_WORDS):
+                    # 两类发言事件引擎都写了 actor_seat
+                    if e.actor_seat is None:
+                        continue
+                    profile = profile_for(self._agents, e.actor_seat)
+                    if profile is None or profile.voice is None:
+                        continue
+                    text = str(e.payload.content)  # type: ignore[attr-defined]
                     await self._speech_audio.speak(
                         self._game_id, e.seq, text, profile.voice, self.connections, e
                     )
-                except Exception:
-                    logger.warning("seat=%d seq=%d 配音异常，跳过等待", seat, e.seq, exc_info=True)
-                return
+                elif self._narration_enabled:
+                    await self._speech_audio.narrate(self._game_id, e, self.connections)
+            except Exception:
+                logger.warning("seq=%d 配音异常，跳过等待", e.seq, exc_info=True)
 
     async def _apply_default(
         self, seat: int, *, reason: Literal["timeout", "rejected"] = "timeout"
@@ -323,6 +332,7 @@ class GameRunner:
             raise RuntimeError(f"默认行动被拒（不变量破坏）：{res.rejection} @ {self.state.phase}")
         self._state = res.state
         await self._commit(res.events, timed_out=True, default_reason=reason)
+        await self._voice(res.events)
 
     async def _commit(
         self,
