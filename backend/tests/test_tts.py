@@ -376,3 +376,62 @@ def test_concat_wav_single_and_errors() -> None:
         concat_wav([_pcm_wav(0.1, rate=8000), _pcm_wav(0.1, rate=16000)])
     with pytest.raises(TtsError):
         concat_wav([one, b"not a wav"])
+
+
+def _riff(*chunks: tuple[bytes, bytes]) -> bytes:
+    body = b"WAVE"
+    for cid, data in chunks:
+        body += cid + len(data).to_bytes(4, "little") + data + (b"\x00" if len(data) & 1 else b"")
+    return b"RIFF" + len(body).to_bytes(4, "little") + body
+
+
+def _fmt(rate: int = 8000, channels: int = 1, width: int = 2) -> bytes:
+    import struct
+
+    return struct.pack(
+        "<HHIIHH", 1, channels, rate, rate * channels * width, channels * width, width * 8
+    )
+
+
+def test_concat_wav_rejects_data_before_fmt() -> None:
+    bad = _riff((b"data", b"\x01\x00"), (b"fmt ", _fmt()))
+    with pytest.raises(TtsError):
+        concat_wav([bad, _pcm_wav(0.1)])
+
+
+def test_concat_wav_odd_size_padding() -> None:
+    a = _riff((b"fmt ", _fmt(width=1)), (b"data", b"\x80" * 3))
+    b = _riff((b"fmt ", _fmt(width=1)), (b"data", b"\x80" * 4))
+    out = concat_wav([a, b])
+    assert int.from_bytes(out[4:8], "little") == len(out) - 8
+    with wave.open(io.BytesIO(out)) as w:
+        assert w.getsampwidth() == 1 and w.getnframes() == 7
+    odd = concat_wav([a, _riff((b"fmt ", _fmt(width=1)), (b"data", b"\x80"))])
+    assert int.from_bytes(odd[4:8], "little") == len(odd) - 8
+    with wave.open(io.BytesIO(odd)) as w:
+        assert w.getnframes() == 4
+
+
+def test_concat_wav_channel_mismatch_and_single_non_wav() -> None:
+    with pytest.raises(TtsError):
+        concat_wav([_pcm_wav(0.1), _pcm_wav(0.1, channels=2)])
+    with pytest.raises(TtsError):
+        concat_wav([b"not a wav"])
+
+
+def test_concat_wav_three_parts_duration_sum() -> None:
+    out = concat_wav([_pcm_wav(0.1), _pcm_wav(0.2), _pcm_wav(0.3)])
+    assert wav_duration(out) == pytest.approx(0.6, abs=0.001)
+
+
+def test_concat_wav_rejects_truncated_and_empty_data() -> None:
+    full = _pcm_wav(0.1)
+    with pytest.raises(TtsError):
+        concat_wav([full, full[:-10]])
+    stream = bytearray(full)
+    stream[full.index(b"data") + 4 : full.index(b"data") + 8] = b"\xff\xff\xff\xff"
+    with pytest.raises(TtsError):
+        concat_wav([full, bytes(stream)])
+    empty = _riff((b"fmt ", _fmt()), (b"data", b""))
+    with pytest.raises(TtsError):
+        concat_wav([full, empty])

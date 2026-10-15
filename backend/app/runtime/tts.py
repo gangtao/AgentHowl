@@ -158,12 +158,17 @@ def _wav_chunks(wav: bytes) -> tuple[bytes, bytes]:
     while pos + 8 <= len(wav):
         cid = wav[pos : pos + 4]
         size = int.from_bytes(wav[pos + 4 : pos + 8], "little")
+        if cid in (b"fmt ", b"data") and pos + 8 + size > len(wav):
+            # 声明长度越界（含 0xFFFFFFFF 流式头）：我们只接受完整文件，宁可报错也不静默截短
+            raise TtsError("WAV 块声明长度超出数据（截断或流式头）")
         body = wav[pos + 8 : pos + 8 + size]
         if cid == b"fmt ":
             fmt = body
         elif cid == b"data":
             if fmt is None:
                 raise TtsError("WAV data 块先于 fmt 块")
+            if size == 0:
+                raise TtsError("WAV data 块长度为 0")
             return fmt, body
         pos += 8 + size + (size & 1)
     raise TtsError("WAV 头缺少 fmt/data 块")
