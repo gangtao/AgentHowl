@@ -3,8 +3,11 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
+from app.agent.profile import VoiceSpec
 from app.cli.bot import run_game
 from app.engine.config import PRESET_NAMES, build_preset
 from app.engine.events import (
@@ -32,9 +35,12 @@ from app.engine.phases import ElectionStage, Phase
 from app.runtime.narration import (
     DEFAULT_NARRATION_EVENTS,
     TEMPLATED_EVENTS,
+    NarrationCache,
+    NarrationConfig,
     narrate,
     seats,
 )
+from tests.test_speech_audio import _wav  # noqa: E402  合法 WAV 生成器（已存在）
 
 
 def _evt(t: EventType, payload: object, actor: int | None = None) -> Event:
@@ -287,3 +293,66 @@ def test_full_game_coverage(preset: str) -> None:
         assert all(s.endswith("。") for s in out)
         narrated += 1
     assert narrated > 10
+
+
+def test_config_defaults(tmp_path: Path) -> None:
+    cfg = NarrationConfig.from_env({}, data_dir=tmp_path)
+    assert cfg.speaker == "uncle_fu"
+    assert cfg.events == DEFAULT_NARRATION_EVENTS
+    assert cfg.cache_dir == tmp_path / "narration"
+    assert cfg.voice == VoiceSpec(mode="preset", speaker="uncle_fu")
+
+
+def test_config_from_env_custom(tmp_path: Path) -> None:
+    env = {
+        "AGENTHOWL_NARRATOR_VOICE": "vivian",
+        "AGENTHOWL_NARRATION_EVENTS": " VOTE_STARTED, GAME_OVER ,PLAYER_SPOKE",
+        "AGENTHOWL_NARRATION_DIR": str(tmp_path / "x"),
+    }
+    cfg = NarrationConfig.from_env(env, data_dir=tmp_path)
+    assert cfg.speaker == "vivian"
+    # PLAYER_SPOKE 允许出现但会被 narrate() 忽略；名单本身保留它（不替用户改配置）
+    assert cfg.events == frozenset(
+        {EventType.VOTE_STARTED, EventType.GAME_OVER, EventType.PLAYER_SPOKE}
+    )
+    assert cfg.cache_dir == tmp_path / "x"
+    # 空串 = 默认
+    assert (
+        NarrationConfig.from_env({"AGENTHOWL_NARRATION_EVENTS": ""}, data_dir=tmp_path).events
+        == DEFAULT_NARRATION_EVENTS
+    )
+
+
+@pytest.mark.parametrize(
+    "env",
+    [
+        {"AGENTHOWL_NARRATOR_VOICE": "nobody"},
+        {"AGENTHOWL_NARRATION_EVENTS": "VOTE_STARTED,NOT_AN_EVENT"},
+        {"AGENTHOWL_NARRATION_EVENTS": "VOTE_CAST"},  # 合法类型但没有模板
+    ],
+)
+def test_config_fail_loud(tmp_path: Path, env: dict[str, str]) -> None:
+    with pytest.raises(ValueError):
+        NarrationConfig.from_env(env, data_dir=tmp_path)
+
+
+def test_cache_roundtrip_and_key(tmp_path: Path) -> None:
+    cache = NarrationCache(tmp_path / "narr")
+    assert cache.get("uncle_fu", "投票开始。") is None
+    wav = _wav(0.1)
+    p = cache.put("uncle_fu", "投票开始。", wav)
+    assert p.parent == tmp_path / "narr" and p.suffix == ".wav"
+    assert not list((tmp_path / "narr").glob("*.tmp"))
+    assert cache.get("uncle_fu", "投票开始。") == wav
+    # 换声线换 key
+    assert NarrationCache.key("vivian", "投票开始。") != NarrationCache.key(
+        "uncle_fu", "投票开始。"
+    )
+    assert len(NarrationCache.key("vivian", "投票开始。")) == 16
+
+
+def test_cache_corrupt_file_is_miss(tmp_path: Path) -> None:
+    cache = NarrationCache(tmp_path / "narr")
+    (tmp_path / "narr").mkdir()
+    (tmp_path / "narr" / f"{NarrationCache.key('uncle_fu', '投票开始。')}.wav").write_bytes(b"junk")
+    assert cache.get("uncle_fu", "投票开始。") is None

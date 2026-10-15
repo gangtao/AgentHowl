@@ -7,9 +7,14 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
-from collections.abc import Iterable
+import os
+from collections.abc import Iterable, Mapping
+from dataclasses import dataclass
+from pathlib import Path
 
+from app.agent.profile import PRESET_SPEAKERS, VoiceSpec
 from app.engine.events import (
     BadgePassedPayload,
     DeathAnnouncedPayload,
@@ -29,6 +34,7 @@ from app.engine.events import (
     WolfSelfDestructPayload,
 )
 from app.engine.phases import ElectionStage, Phase
+from app.runtime.tts import TtsError, wav_duration
 
 logger = logging.getLogger(__name__)
 
@@ -181,3 +187,71 @@ def narrate(event: Event, events: frozenset[EventType]) -> list[str]:
     if event.type in SPEECH_EVENTS or event.type not in events:
         return []
     return _render(event)
+
+
+@dataclass(frozen=True)
+class NarrationConfig:
+    """旁白配置：声线 + 事件白名单 + 缓存目录。构造即校验（fail-loud）。"""
+
+    speaker: str
+    events: frozenset[EventType]
+    cache_dir: Path
+
+    def __post_init__(self) -> None:
+        if self.speaker not in PRESET_SPEAKERS:
+            raise ValueError(f"旁白声线必须是预置 speaker {PRESET_SPEAKERS}：{self.speaker!r}")
+        missing = sorted(t.value for t in self.events - TEMPLATED_EVENTS - SPEECH_EVENTS)
+        if missing:
+            raise ValueError(f"旁白白名单里的事件没有模板：{missing}")
+
+    @classmethod
+    def from_env(cls, env: Mapping[str, str] | None = None, *, data_dir: Path) -> NarrationConfig:
+        e = os.environ if env is None else env
+        speaker = (e.get("AGENTHOWL_NARRATOR_VOICE") or DEFAULT_NARRATOR_SPEAKER).strip()
+        raw = (e.get("AGENTHOWL_NARRATION_EVENTS") or "").strip()
+        if raw:
+            names = [x.strip() for x in raw.split(",") if x.strip()]
+            try:
+                events = frozenset(EventType(n) for n in names)
+            except ValueError as exc:
+                raise ValueError(f"AGENTHOWL_NARRATION_EVENTS 含未知事件：{exc}") from exc
+        else:
+            events = DEFAULT_NARRATION_EVENTS
+        cache_dir = Path(e.get("AGENTHOWL_NARRATION_DIR") or (data_dir / "narration"))
+        return cls(speaker=speaker, events=events, cache_dir=cache_dir)
+
+    @property
+    def voice(self) -> VoiceSpec:
+        return VoiceSpec(mode="preset", speaker=self.speaker)
+
+
+class NarrationCache:
+    """句子级 WAV 缓存：key = sha256(speaker + 句子)[:16]；所有对局共用。"""
+
+    def __init__(self, cache_dir: Path) -> None:
+        self._dir = cache_dir
+
+    @staticmethod
+    def key(speaker: str, text: str) -> str:
+        return hashlib.sha256(f"{speaker}\n{text}".encode()).hexdigest()[:16]
+
+    def _path(self, speaker: str, text: str) -> Path:
+        return self._dir / f"{self.key(speaker, text)}.wav"
+
+    def get(self, speaker: str, text: str) -> bytes | None:
+        """未命中 / 文件不是合法 WAV → None（坏文件视为未命中，由 put 覆盖）。"""
+        p = self._path(speaker, text)
+        try:
+            data = p.read_bytes()
+            wav_duration(data)
+        except (OSError, TtsError):
+            return None
+        return data
+
+    def put(self, speaker: str, text: str, wav: bytes) -> Path:
+        p = self._path(speaker, text)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        tmp = p.with_suffix(".wav.tmp")
+        tmp.write_bytes(wav)
+        os.replace(tmp, p)
+        return p
