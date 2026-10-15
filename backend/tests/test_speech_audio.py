@@ -21,6 +21,7 @@ from app.engine.events import (
 )
 from app.engine.state import GameState
 from app.runtime.connection import ConnectionManager
+from app.runtime.narration import DEFAULT_NARRATION_EVENTS, NarrationCache, NarrationConfig
 from app.runtime.speech_audio import AUDIO_TAIL_SEC, SpeechAudioSink
 from app.runtime.tts import AudioPart, TtsError, TtsStatus
 
@@ -114,8 +115,9 @@ async def test_speak_writes_parts_pushes_frames_and_waits(tmp_path: Path) -> Non
         "part": 0,
         "url": "/api/v1/games/g1/audio/57/0",
         "duration": pytest.approx(0.2, abs=0.01),
+        "kind": "speech",
     }
-    assert frames[2] == {"type": "speech_audio_end", "seq": 57, "parts": 2}
+    assert frames[2] == {"type": "speech_audio_end", "seq": 57, "parts": 2, "kind": "speech"}
     m = sink.manifest("g1")
     assert list(m) == ["57"] and [p["part"] for p in m["57"]] == [0, 1]
     assert sink.path_for("g1", 57, 1) is not None and sink.path_for("g1", 57, 9) is None
@@ -225,3 +227,168 @@ def test_manifest_reads_only_wav_header(tmp_path: Path, monkeypatch: pytest.Monk
     m = SpeechAudioSink(tmp_path / "audio", FakeTts()).manifest("g9")
     assert m == {"1": [{"part": 0, "duration": pytest.approx(10.0, abs=0.01)}]}
     assert reads == [sa.WAV_HEADER_BYTES]
+
+
+class CountingTts:
+    """每次 synthesize 产一段 0.05s；记录文本。"""
+
+    def __init__(self) -> None:
+        self.calls: list[str] = []
+
+    async def synthesize_sentences(
+        self, text: str, voice: VoiceSpec, ref_audio: object = None
+    ) -> AsyncIterator[AudioPart]:
+        self.calls.append(text)
+        yield AudioPart(index=0, wav=_wav(0.05), duration_sec=0.05)
+
+    async def probe(self) -> TtsStatus:
+        return TtsStatus(enabled=True, ok=True, url="fake")
+
+
+def _narr(tmp_path: Path) -> NarrationConfig:
+    return NarrationConfig(
+        speaker="uncle_fu", events=DEFAULT_NARRATION_EVENTS, cache_dir=tmp_path / "narr"
+    )
+
+
+@pytest.mark.asyncio
+async def test_narrate_pushes_frames_with_kind_and_caches(tmp_path: Path) -> None:
+    cm = ConnectionManager(state_provider=_state)
+    frames: list[dict] = []
+
+    async def sub(f: dict) -> None:
+        frames.append(f)
+
+    cm.subscribe_frames("GM", sub)
+    tts = CountingTts()
+    cache = NarrationCache(tmp_path / "narr")
+    sink = SpeechAudioSink(
+        tmp_path / "audio", tts, narration=_narr(tmp_path), narration_cache=cache
+    )
+    await sink.narrate("g1", _public(5), cm)
+    assert tts.calls == ["投票开始。"]
+    assert frames[0]["kind"] == "narration" and frames[0]["seq"] == 5 and frames[0]["part"] == 0
+    assert frames[-1] == {"type": "speech_audio_end", "seq": 5, "parts": 1, "kind": "narration"}
+    assert sink.manifest("g1") == {"5": [{"part": 0, "duration": pytest.approx(0.05, abs=0.01)}]}
+    assert cache.get("uncle_fu", "投票开始。") is not None
+    # 第二次：零 TTS 调用，仍推帧、仍落到对局目录
+    await sink.narrate("g1", _public(9), cm)
+    assert tts.calls == ["投票开始。"]
+    assert sink.path_for("g1", 9, 0) is not None
+
+
+@pytest.mark.asyncio
+async def test_narrate_outside_whitelist_is_noop(tmp_path: Path) -> None:
+    cm = ConnectionManager(state_provider=_state)
+    frames: list[dict] = []
+
+    async def sub(f: dict) -> None:
+        frames.append(f)
+
+    cm.subscribe_frames("GM", sub)
+    cfg = NarrationConfig(
+        speaker="uncle_fu", events=frozenset({EventType.GAME_OVER}), cache_dir=tmp_path / "n"
+    )
+    tts = CountingTts()
+    sink = SpeechAudioSink(
+        tmp_path / "audio", tts, narration=cfg, narration_cache=NarrationCache(cfg.cache_dir)
+    )
+    t0 = time.monotonic()
+    await sink.narrate("g1", _public(5), cm)
+    assert tts.calls == [] and frames == [] and time.monotonic() - t0 < 0.1
+
+
+@pytest.mark.asyncio
+async def test_narrate_filtered_frames_follow_event_visibility(tmp_path: Path) -> None:
+    cm = ConnectionManager(state_provider=_state)
+    got: dict[str, list[str]] = {"GM": [], "SPECTATOR": []}
+
+    def sub(name: str):  # type: ignore[no-untyped-def]
+        async def cb(f: dict) -> None:
+            got[name].append(f["type"])
+
+        return cb
+
+    cm.subscribe_frames("GM", sub("GM"))
+    cm.subscribe_frames("SPECTATOR", sub("SPECTATOR"))
+    sink = SpeechAudioSink(
+        tmp_path / "audio",
+        CountingTts(),
+        narration=_narr(tmp_path),
+        narration_cache=NarrationCache(tmp_path / "narr"),
+    )
+    await sink.narrate("g1", _public(2, EventType.ROUND_STARTED), cm)  # GM_ONLY
+    assert got["GM"] == ["speech_audio", "speech_audio_end"] and got["SPECTATOR"] == []
+
+
+@pytest.mark.asyncio
+async def test_narrate_tts_failure_skips_and_no_frames(tmp_path: Path) -> None:
+    class Boom:
+        async def synthesize_sentences(
+            self, text: str, voice: VoiceSpec, ref_audio: object = None
+        ) -> AsyncIterator[AudioPart]:
+            raise TtsError("down")
+            yield  # pragma: no cover
+
+        async def probe(self) -> TtsStatus:
+            return TtsStatus(enabled=True, ok=False, url="fake")
+
+    cm = ConnectionManager(state_provider=_state)
+    frames: list[dict] = []
+
+    async def sub(f: dict) -> None:
+        frames.append(f)
+
+    cm.subscribe_frames("GM", sub)
+    sink = SpeechAudioSink(
+        tmp_path / "audio",
+        Boom(),
+        narration=_narr(tmp_path),
+        narration_cache=NarrationCache(tmp_path / "narr"),
+    )
+    await sink.narrate("g1", _public(5), cm)  # 不抛
+    assert frames == [] and sink.manifest("g1") == {}
+
+
+@pytest.mark.asyncio
+async def test_narrate_plays_even_if_cache_put_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """缓存目录不可写只告警，本句仍播。"""
+    cache = NarrationCache(tmp_path / "narr")
+
+    def boom(*a: object, **k: object) -> Path:
+        raise OSError("read-only")
+
+    monkeypatch.setattr(cache, "put", boom)
+    cm = ConnectionManager(state_provider=_state)
+    frames: list[dict] = []
+
+    async def sub(f: dict) -> None:
+        frames.append(f)
+
+    cm.subscribe_frames("GM", sub)
+    sink = SpeechAudioSink(
+        tmp_path / "audio", CountingTts(), narration=_narr(tmp_path), narration_cache=cache
+    )
+    await sink.narrate("g1", _public(5), cm)
+    assert [f["type"] for f in frames] == ["speech_audio", "speech_audio_end"]
+
+
+@pytest.mark.asyncio
+async def test_narrate_without_config_is_noop(tmp_path: Path) -> None:
+    sink = SpeechAudioSink(tmp_path / "audio", CountingTts())
+    await sink.narrate("g1", _public(5), None)  # 未配置旁白：不抛、不做事
+
+
+@pytest.mark.asyncio
+async def test_warm_includes_narrator_voice(tmp_path: Path) -> None:
+    tts = CountingTts()
+    sink = SpeechAudioSink(
+        tmp_path / "audio",
+        tts,
+        narration=_narr(tmp_path),
+        narration_cache=NarrationCache(tmp_path / "narr"),
+    )
+    await sink.warm([VoiceSpec(mode="preset", speaker="dylan")])
+    assert len(tts.calls) == 2  # dylan + uncle_fu 各一句
