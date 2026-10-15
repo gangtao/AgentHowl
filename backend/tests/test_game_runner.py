@@ -554,3 +554,50 @@ async def test_runner_narration_disabled_never_calls_narrate() -> None:
         ports[seat] = BotPlayerPort(state_provider=lambda: runner.state)
     await runner.run()
     assert sink.calls == []
+
+
+class _HangPort:
+    """act() 永不返回，逼 runner 在每个窗口落默认。"""
+
+    async def act(self, observation: PlayerObservation, deadline_ts: float) -> Action:
+        await asyncio.sleep(999)
+        raise AssertionError("unreachable")
+
+
+async def test_runner_default_speech_not_voiced_but_narration_still_runs() -> None:
+    """落默认的占位发言（超时/非法）不用该座位声线配音；同提交的旁白照常。"""
+    from app.agent.profile import AgentProfile, VoiceSpec
+
+    store = InMemoryEventStore()
+    cfg = build_preset("std_9_kill_side").model_copy(update={"seed": 7})
+    lobby = GameLobby(cfg, game_id="g1")
+    lobby.fill_with_bots()
+    ports: dict[int, PlayerPort] = {}
+    sink = _KindSink()
+    runner = GameRunner(
+        store=store,
+        config=cfg,
+        game_id="g1",
+        roster=lobby.roster(),
+        ports=ports,
+        agents={"*": AgentProfile(model="x", voice=VoiceSpec(mode="preset", speaker="eric"))},
+        speech_audio=sink,  # type: ignore[arg-type]
+        narration_enabled=True,
+        timeouts=RunnerTimeouts(speech_sec=0.05, action_sec=0.05),
+    )
+    for seat in range(cfg.num_players):
+        ports[seat] = (
+            _HangPort() if seat == 0 else BotPlayerPort(state_provider=lambda: runner.state)
+        )
+    assert (await runner.run()).phase == Phase.GAME_OVER
+    events = store.load_events("g1")
+    speech_types = (EventType.PLAYER_SPOKE, EventType.LAST_WORDS)
+    defaulted = {
+        e.seq for e in events if e.type in speech_types and e.meta.get("timeout") == "true"
+    }
+    assert defaulted  # 座位 0 确实落过默认发言
+    assert not defaulted & {s for k, s in sink.calls if k == "speech"}
+    real_speech = {e.seq for e in events if e.type in speech_types} - defaulted
+    assert {s for k, s in sink.calls if k == "speech"} == real_speech
+    all_speech = {e.seq for e in events if e.type in speech_types}
+    assert {s for k, s in sink.calls if k == "narration"} == {e.seq for e in events} - all_speech

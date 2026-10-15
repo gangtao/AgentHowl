@@ -298,16 +298,21 @@ class GameRunner:
                 port.notify_result(None, self._state.state_version, event_id)
             return
 
-    async def _voice(self, events: list[Event]) -> None:
+    async def _voice(self, events: list[Event], *, speech: bool = True) -> None:
         """配音统一调度（issue #103 / #110）：按 seq 顺序，发言事件走该座位档案的声线，
         其余事件交给旁白（白名单判断在 sink 内）。同一提交常是 [PLAYER_SPOKE, PHASE_CHANGED]，
         必须先放发言再放「进入投票」。sink 自身吞 TtsError；这里再兜一层任何异常，
-        配音永远不能让对局陪葬。"""
+        配音永远不能让对局陪葬。
+
+        speech=False：跳过发言事件的配音、旁白照常。用于落默认的占位发言
+        （「（超时，未发言）」等）——不能用该座位的声线念出来。"""
         if self._speech_audio is None:
             return
         for e in events:
             try:
                 if e.type in (EventType.PLAYER_SPOKE, EventType.LAST_WORDS):
+                    if not speech:
+                        continue
                     # 两类发言事件引擎都写了 actor_seat
                     if e.actor_seat is None:
                         continue
@@ -332,7 +337,7 @@ class GameRunner:
             raise RuntimeError(f"默认行动被拒（不变量破坏）：{res.rejection} @ {self.state.phase}")
         self._state = res.state
         await self._commit(res.events, timed_out=True, default_reason=reason)
-        await self._voice(res.events)
+        await self._voice(res.events, speech=False)
 
     async def _commit(
         self,

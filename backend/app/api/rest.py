@@ -517,7 +517,7 @@ def _audio_visible_seqs(
         return None
     if not handle.started or handle.live_state().phase == Phase.GAME_OVER:
         return None
-    viewer: Any = info.seat if info.kind == "PLAYER" else "SPECTATOR"
+    viewer: Any = _viewer_for(info)
     events = games.store.load_events(game_id)
     return {e.seq for e in visible_events(handle.live_state(), events, viewer)}
 
