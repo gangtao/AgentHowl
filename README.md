@@ -222,6 +222,7 @@ make fe-check         # 或 cd frontend && npm run check —— 确认 TS reduce
   `AGENTHOWL_TTS_KIND`（`mlx_audio` | `openai` | `generic`）；
   `AGENTHOWL_TTS_MODEL_PRESET` / `AGENTHOWL_TTS_MODEL_DESIGN` 换模型；`AGENTHOWL_TTS_API_KEY`
   仅 `openai` 类服务需要，永不回显。
+- **GM 旁白**（issue #110）：建局页「语音播报」下勾「旁白」；`AGENTHOWL_NARRATOR_VOICE` 换声线、`AGENTHOWL_NARRATION_EVENTS` 调白名单；句子按哈希缓存在 `data/narration/`，第二局起几乎零 TTS 调用。
 - **档案里配声线**：`AgentEditor` 的声线表单——**预置**（5 个 speaker：vivian / serena /
   uncle_fu / dylan / eric；方言目前只有 `dylan`=北京话、`eric`=四川话两种）或**描述声线**
   （自由文本，走 Qwen3-TTS VoiceDesign，一句话描述音色/语气）二选一，另配语速（0.5–2.0）。

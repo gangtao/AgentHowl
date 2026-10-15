@@ -54,6 +54,7 @@ export default function Lobby(): JSX.Element {
   const [newAgentError, setNewAgentError] = useState<string | null>(null);
   const [tts, setTts] = useState<TtsStatus>(TTS_DISABLED);
   const [voice, setVoice] = useState(false);
+  const [narration, setNarration] = useState(false);
 
   useEffect(() => {
     void refresh();
@@ -114,7 +115,7 @@ export default function Lobby(): JSX.Element {
     setCreating(true);
     setCreateError(null);
     try {
-      const body: CreateGameRequest = { preset: preset.name, agents: agentsPayload, voice };
+      const body: CreateGameRequest = { preset: preset.name, agents: agentsPayload, voice, narration: voice && narration };
       const seedTrimmed = seed.trim();
       if (seedTrimmed !== "") {
         const n = Number(seedTrimmed);
@@ -188,9 +189,23 @@ export default function Lobby(): JSX.Element {
                 type="checkbox"
                 checked={voice}
                 disabled={!tts.ok}
-                onChange={(e) => setVoice(e.target.checked)}
+                onChange={(e) => {
+                  setVoice(e.target.checked);
+                  if (!e.target.checked) setNarration(false);
+                }}
               />
               语音播报{tts.ok ? "" : `（TTS 不可用：${tts.detail ?? ""}）`}
+            </label>
+          )}
+          {tts.enabled && (
+            <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, marginLeft: 20 }}>
+              <input
+                type="checkbox"
+                checked={voice && narration}
+                disabled={!tts.ok || !voice}
+                onChange={(e) => setNarration(e.target.checked)}
+              />
+              旁白（GM 播报阶段 / 结算 / 投票结果）
             </label>
           )}
           <button

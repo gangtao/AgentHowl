@@ -60,3 +60,17 @@
     transform: none;
   }
 }
+
+.gmRing {
+  border-color: var(--color-divider);
+}
+
+.gmAvatar {
+  width: 128px;
+  height: 128px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 56px;
+  background: color-mix(in srgb, var(--color-divider) 60%, var(--color-surface));
+}

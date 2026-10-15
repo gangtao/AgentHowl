@@ -11,8 +11,8 @@ import styles from "./SpeakerSpotlight.module.css";
 
 export interface SpeakerSpotlightProps {
   state: GameState;
-  /** 当前发言座位；null 时不渲染。 */
-  seat: number | null;
+  /** 当前发言座位；"GM" 表示旁白正在播（issue #110）；null 时不渲染。 */
+  seat: number | "GM" | null;
   avatars: Record<number, string>;
 }
 
@@ -23,6 +23,21 @@ export default function SpeakerSpotlight({
 }: SpeakerSpotlightProps): JSX.Element | null {
   const voicePlaying = useVoice((s) => s.playing);
   if (seat === null) return null;
+  if (seat === "GM") {
+    return (
+      <div className={styles.root} role="status" aria-label="GM 旁白中">
+        <div className={`${styles.ring} ${styles.gmRing}`}>
+          <span className={styles.gmAvatar} aria-hidden="true">
+            🎙️
+          </span>
+        </div>
+        <div className={styles.text}>
+          <span className={styles.name}>GM</span>
+          <span className={styles.tag}>{voicePlaying !== null ? "旁白中 🔊" : "旁白中"}</span>
+        </div>
+      </div>
+    );
+  }
   const player = state.players.find((p) => p.seat === seat);
   if (!player) return null;
   const color = seatColor(state, seat);

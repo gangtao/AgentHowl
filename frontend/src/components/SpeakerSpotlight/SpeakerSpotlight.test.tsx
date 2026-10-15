@@ -42,4 +42,12 @@ describe("SpeakerSpotlight", () => {
     render(<SpeakerSpotlight state={state} seat={seat} avatars={{}} />);
     expect(screen.getByText("发言中 🔊")).toBeInTheDocument();
   });
+  it("seat 为 GM 时显示旁白占位（issue #110）", () => {
+    useVoice.setState({ playing: { seq: 1, part: 0 } });
+    render(<SpeakerSpotlight state={state} seat="GM" avatars={{}} />);
+    expect(screen.getByRole("status")).toHaveAttribute("aria-label", "GM 旁白中");
+    expect(screen.getByText("GM")).toBeInTheDocument();
+    expect(screen.getByText("旁白中 🔊")).toBeInTheDocument();
+    expect(screen.queryByRole("img")).toBeNull();
+  });
 });

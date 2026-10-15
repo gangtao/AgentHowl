@@ -57,6 +57,7 @@ class GameHandle:
         num_ai_players: int | None,
         agents: AgentProfiles,
         voice_enabled: bool = False,
+        narration_enabled: bool = False,
     ) -> None:
         self.game_id = game_id
         self.config = config
@@ -64,6 +65,7 @@ class GameHandle:
         self.num_ai_players = num_ai_players
         self.agents = agents
         self.voice_enabled = voice_enabled
+        self.narration_enabled = narration_enabled
         self.lobby = GameLobby(config, game_id)
         self.ports: dict[int, PlayerPort] = {}
         self.human_ports: dict[int, HumanPlayerPort] = {}
@@ -140,6 +142,7 @@ class GameRegistry:
         ai_model: str | None = None,
         ai_model_speech: str | None = None,
         voice: bool = False,
+        narration: bool = False,
     ) -> GameHandle:
         # 旧入口 ai_model 折叠为 "*" 默认档案；与显式 agents["*"] 冲突、座位键非法 → ValueError
         resolved = merge_profiles(agents, legacy_to_profiles(ai_model, ai_model_speech))
@@ -157,6 +160,7 @@ class GameRegistry:
             num_ai_players=num_ai_players,
             agents=resolved,
             voice_enabled=voice,
+            narration_enabled=narration,
         )
         self._games[game_id] = handle
         return handle
@@ -247,6 +251,7 @@ class GameRegistry:
             timeouts=self._timeouts,
             agents=effective,
             speech_audio=self._speech_audio if handle.voice_enabled else None,
+            narration_enabled=handle.voice_enabled and handle.narration_enabled,
         )
         handle.runner = runner
         # 订阅须在 create_task 之前完成，否则 GAME_CREATED/ROLES_ASSIGNED 首批事件漏投
