@@ -2,7 +2,8 @@
 """GM 旁白（issue #110）：事件 → 口播句子模板；句子级 WAV 缓存；旁白配置。
 
 纯函数 + 本地文件缓存；不 import 任何 LLM 代码，仅借用 tts.py 的 WAV 工具。
-口播文案与 app/cli/render.py 的终端渲染互不复用（后者带 【】[GM] 装饰）。模板一律一句一个「。」结尾；座位读作「N号」。
+口播文案与 app/cli/render.py 的终端渲染互不复用（后者带 【】[GM] 装饰）。
+模板一律一句一个「。」结尾；座位读作「N号」。
 """
 
 from __future__ import annotations
