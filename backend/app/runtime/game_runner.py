@@ -308,7 +308,7 @@ class GameRunner:
                 text = str(e.payload.content)  # type: ignore[attr-defined]
                 try:
                     await self._speech_audio.speak(
-                        self._game_id, e.seq, text, profile.voice, self.connections
+                        self._game_id, e.seq, text, profile.voice, self.connections, e
                     )
                 except Exception:
                     logger.warning("seat=%d seq=%d 配音异常，跳过等待", seat, e.seq, exc_info=True)

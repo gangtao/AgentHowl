@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Any
 
 from app.agent.profile import VoiceSpec
+from app.engine.events import Event
 from app.runtime.connection import ConnectionManager
 from app.runtime.tts import TtsClient, TtsError, wav_duration
 from app.runtime.voice_anchors import VoiceAnchorStore
@@ -79,6 +80,7 @@ class SpeechAudioSink:
         text: str,
         voice: VoiceSpec,
         connections: ConnectionManager | None,
+        event: Event,
     ) -> None:
         """失败不抛：WARNING 后对已推句子照常等待，对局继续。"""
         _check_game_id(game_id)
@@ -109,13 +111,14 @@ class SpeechAudioSink:
                             "part": part.index,
                             "url": f"/api/v1/games/{game_id}/audio/{seq}/{part.index}",
                             "duration": round(part.duration_sec, 3),
-                        }
+                        },
+                        event,
                     )
         except TtsError as exc:
             logger.warning("game=%s seq=%d 配音失败（已推 %d 句）：%s", game_id, seq, parts, exc)
         if parts and connections is not None:
             await connections.broadcast_frame(
-                {"type": "speech_audio_end", "seq": seq, "parts": parts}
+                {"type": "speech_audio_end", "seq": seq, "parts": parts}, event
             )
         if expected_finish is not None:
             await asyncio.sleep(max(0.0, expected_finish + AUDIO_TAIL_SEC - time.monotonic()))

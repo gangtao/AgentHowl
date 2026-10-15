@@ -409,7 +409,7 @@ class _RecordingSink:
         self.calls: list[tuple[int, str, object]] = []
 
     async def speak(
-        self, game_id: str, seq: int, text: str, voice: object, connections: object
+        self, game_id: str, seq: int, text: str, voice: object, connections: object, event: object
     ) -> None:
         self.calls.append((seq, text, voice))
         await asyncio.sleep(self.per_call)

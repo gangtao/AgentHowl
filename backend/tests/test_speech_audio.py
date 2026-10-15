@@ -12,6 +12,13 @@ import pytest
 from app.agent.profile import VoiceSpec
 from app.engine.config import build_preset
 from app.engine.engine import create_game
+from app.engine.events import (
+    Event,
+    EventType,
+    RoundStartedPayload,
+    Visibility,
+    VoteStartedPayload,
+)
 from app.engine.state import GameState
 from app.runtime.connection import ConnectionManager
 from app.runtime.speech_audio import AUDIO_TAIL_SEC, SpeechAudioSink
@@ -67,6 +74,16 @@ class SlowTts:
         return TtsStatus(enabled=True, ok=True, url="fake")
 
 
+def _public(seq: int, t: EventType = EventType.VOTE_STARTED) -> Event:
+    payload = (
+        VoteStartedPayload(candidates=(), tie_round=0)
+        if t == EventType.VOTE_STARTED
+        else RoundStartedPayload(round=seq)
+    )
+    vis = Visibility.PUBLIC if t == EventType.VOTE_STARTED else Visibility.GM_ONLY
+    return Event(seq=seq, game_id="g1", ts=float(seq), type=t, payload=payload, visibility=vis)
+
+
 def _state() -> GameState:
     return create_game(build_preset("std_9_kill_side").model_copy(update={"seed": 1}), "g1").state
 
@@ -82,10 +99,10 @@ async def test_speak_writes_parts_pushes_frames_and_waits(tmp_path: Path) -> Non
     async def sub(f: dict) -> None:
         frames.append(f)
 
-    cm.subscribe_frames(sub)
+    cm.subscribe_frames("GM", sub)
     sink = SpeechAudioSink(tmp_path / "audio", FakeTts(per_sentence=0.2))
     t0 = time.monotonic()
-    await sink.speak("g1", 57, "第一句话够长了吧。第二句话也够长了。", VOICE, cm)
+    await sink.speak("g1", 57, "第一句话够长了吧。第二句话也够长了。", VOICE, cm, _public(57))
     elapsed = time.monotonic() - t0
     assert elapsed >= 0.4 + AUDIO_TAIL_SEC - 0.05  # Σduration + 尾巴
     names = sorted(p.name for p in (tmp_path / "audio" / "g1").glob("*.wav"))
@@ -111,7 +128,7 @@ async def test_speak_waits_past_last_part_when_tts_slower_than_realtime(tmp_path
     不能按「首句推送时刻 + Σduration」算（否则会在最后一句播完前提前截断）。"""
     sink = SpeechAudioSink(tmp_path / "audio", SlowTts(delay=0.2, duration=0.05))
     t0 = time.monotonic()
-    await sink.speak("g1", 9, "无所谓什么内容反正会被分成两句。", VOICE, None)
+    await sink.speak("g1", 9, "无所谓什么内容反正会被分成两句。", VOICE, None, _public(9))
     elapsed = time.monotonic() - t0
     # 第二句约在 0.4s 推送，播 0.05s 到 0.45s，再加尾巴
     assert elapsed >= 0.2 + 0.2 + 0.05 + AUDIO_TAIL_SEC - 0.05
@@ -127,9 +144,9 @@ async def test_speak_failure_midway_keeps_pushed_parts_and_returns(tmp_path: Pat
     async def sub(f: dict) -> None:
         frames.append(f)
 
-    cm.subscribe_frames(sub)
+    cm.subscribe_frames("GM", sub)
     sink = SpeechAudioSink(tmp_path / "audio", FakeTts(per_sentence=0.1, fail_at=1))
-    await sink.speak("g1", 3, "随便说点什么都行吧。再来一句凑数的。", VOICE, cm)
+    await sink.speak("g1", 3, "随便说点什么都行吧。再来一句凑数的。", VOICE, cm, _public(3))
     assert [f["type"] for f in frames] == ["speech_audio", "speech_audio_end"]
     assert frames[1]["parts"] == 1
     assert sink.manifest("g1") == {"3": [{"part": 0, "duration": pytest.approx(0.1, abs=0.01)}]}
@@ -139,7 +156,7 @@ async def test_speak_failure_midway_keeps_pushed_parts_and_returns(tmp_path: Pat
 async def test_speak_total_failure_and_no_connections(tmp_path: Path) -> None:
     sink = SpeechAudioSink(tmp_path / "audio", FakeTts(fail_at=0))
     t0 = time.monotonic()
-    await sink.speak("g1", 1, "完全失败的一句话。", VOICE, None)  # 不抛、不等
+    await sink.speak("g1", 1, "完全失败的一句话。", VOICE, None, _public(1))  # 不抛、不等
     assert time.monotonic() - t0 < 0.2
     assert sink.manifest("g1") == {}
 
