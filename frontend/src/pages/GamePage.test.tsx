@@ -88,6 +88,20 @@ describe("GamePage 聚光牌跟随配音（issue #110）", () => {
     expect(await screen.findByText("旁白中 🔊")).toBeInTheDocument();
     act(() => useVoice.setState({ voicingSeq: 999999, playing: null }));
     expect(screen.queryByText("旁白中 🔊")).toBeNull();
+    expect(screen.queryByRole("status", { name: /旁白中/ })).toBeNull();
+    useVoice.getState().clear();
+  });
+
+  it("带 actor_seat 的非发言事件（HUNTER_SHOT 等）也显示 GM，不高亮座位", async () => {
+    stubFetch(() => jsonResponse(200, meta));
+    vi.stubGlobal("WebSocket", vi.fn());
+    render(<GamePage gameId="g_x" replay />);
+    await screen.findByText(new RegExp(`已结束 · ${events.length} 条事件`));
+    const shot = events.find((e) => e.type === "HUNTER_SHOT" && e.actor_seat !== null);
+    expect(shot).toBeDefined();
+    act(() => useVoice.setState({ voicingSeq: shot!.seq, playing: { seq: shot!.seq, part: 0 } }));
+    expect(await screen.findByRole("status", { name: "GM 旁白中" })).toBeInTheDocument();
+    expect(screen.getByText("旁白中 🔊")).toBeInTheDocument();
     useVoice.getState().clear();
   });
 });

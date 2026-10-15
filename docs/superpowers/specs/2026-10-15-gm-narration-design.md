@@ -237,11 +237,11 @@ async def _voice(self, events: list[Event]) -> None:
 ## 5. 前端
 
 - `api/ws.ts`：`speech_audio` 帧多出的 `kind` 原样放进 `enqueue()`（`AudioQueueItem.kind?: "speech" | "narration"`），不做其他判断。
-- `pages/GamePage.tsx`：`voicingSeat` 改为 `voicingActor: number | "GM" | null`——`voicingSeq` 对应事件存在且 `actor_seat !== null` → 座位；存在但 `actor_seat === null` → `"GM"`；找不到事件 → null（回退 `turnSpeaker`）。`speaking`（座位高亮）只在 actor 为数字时取它，`"GM"` 时为 `null`。
+- `pages/GamePage.tsx`：`voicingSeat` 改为 `voicingActor: number | "GM" | null`——`voicingSeq` 对应事件为 `PLAYER_SPOKE`/`LAST_WORDS` → 该座位；其它任何事件（含带 `actor_seat` 的 `HUNTER_SHOT`/`BADGE_PASSED`/`WOLF_SELF_DESTRUCT`）→ `"GM"`；找不到事件 → null 回退 `turnSpeaker`。判断只看事件类型与 `actor_seat`，不看 `kind`。`speaking`（座位高亮）只在 actor 为数字时取它，`"GM"` 时为 `null`。
 - `components/SpeakerSpotlight`：`seat: number | "GM" | null`。`"GM"` 渲染 🎙️ 占位（`Avatar` 的 fallback 样式，灰色环）+ 名字「GM」+ 标签「旁白中 🔊」；`aria-label`「GM 旁白中」。
 - `pages/LobbyPage`（建局页）：「语音播报」下缩进一个「旁白」复选框；语音关时禁用并自动取消勾选；提交 `narration`。
 - 回放：`replayGate` 不改——清单里旁白 seq 与发言 seq 同列，游标命中即等播完。
-- 零过滤：前端收到什么播什么；判断 GM 只看事件的 `actor_seat`，不看 `kind`（`kind` 仅作调试/样式用途）。
+- 零过滤：前端收到什么播什么；判断 GM 只看事件类型与 `actor_seat`，不看 `kind`（`kind` 仅作调试/样式用途）。
 
 ## 6. 错误处理
 

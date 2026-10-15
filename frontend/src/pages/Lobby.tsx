@@ -189,7 +189,10 @@ export default function Lobby(): JSX.Element {
                 type="checkbox"
                 checked={voice}
                 disabled={!tts.ok}
-                onChange={(e) => setVoice(e.target.checked)}
+                onChange={(e) => {
+                  setVoice(e.target.checked);
+                  if (!e.target.checked) setNarration(false);
+                }}
               />
               语音播报{tts.ok ? "" : `（TTS 不可用：${tts.detail ?? ""}）`}
             </label>
