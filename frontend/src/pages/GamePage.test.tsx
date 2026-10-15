@@ -1,11 +1,12 @@
 // 回放引导（`#/g/{id}?replay=1`，issue #98 规格 §5）：无 token 拉 /meta + /replay，
 // 401/403 统一「暂不可回放」文案（不暴露 token），成功路径不连 WS。
 
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import fixture from "../engine/__fixtures__/std_9_kill_side-3.json";
 import type { Event, GameMeta } from "../engine/types";
 import { useGameStore } from "../store/game";
+import { useVoice } from "../store/voice";
 import GamePage from "./GamePage";
 
 const meta = fixture.meta as unknown as GameMeta;
@@ -72,5 +73,21 @@ describe("GamePage 回放模式（无 token）", () => {
       expect(url).toMatch(/\/api\/v1\/games\/g_x\/(meta|replay|avatars|audio)$/);
       expect(init.headers).not.toHaveProperty("Authorization");
     }
+  });
+});
+
+describe("GamePage 聚光牌跟随配音（issue #110）", () => {
+  it("voicingSeq 指向无 actor 的事件时显示 GM；找不到事件时退回轮到谁", async () => {
+    stubFetch(() => jsonResponse(200, meta));
+    vi.stubGlobal("WebSocket", vi.fn());
+    render(<GamePage gameId="g_x" replay />);
+    await screen.findByText(new RegExp(`已结束 · ${events.length} 条事件`));
+    const narrated = events.find((e) => e.actor_seat === null && e.type === "VOTE_STARTED");
+    expect(narrated).toBeDefined();
+    act(() => useVoice.setState({ voicingSeq: narrated!.seq, playing: { seq: narrated!.seq, part: 0 } }));
+    expect(await screen.findByText("旁白中 🔊")).toBeInTheDocument();
+    act(() => useVoice.setState({ voicingSeq: 999999, playing: null }));
+    expect(screen.queryByText("旁白中 🔊")).toBeNull();
+    useVoice.getState().clear();
   });
 });

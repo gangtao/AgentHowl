@@ -2,7 +2,7 @@
 // URL：/api/v1/ws?token=…&from_seq=…；帧：{type:"game_event", seq, event}
 // / {type:"phase_change", to, round} / {type:"game_over", winner} / {type:"error", detail}
 // / {type:"action_result", ...} / {type:"your_turn", ...}（后两者本 hook 不消费，观战/上帝视角只读）
-// / {type:"speech_audio", seq, part, url, duration}（配音分段，issue #103：转给 useVoice.enqueue，
+// / {type:"speech_audio", seq, part, url, duration, kind}（配音分段，issue #103；`kind` 为 `speech|narration`（issue #110，缺省按 speech）：转给 useVoice.enqueue，
 // 不进 appendEvents——零信息过滤原则下也不代表任何游戏状态变化；url 会拼上本连接的 ?token=，
 // 因为直播期间 /audio/{seq}/{part} 匿名必 401，而 <audio> 元素发不出 Authorization 头，fix round 1）
 // / {type:"speech_audio_end", seq, parts}（本 hook 不消费，仅服务端用来标记某句配音已出完）。
@@ -41,6 +41,7 @@ interface WsFrame {
   part?: number;
   url?: string;
   duration?: number;
+  kind?: "speech" | "narration";
 }
 
 export interface UseLiveEventsArgs {
@@ -154,6 +155,7 @@ export function useLiveEvents({ gameId, token, enabled }: UseLiveEventsArgs): vo
             part: frame.part as number,
             url,
             duration: frame.duration ?? 0,
+            kind: frame.kind ?? "speech",
           });
         }
         // phase_change：仅用于轻提示，状态一律来自 reduce，这里不处理。

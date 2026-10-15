@@ -172,7 +172,7 @@ describe("useLiveEvents", () => {
     // fix round 1（issue #103）：<audio> 发不出 Authorization 头，直播期间该端点匿名必 401，
     // enqueue 的 url 必须带上 ?token=，否则直播配音一句都放不出来。
     expect(useVoice.getState().queue).toEqual([
-      { seq: 3, part: 0, url: "/a/3/0?token=tok", duration: 1.5 },
+      { seq: 3, part: 0, url: "/a/3/0?token=tok", duration: 1.5, kind: "speech" },
     ]);
     // game store 不受影响：speech_audio 不是游戏事件，不进 appendEvents
     expect(useGameStore.getState().events).toHaveLength(0);
@@ -181,7 +181,7 @@ describe("useLiveEvents", () => {
 
     // 忽略：队列/available 均不因 speech_audio_end 改变
     expect(useVoice.getState().queue).toEqual([
-      { seq: 3, part: 0, url: "/a/3/0?token=tok", duration: 1.5 },
+      { seq: 3, part: 0, url: "/a/3/0?token=tok", duration: 1.5, kind: "speech" },
     ]);
   });
 
