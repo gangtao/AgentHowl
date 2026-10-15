@@ -27,6 +27,7 @@ from app.runtime.voice_anchors import VoiceAnchorStore
 logger = logging.getLogger(__name__)
 
 AUDIO_TAIL_SEC = 0.3
+WAV_HEADER_BYTES = 64 * 1024  # 清单读时长只取文件头（fmt/data 块都在最前面）
 WARM_TEXT = "大家好。"
 _PART_RE = re.compile(r"^(\d+)-(\d+)\.wav$")
 _GAME_ID_RE = re.compile(r"^[A-Za-z0-9_-]+$")
@@ -133,7 +134,8 @@ class SpeechAudioSink:
             if m is None:
                 continue
             try:
-                dur = wav_duration(p.read_bytes())
+                with p.open("rb") as f:
+                    dur = wav_duration(f.read(WAV_HEADER_BYTES))  # 只读头部：时长来自 data 块声明
             except (TtsError, OSError):
                 logger.warning("音频文件损坏，跳过：%s", p)
                 continue

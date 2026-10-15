@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
+import { AutoplayBlockedError } from "../lib/audioPlayer";
 import { useVoice } from "./voice";
 
 function fakePlayer() {
@@ -164,5 +165,38 @@ describe("useVoice.enqueue 边界", () => {
     useVoice.getState().setEnabled(true);
     expect(useVoice.getState().queue).toEqual([]);
     expect(p.calls).toEqual([]);
+  });
+});
+
+describe("useVoice 自动播放被拒（issue #108）", () => {
+  beforeEach(() => {
+    useVoice.setState({ enabled: false, available: false, playing: null, queue: [], blocked: false });
+  });
+  it("直播队列：play 抛 AutoplayBlockedError → 关闭开关、blocked=true、不写 localStorage", async () => {
+    localStorage.setItem("agenthowl.voice", "1");
+    useVoice.getState().setPlayer({
+      play: () => Promise.reject(new AutoplayBlockedError()),
+      stop: () => undefined,
+    });
+    useVoice.getState().setEnabled(true);
+    useVoice.getState().enqueue({ seq: 1, part: 0, url: "/a/1/0", duration: 1 });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(useVoice.getState().enabled).toBe(false);
+    expect(useVoice.getState().blocked).toBe(true);
+    expect(useVoice.getState().playing).toBeNull();
+    expect(localStorage.getItem("agenthowl.voice")).toBe("1");
+    useVoice.getState().setEnabled(true); // 用户再点一次
+    expect(useVoice.getState().blocked).toBe(false);
+  });
+  it("回放 playSeq 同样处理，promise 正常 resolve", async () => {
+    useVoice.getState().setPlayer({
+      play: () => Promise.reject(new AutoplayBlockedError()),
+      stop: () => undefined,
+    });
+    useVoice.getState().setEnabled(true);
+    await useVoice.getState().playSeq("g", 3, [{ part: 0, duration: 1 }], undefined);
+    expect(useVoice.getState().enabled).toBe(false);
+    expect(useVoice.getState().blocked).toBe(true);
   });
 });

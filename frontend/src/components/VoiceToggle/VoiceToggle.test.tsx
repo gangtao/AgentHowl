@@ -27,4 +27,9 @@ describe("VoiceToggle", () => {
     expect(button).toHaveTextContent("语音 开");
     expect(button).toHaveAttribute("aria-pressed", "true");
   });
+  it("blocked 时显示自动播放被拒提示（issue #108）", () => {
+    useVoice.setState({ available: true, enabled: false, blocked: true, playing: null, queue: [] });
+    render(<VoiceToggle />);
+    expect(screen.getByRole("status")).toHaveTextContent(/阻止了自动播放/);
+  });
 });

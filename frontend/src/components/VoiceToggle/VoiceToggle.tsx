@@ -10,11 +10,17 @@ export default function VoiceToggle(): JSX.Element | null {
   const enabled = useVoice((s) => s.enabled);
   const playing = useVoice((s) => s.playing);
   const setEnabled = useVoice((s) => s.setEnabled);
+  const blocked = useVoice((s) => s.blocked);
 
   if (!available) return null;
 
   return (
     <div className={styles.root}>
+      {blocked && (
+        <span className={styles.hint} role="status">
+          浏览器阻止了自动播放，点一下 🔊 重新开启
+        </span>
+      )}
       <button
         type="button"
         className={`${styles.toggle} ${enabled ? styles.on : ""}`}

@@ -64,7 +64,7 @@ def _client(kind: str, handler) -> HttpTtsClient:  # type: ignore[no-untyped-def
         kind=kind,  # type: ignore[arg-type]
         model_preset="m-preset",
         model_design="m-design",
-        api_key="sk-secret" if kind == "openai" else None,
+        api_key="sk-secret",
     )
     return HttpTtsClient(cfg, transport=httpx.MockTransport(handler))
 
@@ -153,7 +153,7 @@ async def test_openai_and_generic_mapping() -> None:
         "speed": 1.0,
         "response_format": "wav",
     }
-    assert "authorization" not in headers
+    assert headers["authorization"] == "Bearer sk-secret"  # generic 网关也要鉴权（issue #108）
 
 
 @pytest.mark.asyncio
@@ -215,7 +215,12 @@ def test_config_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("AGENTHOWL_TTS_KIND", "openai")
     monkeypatch.setenv("AGENTHOWL_TTS_API_KEY", "k")
     cfg = TtsConfig.from_env()
-    assert cfg.url == "http://127.0.0.1:8880" and cfg.kind == "openai" and cfg.api_key == "k"
+    assert (
+        cfg.url == "http://127.0.0.1:8880"
+        and cfg.kind == "openai"
+        and cfg.api_key is not None
+        and cfg.api_key.get_secret_value() == "k"
+    )
     assert cfg.model_preset.startswith("mlx-community/Qwen3-TTS") and cfg.model_design.endswith(
         "VoiceDesign-6bit"
     )
@@ -314,3 +319,31 @@ async def test_retry_on_timeout_and_skip_failed_sentence() -> None:
         bad = _client("generic", always_400)
         [p async for p in bad.synthesize_sentences("全军覆没的一句话。", v)]
     assert calls == ["x"]  # 4xx 不重试
+
+
+def test_api_key_is_secret_and_url_strips_userinfo(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.runtime.tts import public_url
+
+    monkeypatch.setenv("AGENTHOWL_TTS_URL", "http://user:pw@tts.local:8880")
+    monkeypatch.setenv("AGENTHOWL_TTS_API_KEY", "sk-very-secret")
+    cfg = TtsConfig.from_env()
+    assert "sk-very-secret" not in repr(cfg) and "sk-very-secret" not in str(cfg.model_dump())
+    assert cfg.api_key is not None and cfg.api_key.get_secret_value() == "sk-very-secret"
+    assert public_url(cfg.url) == "http://tts.local:8880"
+    assert public_url("http://tts.local:8880/") == "http://tts.local:8880/"
+    assert public_url(None) is None
+
+
+@pytest.mark.asyncio
+async def test_probe_echoes_url_without_userinfo() -> None:
+    def ok(req: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"data": []})
+
+    cfg = TtsConfig(url="http://u:p@tts.local", api_key=None)
+    st = await HttpTtsClient(cfg, transport=httpx.MockTransport(ok)).probe()
+    assert st.url == "http://tts.local" and "u:p" not in st.model_dump_json()
+
+
+def test_wav_duration_from_header_only_trusts_declared_size() -> None:
+    full = _wav(10.0)
+    assert abs(wav_duration(full[: 64 * 1024]) - 10.0) < 0.01
