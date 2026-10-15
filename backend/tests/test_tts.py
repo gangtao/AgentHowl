@@ -16,6 +16,7 @@ from app.runtime.tts import (
     HttpTtsClient,
     TtsConfig,
     TtsError,
+    concat_wav,
     split_sentences,
     wav_duration,
 )
@@ -347,3 +348,31 @@ async def test_probe_echoes_url_without_userinfo() -> None:
 def test_wav_duration_from_header_only_trusts_declared_size() -> None:
     full = _wav(10.0)
     assert abs(wav_duration(full[: 64 * 1024]) - 10.0) < 0.01
+
+
+def _pcm_wav(seconds: float, rate: int = 8000, channels: int = 1) -> bytes:
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as w:
+        w.setnchannels(channels)
+        w.setsampwidth(2)
+        w.setframerate(rate)
+        w.writeframes(b"\x01\x00" * int(rate * seconds) * channels)
+    return buf.getvalue()
+
+
+def test_concat_wav_joins_data_chunks() -> None:
+    out = concat_wav([_pcm_wav(0.2), _pcm_wav(0.3)])
+    assert out[:4] == b"RIFF" and wav_duration(out) == pytest.approx(0.5, abs=0.001)
+    with wave.open(io.BytesIO(out)) as w:
+        assert w.getnchannels() == 1 and w.getframerate() == 8000 and w.getnframes() == 4000
+
+
+def test_concat_wav_single_and_errors() -> None:
+    one = _pcm_wav(0.1)
+    assert concat_wav([one]) is one
+    with pytest.raises(TtsError):
+        concat_wav([])
+    with pytest.raises(TtsError):
+        concat_wav([_pcm_wav(0.1, rate=8000), _pcm_wav(0.1, rate=16000)])
+    with pytest.raises(TtsError):
+        concat_wav([one, b"not a wav"])
