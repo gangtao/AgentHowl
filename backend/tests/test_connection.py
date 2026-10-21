@@ -124,8 +124,8 @@ async def test_raising_subscriber_is_evicted_others_delivered() -> None:
 
 
 @pytest.mark.asyncio
-async def test_broadcast_frame_reaches_all_and_drops_bad_subscriber() -> None:
-    """issue #103：原始帧（非事件）广播给所有帧订阅者，不经可见性过滤；坏订阅者摘除。"""
+async def test_broadcast_frame_reaches_visible_and_drops_bad_subscriber() -> None:
+    """issue #110：帧随来源事件按视角过滤；坏订阅者摘除。"""
     cm = ConnectionManager(state_provider=_state)
     got: list[dict] = []
 
@@ -135,11 +135,35 @@ async def test_broadcast_frame_reaches_all_and_drops_bad_subscriber() -> None:
     async def bad(frame: dict) -> None:
         raise RuntimeError("boom")
 
-    cm.subscribe_frames(good)
-    cm.subscribe_frames(bad)
-    await cm.broadcast_frame({"type": "speech_audio", "seq": 1})
-    await cm.broadcast_frame({"type": "speech_audio_end", "seq": 1, "parts": 1})
+    cm.subscribe_frames("SPECTATOR", good)
+    cm.subscribe_frames("SPECTATOR", bad)
+    await cm.broadcast_frame({"type": "speech_audio", "seq": 1}, _evt(1, Visibility.PUBLIC))
+    await cm.broadcast_frame(
+        {"type": "speech_audio_end", "seq": 1, "parts": 1}, _evt(1, Visibility.PUBLIC)
+    )
     assert [f["type"] for f in got] == ["speech_audio", "speech_audio_end"]
-    cm.unsubscribe_frames(good)
-    await cm.broadcast_frame({"type": "speech_audio", "seq": 2})
+    cm.unsubscribe_frames("SPECTATOR", good)
+    await cm.broadcast_frame({"type": "speech_audio", "seq": 2}, _evt(2, Visibility.PUBLIC))
     assert len(got) == 2
+
+
+@pytest.mark.asyncio
+async def test_frame_filtered_by_viewer() -> None:
+    """Review Focus 3：GM_ONLY 只 GM 收；WOLVES 只狼座位（seat 0）与 GM 收；观众 / 村民不收。"""
+    cm = ConnectionManager(state_provider=_state)
+    got: dict[str, list[int]] = {"GM": [], "SPECTATOR": [], "wolf": [], "villager": []}
+
+    def sub(name: str):  # type: ignore[no-untyped-def]
+        async def cb(frame: dict) -> None:
+            got[name].append(frame["seq"])
+
+        return cb
+
+    cm.subscribe_frames("GM", sub("GM"))
+    cm.subscribe_frames("SPECTATOR", sub("SPECTATOR"))
+    cm.subscribe_frames(0, sub("wolf"))
+    cm.subscribe_frames(1, sub("villager"))
+    await cm.broadcast_frame({"seq": 1}, _evt(1, Visibility.GM_ONLY))
+    await cm.broadcast_frame({"seq": 2}, _evt(2, Visibility.WOLVES))
+    await cm.broadcast_frame({"seq": 3}, _evt(3, Visibility.PUBLIC))
+    assert got == {"GM": [1, 2, 3], "SPECTATOR": [3], "wolf": [2, 3], "villager": [3]}

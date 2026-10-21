@@ -19,6 +19,7 @@ from app.runtime.agent_library import AgentLibraryStore, JsonFileAgentLibrary
 from app.runtime.avatar_store import AvatarStore, FileAvatarStore
 from app.runtime.experience_store import ExperienceStore, JsonFileExperienceStore
 from app.runtime.game_runner import LobbyError, RunnerTimeouts
+from app.runtime.narration import NarrationCache, NarrationConfig
 from app.runtime.player_port import NotYourTurnError, PlayerPort
 from app.runtime.provider_probe import LiteLLMProbe, ProviderProbe
 from app.runtime.provider_store import JsonFileProviderStore, ProviderStore
@@ -82,6 +83,7 @@ def create_app(
     tts_config: TtsConfig | None = None,
     tts_client: TtsClient | None = None,
     audio_dir: Path | None = None,
+    narration_config: NarrationConfig | None = None,
 ) -> FastAPI:
     app = FastAPI(title="AgentHowl API", version="0.1.0")
     install_access_log_filter()
@@ -101,8 +103,14 @@ def create_app(
     app.state.tts = tts
     # 描述声线锚点（句句同一个人）：data/voices
     app.state.voice_anchors = VoiceAnchorStore(voices_dir or Path("data/voices"))
+    # GM 旁白（issue #110）：配置校验 fail-loud；句子缓存全局共用
+    narration = narration_config or NarrationConfig.from_env(data_dir=Path("data"))
     app.state.speech_audio = SpeechAudioSink(
-        audio_dir or Path("data/audio"), tts, app.state.voice_anchors
+        audio_dir or Path("data/audio"),
+        tts,
+        app.state.voice_anchors,
+        narration=narration,
+        narration_cache=NarrationCache(narration.cache_dir),
     )
     # 跨局记忆目录（issue #59）：惰性建目录，无 memory_id 的运行永不落盘
     app.state.games = GameRegistry(

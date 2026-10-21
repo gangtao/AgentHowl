@@ -409,7 +409,7 @@ class _RecordingSink:
         self.calls: list[tuple[int, str, object]] = []
 
     async def speak(
-        self, game_id: str, seq: int, text: str, voice: object, connections: object
+        self, game_id: str, seq: int, text: str, voice: object, connections: object, event: object
     ) -> None:
         self.calls.append((seq, text, voice))
         await asyncio.sleep(self.per_call)
@@ -475,3 +475,129 @@ async def test_runner_sink_exception_does_not_kill_game() -> None:
     for seat in range(cfg.num_players):
         ports[seat] = BotPlayerPort(state_provider=lambda: runner.state)
     assert (await runner.run()).phase == Phase.GAME_OVER
+
+
+class _KindSink:
+    """记录 (kind, seq) 顺序；narrate 只记录不等待。"""
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, int]] = []
+
+    async def speak(
+        self,
+        game_id: str,
+        seq: int,
+        text: str,
+        voice: object,
+        connections: object,
+        event: object,
+    ) -> None:
+        self.calls.append(("speech", seq))
+
+    async def narrate(self, game_id: str, event: object, connections: object) -> None:
+        self.calls.append(("narration", event.seq))  # type: ignore[attr-defined]
+
+
+async def test_runner_voices_events_in_seq_order_with_narration() -> None:
+    """issue #110：发言与旁白按 seq 顺序交给 sink（同一提交里发言先于阶段切换）；
+    narration_enabled=True 时每条事件都经 narrate（白名单判断在 sink 内）。"""
+    from app.agent.profile import AgentProfile, VoiceSpec
+
+    store = InMemoryEventStore()
+    cfg = build_preset("std_9_kill_side").model_copy(update={"seed": 7})
+    lobby = GameLobby(cfg, game_id="g1")
+    lobby.fill_with_bots()
+    ports: dict[int, PlayerPort] = {}
+    sink = _KindSink()
+    runner = GameRunner(
+        store=store,
+        config=cfg,
+        game_id="g1",
+        roster=lobby.roster(),
+        ports=ports,
+        agents={"*": AgentProfile(model="x", voice=VoiceSpec(mode="preset", speaker="eric"))},
+        speech_audio=sink,  # type: ignore[arg-type]
+        narration_enabled=True,
+    )
+    for seat in range(cfg.num_players):
+        ports[seat] = BotPlayerPort(state_provider=lambda: runner.state)
+    assert (await runner.run()).phase == Phase.GAME_OVER
+    seqs = [s for _k, s in sink.calls]
+    assert seqs == sorted(seqs) and len(set(seqs)) == len(seqs)
+    events = store.load_events("g1")
+    speech_seqs = {
+        e.seq for e in events if e.type in (EventType.PLAYER_SPOKE, EventType.LAST_WORDS)
+    }
+    assert {s for k, s in sink.calls if k == "speech"} == speech_seqs
+    assert {s for k, s in sink.calls if k == "narration"} == {e.seq for e in events} - speech_seqs
+
+
+async def test_runner_narration_disabled_never_calls_narrate() -> None:
+    from app.agent.profile import AgentProfile
+
+    store = InMemoryEventStore()
+    cfg = build_preset("std_9_kill_side").model_copy(update={"seed": 7})
+    lobby = GameLobby(cfg, game_id="g1")
+    lobby.fill_with_bots()
+    ports: dict[int, PlayerPort] = {}
+    sink = _KindSink()
+    runner = GameRunner(
+        store=store,
+        config=cfg,
+        game_id="g1",
+        roster=lobby.roster(),
+        ports=ports,
+        agents={"*": AgentProfile(model="x")},
+        speech_audio=sink,  # type: ignore[arg-type]
+    )
+    for seat in range(cfg.num_players):
+        ports[seat] = BotPlayerPort(state_provider=lambda: runner.state)
+    await runner.run()
+    assert sink.calls == []
+
+
+class _HangPort:
+    """act() 永不返回，逼 runner 在每个窗口落默认。"""
+
+    async def act(self, observation: PlayerObservation, deadline_ts: float) -> Action:
+        await asyncio.sleep(999)
+        raise AssertionError("unreachable")
+
+
+async def test_runner_default_speech_not_voiced_but_narration_still_runs() -> None:
+    """落默认的占位发言（超时/非法）不用该座位声线配音；同提交的旁白照常。"""
+    from app.agent.profile import AgentProfile, VoiceSpec
+
+    store = InMemoryEventStore()
+    cfg = build_preset("std_9_kill_side").model_copy(update={"seed": 7})
+    lobby = GameLobby(cfg, game_id="g1")
+    lobby.fill_with_bots()
+    ports: dict[int, PlayerPort] = {}
+    sink = _KindSink()
+    runner = GameRunner(
+        store=store,
+        config=cfg,
+        game_id="g1",
+        roster=lobby.roster(),
+        ports=ports,
+        agents={"*": AgentProfile(model="x", voice=VoiceSpec(mode="preset", speaker="eric"))},
+        speech_audio=sink,  # type: ignore[arg-type]
+        narration_enabled=True,
+        timeouts=RunnerTimeouts(speech_sec=0.05, action_sec=0.05),
+    )
+    for seat in range(cfg.num_players):
+        ports[seat] = (
+            _HangPort() if seat == 0 else BotPlayerPort(state_provider=lambda: runner.state)
+        )
+    assert (await runner.run()).phase == Phase.GAME_OVER
+    events = store.load_events("g1")
+    speech_types = (EventType.PLAYER_SPOKE, EventType.LAST_WORDS)
+    defaulted = {
+        e.seq for e in events if e.type in speech_types and e.meta.get("timeout") == "true"
+    }
+    assert defaulted  # 座位 0 确实落过默认发言
+    assert not defaulted & {s for k, s in sink.calls if k == "speech"}
+    real_speech = {e.seq for e in events if e.type in speech_types} - defaulted
+    assert {s for k, s in sink.calls if k == "speech"} == real_speech
+    all_speech = {e.seq for e in events if e.type in speech_types}
+    assert {s for k, s in sink.calls if k == "narration"} == {e.seq for e in events} - all_speech

@@ -9,9 +9,21 @@ from pathlib import Path
 import pytest
 
 from app.agent.profile import VoiceSpec
+from app.engine.events import Event, EventType, Visibility, VoteStartedPayload
 from app.runtime.speech_audio import SpeechAudioSink
 from app.runtime.tts import ANCHOR_TEXT, AudioPart, TtsError, TtsStatus
 from app.runtime.voice_anchors import VoiceAnchorStore
+
+
+def _public(seq: int) -> Event:
+    return Event(
+        seq=seq,
+        game_id="g1",
+        ts=float(seq),
+        type=EventType.VOTE_STARTED,
+        payload=VoteStartedPayload(candidates=(), tie_round=0),
+        visibility=Visibility.PUBLIC,
+    )
 
 
 def _wav(seconds: float = 0.05) -> bytes:
@@ -89,12 +101,12 @@ async def test_sink_passes_anchor_as_ref_and_falls_back(tmp_path: Path) -> None:
     tts = RecTts()
     sink = SpeechAudioSink(tmp_path / "audio", tts, store)
     text = "这是一句够长的发言内容。"
-    await sink.speak("g1", 1, text, VoiceSpec(mode="design", style="甜美少女"), None)
-    await sink.speak("g1", 2, text, VoiceSpec(mode="preset", speaker="eric"), None)
+    await sink.speak("g1", 1, text, VoiceSpec(mode="design", style="甜美少女"), None, _public(1))
+    await sink.speak("g1", 2, text, VoiceSpec(mode="preset", speaker="eric"), None, _public(2))
     assert tts.refs[0] is not None and tts.refs[0].name.startswith("auto-") and tts.refs[1] is None
     # 锚点生成失败：退回逐句设计（ref=None），对局继续
     bad = RecTts(fail_design=True)
     sink2 = SpeechAudioSink(tmp_path / "audio", bad, store)
-    await sink2.speak("g1", 3, text, VoiceSpec(mode="design", style="另一种"), None)
+    await sink2.speak("g1", 3, text, VoiceSpec(mode="design", style="另一种"), None, _public(3))
     assert bad.refs == [None]
     assert ANCHOR_TEXT  # 常量存在且非空

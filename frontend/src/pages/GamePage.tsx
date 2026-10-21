@@ -359,12 +359,19 @@ export default function GamePage({ gameId, token, viewer, replay }: GamePageProp
   // 正在出声的发言优先于"轮到谁"：引擎提交发言后立刻把发言权交给下一位，而音频还在播上一位，
   // 高亮/聚光牌若只看 state 会跑到下一位身上（issue #103 用户反馈）。零过滤：seq 来自服务端帧。
   const voicingSeq = useVoice((s) => s.voicingSeq);
-  const voicingSeat = useMemo<number | null>(() => {
+  // 座位（发言/遗言事件）/ "GM"（其它任何事件，含带 actor_seat 的 HUNTER_SHOT 等进程事件，
+  // issue #110）/ null（找不到事件 → 退回轮到谁）。只看事件类型与 actor_seat，不看 kind。
+  const voicingActor = useMemo<number | "GM" | null>(() => {
     if (voicingSeq === null) return null;
     const e = events.find((x) => x.seq === voicingSeq);
-    return e?.actor_seat ?? null;
+    if (e === undefined) return null;
+    if (e.type === "PLAYER_SPOKE" || e.type === "LAST_WORDS") return e.actor_seat ?? "GM";
+    return "GM";
   }, [events, voicingSeq]);
-  const speaking = voicingSeat ?? turnSpeaker;
+  let speaking: number | null = null;
+  if (typeof voicingActor === "number") speaking = voicingActor;
+  else if (voicingActor === null) speaking = turnSpeaker;
+  const spotlight: number | "GM" | null = voicingActor === "GM" ? "GM" : speaking;
 
   // 票数小标只在投票类阶段显示——否则会把上一轮遗留的票箱画在座位上。
   const votes = useMemo<Record<number, number>>(() => {
@@ -462,7 +469,7 @@ export default function GamePage({ gameId, token, viewer, replay }: GamePageProp
             avatars={avatars}
           />
           {/* 发言者聚光牌占座位环下方的空白区（issue #102 追加） */}
-          <SpeakerSpotlight state={view} seat={speaking} avatars={avatars} />
+          <SpeakerSpotlight state={view} seat={spotlight} avatars={avatars} />
         </div>
 
         <div className={styles.center}>

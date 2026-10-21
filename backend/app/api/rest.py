@@ -74,6 +74,8 @@ async def create_game_endpoint(
         config = type(config).model_validate(config.model_dump())  # override 后全量校验
     except (KeyError, ValueError, ValidationError) as exc:
         raise ToolCallError(f"preset/config_override 非法：{exc}") from exc
+    if req.narration and not req.voice:
+        raise HTTPException(status_code=400, detail="旁白需要先开启语音播报")
     # 发言配音（issue #103）：开局前探测，不可用则 400，不悄悄降级
     tts: TtsClient = request.app.state.tts
     if req.voice:
@@ -92,6 +94,7 @@ async def create_game_endpoint(
             ai_model=req.ai_model,
             ai_model_speech=req.ai_model_speech,
             voice=req.voice,
+            narration=req.narration,
         )
     except ValueError as exc:
         raise ToolCallError(f"agents 非法：{exc}") from exc
@@ -111,6 +114,7 @@ async def create_game_endpoint(
         config=handle.config.model_dump(mode="json"),
         agents=handle.agents,
         voice=handle.voice_enabled,
+        narration=handle.narration_enabled,
     )
 
 
@@ -500,6 +504,24 @@ def avatars_endpoint(
     return out
 
 
+def _audio_visible_seqs(
+    games: GameRegistry, game_id: str, info: TokenInfo | None
+) -> set[int] | None:
+    """直播期间按 token 视角可见的事件 seq 集合；None = 不过滤（终局 / GM / 未开局）。
+    与 /replay 口径一致：终局后全量；HOST 按观众处理。唯一可见性判定是 visible_events。"""
+    if info is None or info.kind == "GM":
+        return None
+    try:
+        handle = games.get(game_id)
+    except LookupError:
+        return None
+    if not handle.started or handle.live_state().phase == Phase.GAME_OVER:
+        return None
+    viewer: Any = _viewer_for(info)
+    events = games.store.load_events(game_id)
+    return {e.seq for e in visible_events(handle.live_state(), events, viewer)}
+
+
 @router.get("/{game_id}/audio")
 def audio_manifest_endpoint(
     game_id: str,
@@ -507,7 +529,8 @@ def audio_manifest_endpoint(
     info: TokenInfo | None = Depends(optional_token),
     games: GameRegistry = Depends(get_games),
 ) -> dict[str, list[dict[str, Any]]]:
-    """发言音频清单 {seq: [{part, duration}]}（issue #103）；权限同 /replay。"""
+    """发言音频清单 {seq: [{part, duration}]}（issue #103）；权限同 /replay，
+    直播期间按视角过滤（issue #110）。"""
     _finished_or_handle(
         games,
         game_id,
@@ -520,7 +543,11 @@ def audio_manifest_endpoint(
         require_finished=False,
     )
     sink: SpeechAudioSink = request.app.state.speech_audio
-    return sink.manifest(game_id)
+    manifest = sink.manifest(game_id)
+    allowed = _audio_visible_seqs(games, game_id, info)
+    if allowed is None:
+        return manifest
+    return {k: v for k, v in manifest.items() if int(k) in allowed}
 
 
 @router.get("/{game_id}/audio/{seq}/{part}")
@@ -538,7 +565,7 @@ def audio_part_endpoint(
     浏览器 `<audio>` 元素发不出 Authorization 头，直播期间（未终局）这个端点走
     `_finished_or_handle` 的「无 token 必须 401」分支——没有这条 query token 后路，
     直播配音在匿名场景下（含公开历史关闭时的正常对局内观众）一句都放不出来。
-    等价于 WS 端点早就有的 `?token=` 先例（`wsUrl()`）。"""
+    等价于 WS 端点早就有的 `?token=` 先例（`wsUrl()`）。直播期间按视角过滤（issue #110）。"""
     if info is None and token is not None:
         info = tokens.resolve(token)
         if info is None:
@@ -555,6 +582,9 @@ def audio_part_endpoint(
         require_finished=False,
     )
     sink: SpeechAudioSink = request.app.state.speech_audio
+    allowed = _audio_visible_seqs(games, game_id, info)
+    if allowed is not None and seq not in allowed:
+        raise HTTPException(status_code=404, detail="音频不存在")
     path = sink.path_for(game_id, seq, part)
     if path is None:
         raise HTTPException(status_code=404, detail="音频不存在")

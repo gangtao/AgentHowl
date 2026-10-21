@@ -149,6 +149,57 @@ def wav_duration(wav: bytes) -> float:
     return data_len / byte_rate
 
 
+def _wav_chunks(wav: bytes) -> tuple[bytes, bytes]:
+    """→ (fmt 块内容, PCM data)；不是 WAV / 缺块 → TtsError。"""
+    if len(wav) < 12 or wav[:4] != b"RIFF" or wav[8:12] != b"WAVE":
+        raise TtsError("不是 WAV")
+    pos = 12
+    fmt: bytes | None = None
+    while pos + 8 <= len(wav):
+        cid = wav[pos : pos + 4]
+        size = int.from_bytes(wav[pos + 4 : pos + 8], "little")
+        if cid in (b"fmt ", b"data") and pos + 8 + size > len(wav):
+            # 声明长度越界（含 0xFFFFFFFF 流式头）：我们只接受完整文件，宁可报错也不静默截短
+            raise TtsError("WAV 块声明长度超出数据（截断或流式头）")
+        body = wav[pos + 8 : pos + 8 + size]
+        if cid == b"fmt ":
+            fmt = body
+        elif cid == b"data":
+            if fmt is None:
+                raise TtsError("WAV data 块先于 fmt 块")
+            if size == 0:
+                raise TtsError("WAV data 块长度为 0")
+            return fmt, body
+        pos += 8 + size + (size & 1)
+    raise TtsError("WAV 头缺少 fmt/data 块")
+
+
+def concat_wav(parts: list[bytes]) -> bytes:
+    """同采样率 / 声道 / 位宽的多段 WAV → 一段（直接拼 data 块）。单段原样返回。"""
+    if not parts:
+        raise TtsError("concat_wav: 没有可拼接的音频")
+    if len(parts) == 1:
+        _wav_chunks(parts[0])  # 仍校验合法性
+        return parts[0]
+    fmt0: bytes | None = None
+    datas: list[bytes] = []
+    for p in parts:
+        fmt, data = _wav_chunks(p)
+        if fmt0 is None:
+            fmt0 = fmt
+        elif fmt != fmt0:
+            raise TtsError("concat_wav: 各段 WAV 格式不一致")
+        datas.append(data)
+    assert fmt0 is not None
+    data = b"".join(datas)
+    fmt_pad = b"\x00" if len(fmt0) & 1 else b""
+    data_pad = b"\x00" if len(data) & 1 else b""
+    fmt_chunk = b"fmt " + len(fmt0).to_bytes(4, "little") + fmt0 + fmt_pad
+    data_chunk = b"data" + len(data).to_bytes(4, "little") + data + data_pad
+    body = b"WAVE" + fmt_chunk + data_chunk
+    return b"RIFF" + len(body).to_bytes(4, "little") + body
+
+
 class TtsClient(Protocol):
     def synthesize_sentences(
         self, text: str, voice: VoiceSpec, ref_audio: Path | None = None

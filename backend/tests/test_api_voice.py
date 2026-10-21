@@ -11,9 +11,11 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.agent.profile import VoiceSpec
+from app.engine.events import EventType
 from app.main import create_app
 from app.runtime.agent_library import InMemoryAgentLibrary
 from app.runtime.game_runner import RunnerTimeouts
+from app.runtime.narration import NarrationConfig
 from app.runtime.player_port import BotPlayerPort
 from app.runtime.tts import AudioPart, TtsError, TtsStatus
 from app.store.event_store import InMemoryEventStore
@@ -265,7 +267,8 @@ def test_voiced_game_start_warms_voices(tmp_path: Path) -> None:
         _finish(c, created)
         handle = c.app.state.games.get(created["game_id"])  # type: ignore[attr-defined]
         assert handle.warm_task is not None and handle.warm_task.done()
-        assert tts.texts[0] == WARM_TEXT and tts.texts.count(WARM_TEXT) == 1
+        # 本局声线（dylan）+ 旁白声线（uncle_fu，issue #110）各预热一次
+        assert tts.texts[0] == WARM_TEXT and tts.texts.count(WARM_TEXT) == 2
 
 
 def test_access_log_filter_masks_token() -> None:
@@ -290,3 +293,123 @@ def test_access_log_filter_masks_token() -> None:
     rec2 = logging.LogRecord("uvicorn.access", logging.INFO, "", 0, "ws ?token=zzz", (), None)
     flt.filter(rec2)
     assert rec2.getMessage() == "ws ?token=***"
+
+
+class SlowNarrationTts(FakeTts):
+    """旁白句子给 0.6s 时长，让对局在直播期间停留足够久以便测试过滤。"""
+
+    async def synthesize_sentences(
+        self, text: str, voice: VoiceSpec, ref_audio: object = None
+    ) -> AsyncIterator[AudioPart]:
+        self.texts.append(text)
+        dur = 0.6 if voice.speaker == "uncle_fu" else 0.02
+        yield AudioPart(index=0, wav=_wav(dur), duration_sec=dur)
+
+
+def _narr_app(
+    tmp_path: Path, tts: Any, events: frozenset[EventType], public_history: bool | None = None
+) -> TestClient:
+    cfg = NarrationConfig(speaker="uncle_fu", events=events, cache_dir=tmp_path / "narration")
+    app = create_app(
+        store=InMemoryEventStore(),
+        agent_library=InMemoryAgentLibrary(),
+        timeouts=RunnerTimeouts(speech_sec=0.5, action_sec=0.5),
+        agent_port_factory=lambda seat, h: BotPlayerPort(state_provider=h.live_state),
+        tts_client=tts,
+        audio_dir=tmp_path / "audio",
+        voices_dir=tmp_path / "voices",
+        public_history=public_history,
+        narration_config=cfg,
+    )
+    return TestClient(app)
+
+
+def test_create_game_narration_requires_voice(client: TestClient) -> None:
+    r = client.post(
+        "/api/v1/games", json={"preset": "std_9_kill_side", "voice": False, "narration": True}
+    )
+    assert r.status_code == 400 and "旁白" in r.json()["detail"]
+    r = client.post(
+        "/api/v1/games", json={"preset": "std_9_kill_side", "voice": True, "narration": True}
+    )
+    assert r.status_code == 200 and r.json()["narration"] is True
+    r = client.post("/api/v1/games", json={"preset": "std_9_kill_side", "voice": True})
+    assert r.json()["narration"] is False
+
+
+def test_narrated_game_streams_narration_frames_and_reuses_cache(tmp_path: Path) -> None:
+    tts = FakeTts()
+    with _narr_app(tmp_path, tts, frozenset({EventType.VOTE_STARTED, EventType.GAME_OVER})) as c:
+        for _ in range(2):
+            r = c.post(
+                "/api/v1/games",
+                json={
+                    "preset": "std_9_kill_side",
+                    "config_override": {"seed": 3},
+                    "voice": True,
+                    "narration": True,
+                },
+            )
+            created = r.json()
+            gid = created["game_id"]
+            frames: list[dict[str, Any]] = []
+            c.post(f"/api/v1/games/{gid}/start", json={}, headers=_auth(created["host_token"]))
+            with c.websocket_connect(f"/api/v1/ws?token={created['gm_token']}") as ws:
+                while True:
+                    f = ws.receive_json()
+                    frames.append(f)
+                    if f["type"] == "game_over":
+                        break
+            narr = [
+                f for f in frames if f["type"] == "speech_audio" and f.get("kind") == "narration"
+            ]
+            assert narr, "没有旁白帧"
+            narrated_seqs = {f["seq"] for f in narr}
+            by_seq = {
+                f["event"]["seq"]: f["event"]["type"] for f in frames if f["type"] == "game_event"
+            }
+            assert {by_seq[s] for s in narrated_seqs} <= {"VOTE_STARTED", "GAME_OVER"}
+            # 清单里旁白与发言同列
+            m = c.get(f"/api/v1/games/{gid}/audio", headers=_auth(created["gm_token"])).json()
+            assert all(str(s) in m for s in narrated_seqs)
+        # 两局下来，旁白句子只各合成一次（投票开始。/ PK投票开始。/ 游戏结束…）
+        narr_texts = [t for t in tts.texts if t.endswith("。") and t != "大家好。"]
+        assert len(narr_texts) == len(set(narr_texts))
+        assert (tmp_path / "narration").is_dir() and list((tmp_path / "narration").glob("*.wav"))
+
+
+def test_live_audio_filtered_by_viewer(tmp_path: Path) -> None:
+    """Review Focus 4：直播中 GM_ONLY 事件的旁白——观众清单不列、文件 404；GM 能取。"""
+    with _narr_app(
+        tmp_path, SlowNarrationTts(), frozenset({EventType.ROUND_STARTED, EventType.GAME_OVER})
+    ) as c:
+        r = c.post(
+            "/api/v1/games",
+            json={
+                "preset": "std_9_kill_side",
+                "config_override": {"seed": 3},
+                "voice": True,
+                "narration": True,
+            },
+        )
+        created = r.json()
+        gid = created["game_id"]
+        c.post(f"/api/v1/games/{gid}/start", json={}, headers=_auth(created["host_token"]))
+        url: str | None = None
+        with c.websocket_connect(f"/api/v1/ws?token={created['gm_token']}") as ws:
+            while url is None:
+                f = ws.receive_json()
+                if f["type"] == "speech_audio" and f.get("kind") == "narration":
+                    url = f["url"]
+                    seq = f["seq"]
+            # 此刻 runner 正在等这句（0.6s）播完：对局仍在直播
+            gm = _auth(created["gm_token"])
+            sp = _auth(created["spectator_token"])
+            assert str(seq) in c.get(f"/api/v1/games/{gid}/audio", headers=gm).json()
+            assert str(seq) not in c.get(f"/api/v1/games/{gid}/audio", headers=sp).json()
+            assert c.get(url, headers=gm).status_code == 200
+            assert c.get(url, headers=sp).status_code == 404
+            assert c.get(url, params={"token": created["spectator_token"]}).status_code == 404
+        _finish(c, created)
+        # 终局公开：匿名全量
+        assert c.get(url).status_code == 200

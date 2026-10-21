@@ -72,6 +72,8 @@ export interface CreateGameRequest {
   agents?: Record<string, unknown>;
   /** 语音播报开关（issue #103）；TTS 探测失败时后端 400。 */
   voice?: boolean;
+  /** GM 旁白（issue #110）；需 voice=true，否则后端 400。 */
+  narration?: boolean;
 }
 
 export interface CreateGameResponse {
@@ -82,6 +84,7 @@ export interface CreateGameResponse {
   config: Record<string, unknown>;
   agents: Record<string, unknown>;
   voice: boolean;
+  narration: boolean;
 }
 
 export interface StartResponse {

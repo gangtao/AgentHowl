@@ -26,6 +26,8 @@ export interface AudioQueueItem {
   part: number;
   url: string;
   duration: number;
+  /** 仅透传，不参与逻辑（issue #110）。 */
+  kind?: "speech" | "narration";
 }
 
 interface VoiceState {
