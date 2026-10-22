@@ -3,15 +3,17 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from app.main import create_app
 from app.runtime.agent_library import InMemoryAgentLibrary
 from app.store.event_store import InMemoryEventStore
+from tests.conftest import login_as, make_app
 
 
 @pytest.fixture()
 def client() -> TestClient:
-    app = create_app(store=InMemoryEventStore(), agent_library=InMemoryAgentLibrary())
-    return TestClient(app)
+    app = make_app(store=InMemoryEventStore(), agent_library=InMemoryAgentLibrary())
+    c = TestClient(app)
+    login_as(c, "tester")
+    return c
 
 
 def test_agents_crud_and_uniqueness(client: TestClient) -> None:

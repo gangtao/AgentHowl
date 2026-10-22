@@ -6,10 +6,10 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.agent.provider import Provider
-from app.main import create_app
 from app.runtime.agent_library import InMemoryAgentLibrary
 from app.runtime.provider_store import InMemoryProviderStore, JsonFileProviderStore
 from app.store.event_store import InMemoryEventStore
+from tests.conftest import login_as, make_app
 
 
 class FakeProbe:
@@ -34,13 +34,15 @@ class FakeProbe:
 @pytest.fixture()
 def env() -> tuple[TestClient, FakeProbe]:
     probe = FakeProbe()
-    app = create_app(
+    app = make_app(
         store=InMemoryEventStore(),
         agent_library=InMemoryAgentLibrary(),
         provider_store=InMemoryProviderStore(),
         provider_probe=probe,
     )
-    return TestClient(app), probe
+    c = TestClient(app)
+    login_as(c, "tester")
+    return c, probe
 
 
 def test_provider_crud_key_semantics_and_reference_guard(
@@ -134,13 +136,14 @@ class _KeyEchoingProbe:
 
 
 def test_test_and_models_endpoints_redact_key_even_if_probe_forgets() -> None:
-    app = create_app(
+    app = make_app(
         store=InMemoryEventStore(),
         agent_library=InMemoryAgentLibrary(),
         provider_store=InMemoryProviderStore(),
         provider_probe=_KeyEchoingProbe(),
     )
     client = TestClient(app)
+    login_as(client, "tester")
     key = "sk-topsecret-999"
     pid = client.post(
         "/api/v1/providers", json={"name": "OpenAI", "kind": "openai", "api_key": key}
@@ -177,12 +180,13 @@ def test_corrupt_provider_file_returns_500_without_echoing_secret(tmp_path) -> N
         ),
         encoding="utf-8",
     )
-    app = create_app(
+    app = make_app(
         store=InMemoryEventStore(),
         agent_library=InMemoryAgentLibrary(),
         provider_store=JsonFileProviderStore(d),
     )
     client = TestClient(app)
+    login_as(client, "tester")
     r = client.get("/api/v1/providers/p_bad")
     assert r.status_code == 500
     assert secret not in r.text

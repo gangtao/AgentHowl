@@ -461,7 +461,7 @@ def test_frontend_dist_mounted_only_when_present(tmp_path) -> None:
     (dist / "index.html").write_text("<h1>AgentHowl</h1>", encoding="utf-8")
     c = TestClient(create_app(store=InMemoryEventStore(), frontend_dist=dist))
     assert c.get("/").status_code == 200 and "AgentHowl" in c.get("/").text
-    assert c.get("/api/v1/presets").status_code == 200  # API 前缀不受影响
+    assert c.get("/api/v1/health").status_code == 200  # API 前缀不受影响
 
 
 def test_create_without_seed_echoes_random_seed(client: TestClient) -> None:

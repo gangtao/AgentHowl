@@ -6,12 +6,12 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
-from app.main import create_app
 from app.runtime.agent_library import InMemoryAgentLibrary
 from app.runtime.avatar_store import InMemoryAvatarStore
 from app.runtime.game_runner import RunnerTimeouts
 from app.runtime.player_port import BotPlayerPort
 from app.store.event_store import InMemoryEventStore
+from tests.conftest import login_as, make_app
 
 PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 64
 JPG = b"\xff\xd8\xff\xe0" + b"\x00" * 64
@@ -19,7 +19,7 @@ JPG = b"\xff\xd8\xff\xe0" + b"\x00" * 64
 
 @pytest.fixture()
 def client() -> TestClient:
-    app = create_app(
+    app = make_app(
         store=InMemoryEventStore(),
         agent_library=InMemoryAgentLibrary(),
         avatar_store=InMemoryAvatarStore(),
@@ -29,7 +29,9 @@ def client() -> TestClient:
         # RandomBot 填充所有座位（含有档案的座位），只验证映射来源，不验证真调模型。
         agent_port_factory=lambda seat, h: BotPlayerPort(state_provider=h.live_state),
     )
-    return TestClient(app)
+    c = TestClient(app)
+    login_as(c, "tester")
+    return c
 
 
 def _put(client: TestClient, data: bytes, ctype: str = "image/png"):  # type: ignore[no-untyped-def]

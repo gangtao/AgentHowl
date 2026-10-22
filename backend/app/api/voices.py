@@ -1,14 +1,16 @@
 """描述声线试听（issue #103 跟进）：按描述生成锚点音频并返回可播放 URL；档案保存 anchor id 后，
-对局里每句都以它为参考克隆，音色一致。锚点是公开的声音样本（不含对局信息），读取不鉴权。"""
+对局里每句都以它为参考克隆，音色一致。锚点是公开的声音样本（不含对局信息），读取不鉴权；生成需登录。"""
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from app.agent.profile import MAX_VOICE_STYLE_CHARS
+from app.api.auth import require_user
 from app.runtime.tts import TtsClient, TtsError
+from app.runtime.users import User
 from app.runtime.voice_anchors import VoiceAnchorStore
 
 router = APIRouter(prefix="/voices", tags=["voices"])
@@ -29,7 +31,9 @@ def get_anchors(request: Request) -> VoiceAnchorStore:
 
 
 @router.post("/design")
-async def design_voice(req: DesignRequest, request: Request) -> DesignResponse:
+async def design_voice(
+    req: DesignRequest, request: Request, _: User = Depends(require_user)
+) -> DesignResponse:
     """生成一个新锚点（每次调用都是重新设计：不满意就再点一次）。TTS 不可用 → 503。"""
     tts: TtsClient = request.app.state.tts
     style = req.style.strip()

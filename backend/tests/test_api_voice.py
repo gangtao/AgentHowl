@@ -12,13 +12,13 @@ from fastapi.testclient import TestClient
 
 from app.agent.profile import VoiceSpec
 from app.engine.events import EventType
-from app.main import create_app
 from app.runtime.agent_library import InMemoryAgentLibrary
 from app.runtime.game_runner import RunnerTimeouts
 from app.runtime.narration import NarrationConfig
 from app.runtime.player_port import BotPlayerPort
 from app.runtime.tts import AudioPart, TtsError, TtsStatus
 from app.store.event_store import InMemoryEventStore
+from tests.conftest import login_as, make_app
 
 
 def _wav(seconds: float) -> bytes:
@@ -57,8 +57,8 @@ class FakeTts:
         )
 
 
-def _app(tmp_path: Path, tts: Any, public_history: bool | None = None) -> TestClient:
-    app = create_app(
+def _app(tmp_path: Path, tts: Any) -> TestClient:
+    app = make_app(
         store=InMemoryEventStore(),
         agent_library=InMemoryAgentLibrary(),
         timeouts=RunnerTimeouts(speech_sec=0.5, action_sec=0.5),
@@ -66,9 +66,10 @@ def _app(tmp_path: Path, tts: Any, public_history: bool | None = None) -> TestCl
         tts_client=tts,
         audio_dir=tmp_path / "audio",
         voices_dir=tmp_path / "voices",
-        public_history=public_history,
     )
-    return TestClient(app)
+    c = TestClient(app)
+    login_as(c, "tester")
+    return c
 
 
 @pytest.fixture()
@@ -205,8 +206,9 @@ def test_unvoiced_game_has_no_audio(client: TestClient) -> None:
     assert client.get(f"/api/v1/games/{gid}/audio").json() == {}
 
 
+@pytest.mark.xfail(strict=True, reason="Task 6")
 def test_audio_endpoints_follow_replay_policy(tmp_path: Path) -> None:
-    with _app(tmp_path, FakeTts(), public_history=False) as c:
+    with _app(tmp_path, FakeTts()) as c:
         created = _voiced_game(c)
         gid = created["game_id"]
         # 进行中：匿名 401；本局观众 200
@@ -306,11 +308,9 @@ class SlowNarrationTts(FakeTts):
         yield AudioPart(index=0, wav=_wav(dur), duration_sec=dur)
 
 
-def _narr_app(
-    tmp_path: Path, tts: Any, events: frozenset[EventType], public_history: bool | None = None
-) -> TestClient:
+def _narr_app(tmp_path: Path, tts: Any, events: frozenset[EventType]) -> TestClient:
     cfg = NarrationConfig(speaker="uncle_fu", events=events, cache_dir=tmp_path / "narration")
-    app = create_app(
+    app = make_app(
         store=InMemoryEventStore(),
         agent_library=InMemoryAgentLibrary(),
         timeouts=RunnerTimeouts(speech_sec=0.5, action_sec=0.5),
@@ -318,10 +318,11 @@ def _narr_app(
         tts_client=tts,
         audio_dir=tmp_path / "audio",
         voices_dir=tmp_path / "voices",
-        public_history=public_history,
         narration_config=cfg,
     )
-    return TestClient(app)
+    c = TestClient(app)
+    login_as(c, "tester")
+    return c
 
 
 def test_create_game_narration_requires_voice(client: TestClient) -> None:

@@ -168,7 +168,6 @@ def test_admin_bootstrap_and_health(monkeypatch: pytest.MonkeyPatch) -> None:
         make_app()
 
 
-@pytest.mark.xfail(strict=True, reason="Task 5/6 adds require_user to these endpoints")
 def test_require_user_401_for_protected(client: TestClient) -> None:
     assert client.get("/api/v1/presets").status_code == 401
     assert client.get("/api/v1/skills").status_code == 401

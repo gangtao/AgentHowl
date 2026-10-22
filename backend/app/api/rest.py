@@ -11,6 +11,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from pydantic import ValidationError
 
 from app.agent.profile import AgentProfiles, profile_for
+from app.api.auth import require_user
 from app.api.deps import (
     TokenInfo,
     TokenRegistry,
@@ -31,6 +32,7 @@ from app.runtime.player_port import NotYourTurnError, TurnPrompt
 from app.runtime.registry import GameHandle, GameRegistry
 from app.runtime.speech_audio import SpeechAudioSink
 from app.runtime.tts import TtsClient, TtsStatus
+from app.runtime.users import User
 from app.schemas.actions import (
     ActionResponse,
     ToolCall,
@@ -596,7 +598,7 @@ def audio_part_endpoint(
 
 
 @tts_router.get("/status")
-async def tts_status_endpoint(request: Request) -> TtsStatus:
+async def tts_status_endpoint(request: Request, _: User = Depends(require_user)) -> TtsStatus:
     """TTS 服务探测状态（issue #103）；响应绝不含 api key。"""
     tts: TtsClient = request.app.state.tts
     return await tts.probe()
