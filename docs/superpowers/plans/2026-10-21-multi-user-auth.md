@@ -2495,7 +2495,7 @@ def resolve_viewer(
 
 - [ ] **Step 6: 改各端点**
 
-- `create_game_endpoint`：加 `user: User = Depends(require_user)`；计算 `allowed = None if user.role == "admin" else {p.provider_id for p in _visible_providers(request.app.state.provider_store, user)}`（从 `app.api.providers` 导入 `_visible_providers`，并把它改名为公开的 `visible_providers`，Task 5 的两处调用同步）；`games.create(..., owner_id=user.user_id, allowed_providers=allowed)`；host/gm token 加 `user_id=user.user_id`；删除 `spectator_token = tokens.issue(...)`，改为 `share = share_token(request.app.state.secret, handle.game_id) if req.allow_spectators else None`；响应 `share_token=share`。
+- `create_game_endpoint`：加 `user: User = Depends(require_user)`；计算 `allowed = None if user.role == "admin" else {p.provider_id for p in visible_providers(request.app.state.provider_store, user)}`（从 `app.api.providers` 导入 `visible_providers`）；`games.create(..., owner_id=user.user_id, allowed_providers=allowed)`；host/gm token 加 `user_id=user.user_id`；删除 `spectator_token = tokens.issue(...)`，改为 `share = share_token(request.app.state.secret, handle.game_id) if req.allow_spectators else None`；响应 `share_token=share`。
 - `join_endpoint`：加 `request: Request`、`creds: HTTPAuthorizationCredentials | None = Depends(_bearer)`、`user: User | None = Depends(current_user)`：
 
 ```python
