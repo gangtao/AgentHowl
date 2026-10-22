@@ -10,18 +10,28 @@ export const API_BASE = "/api/v1";
 export class ApiError extends Error {
   status: number;
   detail: string;
+  /** 机器可读原因（如登录 401 的 `unverified`）；后端没给就是 undefined。 */
+  reason?: string;
 
-  constructor(status: number, detail: string) {
+  constructor(status: number, detail: string, reason?: string) {
     super(detail);
     this.name = "ApiError";
     this.status = status;
     this.detail = detail;
+    if (reason !== undefined) this.reason = reason;
   }
+}
+
+let onUnauthorized: (() => void) | null = null;
+/** 401 回调（issue #114）：App 注册为「重新确认登录态」；避免 api 层 import store 造成环。 */
+export function setUnauthorizedHandler(fn: (() => void) | null): void {
+  onUnauthorized = fn;
 }
 
 interface ReqOptions {
   token?: string;
   body?: unknown;
+  query?: Record<string, string>;
 }
 
 function stringifyDetail(detail: unknown): string {
@@ -41,18 +51,30 @@ export async function req<T>(method: string, path: string, opts: ReqOptions = {}
   if (opts.token) {
     headers.Authorization = `Bearer ${opts.token}`;
   }
-  const res = await fetch(`${API_BASE}${path}`, { method, headers, body });
+  let url = `${API_BASE}${path}`;
+  if (opts.query) {
+    const qs = new URLSearchParams(opts.query).toString();
+    if (qs) url += `${url.includes("?") ? "&" : "?"}${qs}`;
+  }
+  const res = await fetch(url, { method, headers, body, credentials: "same-origin" });
   if (!res.ok) {
     let detail = res.statusText;
+    let reason: string | undefined;
     try {
       const data: unknown = await res.json();
       if (data && typeof data === "object" && "detail" in data) {
         detail = stringifyDetail((data as { detail: unknown }).detail);
       }
+      if (data && typeof data === "object" && "reason" in data) {
+        const r = (data as { reason: unknown }).reason;
+        if (typeof r === "string") reason = r;
+      }
     } catch {
       // 响应体不是 JSON：退回 statusText
     }
-    throw new ApiError(res.status, detail);
+    // 带对局 token 的 401 是 token 问题，不是会话丢失。
+    if (res.status === 401 && !opts.token && onUnauthorized) onUnauthorized();
+    throw new ApiError(res.status, detail, reason);
   }
   if (res.status === 204) {
     return undefined as T;

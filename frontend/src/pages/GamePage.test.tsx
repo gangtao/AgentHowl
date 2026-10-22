@@ -1,5 +1,5 @@
-// 回放引导（`#/g/{id}?replay=1`，issue #98 规格 §5）：无 token 拉 /meta + /replay，
-// 401/403 统一「暂不可回放」文案（不暴露 token），成功路径不连 WS。
+// 对局页测试：终局对局经 /meta + /replay 装入（replay=1 无 token 路径已随 issue #114 移除，
+// cookie 会话用例由 Task 11 补）。
 
 import { act, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -36,51 +36,11 @@ afterEach(() => {
   useGameStore.getState().reset();
 });
 
-describe("GamePage 回放模式（无 token）", () => {
-  it("401 显示「暂不可回放」且不提 token", async () => {
-    stubFetch(() => jsonResponse(401, { detail: "缺少 Bearer token" }));
-
-    render(<GamePage gameId="g_x" replay />);
-
-    expect(await screen.findByText(/暂不可回放/)).toBeInTheDocument();
-    // 回放访客本就没有 token、也无从提供，错误里不能把它说成 token 问题（复核 M1）。
-    expect(document.body.textContent).not.toMatch(/token/i);
-  });
-
-  it("403 显示同一条文案", async () => {
-    stubFetch(() => jsonResponse(403, { detail: "对局未结束，终局后才可回放" }));
-
-    render(<GamePage gameId="g_x" replay />);
-
-    expect(await screen.findByText(/暂不可回放/)).toBeInTheDocument();
-  });
-
-  it("成功路径：装入全量事件且不连 WS", async () => {
-    const fetchMock = stubFetch(() => jsonResponse(200, meta));
-    const wsCtor = vi.fn();
-    vi.stubGlobal("WebSocket", wsCtor);
-
-    render(<GamePage gameId="g_x" replay />);
-
-    // 顶栏在装入后显示「已结束 · N 条事件」。
-    expect(await screen.findByText(new RegExp(`已结束 · ${events.length} 条事件`))).toBeInTheDocument();
-    expect(useGameStore.getState().events).toHaveLength(events.length);
-    expect(useGameStore.getState().mode).toBe("replay");
-    expect(wsCtor).not.toHaveBeenCalled();
-
-    // 所有请求（含引导成功后补拉的 /avatars、/audio 清单）都不带 Authorization（已结束对局公开回放）。
-    for (const [url, init] of fetchMock.mock.calls as unknown as [string, RequestInit][]) {
-      expect(url).toMatch(/\/api\/v1\/games\/g_x\/(meta|replay|avatars|audio)$/);
-      expect(init.headers).not.toHaveProperty("Authorization");
-    }
-  });
-});
-
 describe("GamePage 聚光牌跟随配音（issue #110）", () => {
   it("voicingSeq 指向无 actor 的事件时显示 GM；找不到事件时退回轮到谁", async () => {
     stubFetch(() => jsonResponse(200, meta));
     vi.stubGlobal("WebSocket", vi.fn());
-    render(<GamePage gameId="g_x" replay />);
+    render(<GamePage gameId="g_x" token="t" viewer="GM" />);
     await screen.findByText(new RegExp(`已结束 · ${events.length} 条事件`));
     const narrated = events.find((e) => e.actor_seat === null && e.type === "VOTE_STARTED");
     expect(narrated).toBeDefined();
@@ -95,7 +55,7 @@ describe("GamePage 聚光牌跟随配音（issue #110）", () => {
   it("带 actor_seat 的非发言事件（HUNTER_SHOT 等）也显示 GM，不高亮座位", async () => {
     stubFetch(() => jsonResponse(200, meta));
     vi.stubGlobal("WebSocket", vi.fn());
-    render(<GamePage gameId="g_x" replay />);
+    render(<GamePage gameId="g_x" token="t" viewer="GM" />);
     await screen.findByText(new RegExp(`已结束 · ${events.length} 条事件`));
     const shot = events.find((e) => e.type === "HUNTER_SHOT" && e.actor_seat !== null);
     expect(shot).toBeDefined();
