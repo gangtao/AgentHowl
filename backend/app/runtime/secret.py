@@ -14,22 +14,33 @@ logger = logging.getLogger(__name__)
 SECRET_ENV = "AGENTHOWL_SECRET_KEY"
 SECRET_FILE = "secret.key"
 SHARE_TOKEN_LEN = 32
+MIN_SECRET_LEN = 32
 
 
 def load_secret(data_dir: Path, *, env: Mapping[str, str] | None = None) -> bytes:
+    """环境变量（strip 后）> data/secret.key（原样字节，绝不 strip）> 生成 token_hex(32) 文本落盘（0600）。
+
+    两个来源都须至少 32 字节，否则启动即抛 ValueError（短密钥可被伪造 HMAC）。
+    """
     environ = os.environ if env is None else env
     raw = environ.get(SECRET_ENV, "").strip()
     if raw:
-        return raw.encode("utf-8")
+        return _check_len(raw.encode("utf-8"))
     path = data_dir / SECRET_FILE
     if path.exists():
-        return path.read_bytes().strip()
+        return _check_len(path.read_bytes())
     data_dir.mkdir(parents=True, exist_ok=True)
-    key = secrets.token_bytes(32)
+    key = secrets.token_hex(32).encode("ascii")
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     with os.fdopen(fd, "wb") as f:
         f.write(key)
     logger.info("已生成站点密钥 %s（分享链接签名用）", path)
+    return key
+
+
+def _check_len(key: bytes) -> bytes:
+    if len(key) < MIN_SECRET_LEN:
+        raise ValueError("站点密钥过短：AGENTHOWL_SECRET_KEY 或 data/secret.key 须至少 32 字节")
     return key
 
 
