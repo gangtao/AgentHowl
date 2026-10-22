@@ -1,4 +1,4 @@
-"""模型服务 Provider CRUD + test/models 端点（issue #26）。无鉴权：与建局一致，M3 单用户本地部署。
+"""模型服务 Provider CRUD + test/models 端点（issue #26）。登录后按归属访问（issue #114）。
 
 密钥语义：POST 直接落库；PUT 省略 api_key = 保留原密钥，传 "" = 清除；响应一律 ProviderPublic
 （不含明文密钥）。DELETE 前扫 agent_library，档案仍引用则 409。
@@ -14,9 +14,11 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel
 
 from app.agent.provider import Provider, ProviderInput, ProviderPublic, redact_secret
+from app.api.auth import can_access, require_user
 from app.runtime.agent_library import AgentLibraryStore
 from app.runtime.provider_probe import ProviderProbe
 from app.runtime.provider_store import ProviderStore
+from app.runtime.users import User
 
 router = APIRouter()
 
@@ -46,9 +48,25 @@ def _now() -> str:
     return datetime.now(UTC).isoformat(timespec="seconds")
 
 
-def _check_name_unique(name: str, store: ProviderStore, *, exclude_id: str | None) -> None:
+def visible_providers(store: ProviderStore, user: User) -> list[Provider]:
+    """当前用户可见的 provider（admin 全部；普通用户仅自己的）。"""
+    return [p for p in store.list() if can_access(user, p.owner_id)]
+
+
+def _get_owned_provider(store: ProviderStore, user: User, provider_id: str) -> Provider:
+    """取 provider；不存在或无权访问一律 404（不泄露存在性）。"""
+    p = store.get(provider_id)
+    if p is None or not can_access(user, p.owner_id):
+        raise HTTPException(status_code=404, detail=f"provider 不存在：{provider_id}")
+    return p
+
+
+def _check_name_unique(
+    name: str, store: ProviderStore, *, owner_id: str, exclude_id: str | None
+) -> None:
+    """同名按 owner 唯一：只与同 owner 的 provider 比较。"""
     for other in store.list():
-        if other.provider_id != exclude_id and other.name == name:
+        if other.owner_id == owner_id and other.provider_id != exclude_id and other.name == name:
             raise HTTPException(status_code=409, detail=f"已有同名 provider：{name}")
 
 
@@ -64,15 +82,19 @@ def _redact_response(result: dict[str, Any], provider: Provider) -> dict[str, An
 
 
 @router.get("/providers")
-def list_providers(store: ProviderStore = Depends(get_provider_store)) -> list[ProviderPublic]:
-    return [ProviderPublic.from_provider(p) for p in store.list()]
+def list_providers(
+    user: User = Depends(require_user), store: ProviderStore = Depends(get_provider_store)
+) -> list[ProviderPublic]:
+    return [ProviderPublic.from_provider(p) for p in visible_providers(store, user)]
 
 
 @router.post("/providers", status_code=201)
 def create_provider(
-    body: ProviderInput, store: ProviderStore = Depends(get_provider_store)
+    body: ProviderInput,
+    user: User = Depends(require_user),
+    store: ProviderStore = Depends(get_provider_store),
 ) -> ProviderPublic:
-    _check_name_unique(body.name, store, exclude_id=None)
+    _check_name_unique(body.name, store, owner_id=user.user_id, exclude_id=None)
     now = _now()
     provider = Provider(
         provider_id=f"p_{secrets.token_hex(4)}",
@@ -83,6 +105,7 @@ def create_provider(
         default_model=body.default_model,
         created_at=now,
         updated_at=now,
+        owner_id=user.user_id,
     )
     store.put(provider)
     return ProviderPublic.from_provider(provider)
@@ -90,27 +113,27 @@ def create_provider(
 
 @router.get("/providers/{provider_id}")
 def get_provider(
-    provider_id: str, store: ProviderStore = Depends(get_provider_store)
+    provider_id: str,
+    user: User = Depends(require_user),
+    store: ProviderStore = Depends(get_provider_store),
 ) -> ProviderPublic:
-    provider = store.get(provider_id)
-    if provider is None:
-        raise HTTPException(status_code=404, detail=f"provider 不存在：{provider_id}")
-    return ProviderPublic.from_provider(provider)
+    return ProviderPublic.from_provider(_get_owned_provider(store, user, provider_id))
 
 
 @router.put("/providers/{provider_id}")
 def update_provider(
     provider_id: str,
     body: ProviderInput,
+    user: User = Depends(require_user),
     store: ProviderStore = Depends(get_provider_store),
 ) -> ProviderPublic:
     """全量替换语义：`api_key` 省略=保留原密钥、`""`=清除；`api_base` 省略则按 kind 重置为默认值
     （不像 api_key 那样"保留原值"——PUT 对其余字段一律整体覆盖）。
     """
-    existing = store.get(provider_id)
-    if existing is None:
-        raise HTTPException(status_code=404, detail=f"provider 不存在：{provider_id}")
-    _check_name_unique(body.name, store, exclude_id=provider_id)
+    existing = _get_owned_provider(store, user, provider_id)
+    _check_name_unique(
+        body.name, store, owner_id=existing.owner_id or user.user_id, exclude_id=provider_id
+    )
     # api_key 省略（未出现在请求体里）= 保留原密钥；显式传 "" = 清除
     api_key = existing.api_key if "api_key" not in body.model_fields_set else (body.api_key or None)
     provider = existing.model_copy(
@@ -130,11 +153,11 @@ def update_provider(
 @router.delete("/providers/{provider_id}", status_code=204, response_class=Response)
 def delete_provider(
     provider_id: str,
+    user: User = Depends(require_user),
     store: ProviderStore = Depends(get_provider_store),
     lib: AgentLibraryStore = Depends(get_agent_library),
 ) -> Response:
-    if store.get(provider_id) is None:
-        raise HTTPException(status_code=404, detail=f"provider 不存在：{provider_id}")
+    _get_owned_provider(store, user, provider_id)
     refs = [s.profile.name or s.agent_id for s in lib.list() if s.profile.provider == provider_id]
     if refs:
         raise HTTPException(
@@ -148,12 +171,11 @@ def delete_provider(
 async def test_provider(
     provider_id: str,
     body: _TestRequest | None = None,
+    user: User = Depends(require_user),
     store: ProviderStore = Depends(get_provider_store),
     probe: ProviderProbe = Depends(get_provider_probe),
 ) -> dict[str, Any]:
-    provider = store.get(provider_id)
-    if provider is None:
-        raise HTTPException(status_code=404, detail=f"provider 不存在：{provider_id}")
+    provider = _get_owned_provider(store, user, provider_id)
     model = (body.model if body is not None else None) or provider.default_model
     if not model:
         raise HTTPException(status_code=400, detail="未指定 model 且该 provider 没有 default_model")
@@ -163,10 +185,9 @@ async def test_provider(
 @router.get("/providers/{provider_id}/models")
 async def list_provider_models(
     provider_id: str,
+    user: User = Depends(require_user),
     store: ProviderStore = Depends(get_provider_store),
     probe: ProviderProbe = Depends(get_provider_probe),
 ) -> dict[str, Any]:
-    provider = store.get(provider_id)
-    if provider is None:
-        raise HTTPException(status_code=404, detail=f"provider 不存在：{provider_id}")
+    provider = _get_owned_provider(store, user, provider_id)
     return _redact_response(await probe.list_models(provider), provider)

@@ -7,7 +7,7 @@
 
 import { create } from "zustand";
 import { audioUrl } from "../api/rest";
-import type { AudioPartInfo } from "../api/rest";
+import type { AudioPartInfo, GameAuth } from "../api/rest";
 import { AutoplayBlockedError, createAudioPlayer } from "../lib/audioPlayer";
 import type { AudioPlayer } from "../lib/audioPlayer";
 
@@ -53,7 +53,7 @@ interface VoiceState {
    * 还没探测出清单的下一局（fix round 3 的 Minor 项）。默认不改 available。 */
   clear(resetAvailable?: boolean): void;
   /** 回放用：顺序播放某个 seq 的全部分段；enabled=false 时立即 resolve。 */
-  playSeq(gameId: string, seq: number, parts: readonly AudioPartInfo[], token?: string): Promise<void>;
+  playSeq(gameId: string, seq: number, parts: readonly AudioPartInfo[], auth?: GameAuth): Promise<void>;
 }
 
 /** 懒建的单例播放器；测试用 setPlayer() 换成假对象。 */
@@ -154,7 +154,7 @@ export const useVoice = create<VoiceState>((set, get) => ({
     });
   },
 
-  async playSeq(gameId, seq, parts, token) {
+  async playSeq(gameId, seq, parts, auth) {
     if (!get().enabled) return;
     // 自取消（fix round 2）：新的一组 part 总是取代旧的——先打断任何仍在进行的
     // playSeq/drain 循环（含它们正挂在同一个 <audio> 元素上等待的 player.play() promise），
@@ -168,7 +168,7 @@ export const useVoice = create<VoiceState>((set, get) => ({
       if (gen !== generation) return;
       set({ playing: { seq, part: part.part } });
       try {
-        await getPlayer().play(audioUrl(gameId, seq, part.part, token));
+        await getPlayer().play(audioUrl(gameId, seq, part.part, auth));
       } catch (err) {
         if (err instanceof AutoplayBlockedError) onAutoplayBlocked(get, set);
         return;

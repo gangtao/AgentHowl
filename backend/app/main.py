@@ -13,19 +13,24 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from app.agent.skills import BUILTIN_SKILLS_DIR, SkillLibrary
-from app.api import agents, avatars, providers, rest, voices, ws
+from app.api import admin, agents, auth, avatars, providers, rest, voices, ws
+from app.api.auth import UnverifiedError
 from app.api.deps import TokenRegistry
 from app.runtime.agent_library import AgentLibraryStore, JsonFileAgentLibrary
 from app.runtime.avatar_store import AvatarStore, FileAvatarStore
 from app.runtime.experience_store import ExperienceStore, JsonFileExperienceStore
 from app.runtime.game_runner import LobbyError, RunnerTimeouts
+from app.runtime.mailer import MailConfig, Mailer, NullMailer, SmtpMailer
 from app.runtime.narration import NarrationCache, NarrationConfig
 from app.runtime.player_port import NotYourTurnError, PlayerPort
 from app.runtime.provider_probe import LiteLLMProbe, ProviderProbe
 from app.runtime.provider_store import JsonFileProviderStore, ProviderStore
+from app.runtime.ratelimit import DEFAULT_RULES, RateLimiter
 from app.runtime.registry import GameRegistry
+from app.runtime.secret import load_secret
 from app.runtime.speech_audio import SpeechAudioSink
 from app.runtime.tts import TtsClient, TtsConfig, build_tts_client
+from app.runtime.users import SqliteUserStore, UserStore, bootstrap_admin
 from app.runtime.voice_anchors import VoiceAnchorStore
 from app.schemas.actions import ToolCallError
 from app.store.event_store import EventStore, JsonFileEventStore, StoreError
@@ -34,7 +39,7 @@ if TYPE_CHECKING:
     from app.runtime.registry import GameHandle
 
 
-_TOKEN_RE = re.compile(r"(token=)[^&\s\"]+")
+_TOKEN_RE = re.compile(r"((?:token|share)=)[^&\s\"]+")
 
 
 class _MaskTokenFilter(logging.Filter):
@@ -45,7 +50,7 @@ class _MaskTokenFilter(logging.Filter):
             record.args = tuple(
                 _TOKEN_RE.sub(r"\1***", a) if isinstance(a, str) else a for a in record.args
             )
-        if isinstance(record.msg, str) and "token=" in record.msg:
+        if isinstance(record.msg, str) and ("token=" in record.msg or "share=" in record.msg):
             record.msg = _TOKEN_RE.sub(r"\1***", record.msg)
         return True
 
@@ -59,6 +64,22 @@ def install_access_log_filter() -> logging.Filter:
     flt = _MaskTokenFilter()
     log.addFilter(flt)
     return flt
+
+
+def _bootstrap_admin_from_env(users: UserStore) -> None:
+    """AGENTHOWL_ADMIN_USERNAME/EMAIL/PASSWORD 三者齐全 → 建 admin；只配了部分 → fail-loud。"""
+    keys = ("AGENTHOWL_ADMIN_USERNAME", "AGENTHOWL_ADMIN_EMAIL", "AGENTHOWL_ADMIN_PASSWORD")
+    vals = [os.environ.get(k, "").strip() for k in keys]
+    if any(vals) and not all(vals):
+        raise ValueError(f"管理员引导变量须同时配置：{', '.join(keys)}")
+    if all(vals):
+        created = bootstrap_admin(users, username=vals[0], email=vals[1], password=vals[2])
+        if created is not None:
+            logging.getLogger(__name__).info("已创建管理员 %s", created.username)
+    if not any(u.role == "admin" for u in users.list()):
+        logging.getLogger(__name__).warning(
+            "用户表里没有管理员：配置 AGENTHOWL_ADMIN_* 或用 app.cli.claim 后再提升"
+        )
 
 
 def create_app(
@@ -79,11 +100,16 @@ def create_app(
     voices_dir: Path | None = None,
     avatar_store: AvatarStore | None = None,
     frontend_dist: Path | None = None,
-    public_history: bool | None = None,
     tts_config: TtsConfig | None = None,
     tts_client: TtsClient | None = None,
     audio_dir: Path | None = None,
     narration_config: NarrationConfig | None = None,
+    user_store: UserStore | None = None,
+    users_db: Path | None = None,
+    mailer: Mailer | None = None,
+    secret: bytes | None = None,
+    rate_limiter: RateLimiter | None = None,
+    cookie_secure: bool | None = None,
 ) -> FastAPI:
     app = FastAPI(title="AgentHowl API", version="0.1.0")
     install_access_log_filter()
@@ -122,18 +148,53 @@ def create_app(
         or JsonFileExperienceStore(memory_dir or Path("data/agent_memory")),
         provider_store=app.state.provider_store,
         speech_audio=app.state.speech_audio,
+        experience_store_for=lambda owner_id: JsonFileExperienceStore(
+            (memory_dir or Path("data/agent_memory")) / owner_id
+        ),
     )
     app.state.tokens = TokenRegistry()
-    # 历史对局公开开关（issue #98）：默认开放已终局对局的无 token 回放
-    if public_history is None:
-        raw = os.environ.get("AGENTHOWL_PUBLIC_HISTORY", "1").strip().lower()
-        public_history = raw not in ("0", "false", "no", "off")
-    app.state.public_history = public_history
+    # 用户与会话（issue #114）
+    base_dir = Path("data")
+    app.state.users = user_store or SqliteUserStore(
+        users_db or Path(os.environ.get("AGENTHOWL_USERS_DB", "data/users.db"))
+    )
+    if mailer is None:
+        mail_cfg = MailConfig.from_env()  # HOST 有而 FROM 无 → ValueError（fail-loud）
+        if mail_cfg is None:
+            logging.getLogger(__name__).warning("未配置 AGENTHOWL_SMTP_HOST：注册免邮箱验证")
+            mailer = NullMailer()
+        else:
+            mailer = SmtpMailer(mail_cfg)
+    app.state.mailer = mailer
+    app.state.secret = secret if secret is not None else load_secret(base_dir)
+    app.state.rate_limiter = rate_limiter or RateLimiter(DEFAULT_RULES)
+    if cookie_secure is None:
+        cookie_secure = os.environ.get("AGENTHOWL_COOKIE_SECURE", "1").strip().lower() not in (
+            "0",
+            "false",
+            "no",
+            "off",
+        )
+    app.state.cookie_secure = cookie_secure
+    app.state.trust_proxy = os.environ.get("AGENTHOWL_TRUST_PROXY", "0").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
+    _bootstrap_admin_from_env(app.state.users)
     app.state.agent_library = agent_library or JsonFileAgentLibrary(
         agents_dir or Path("data/agents")
     )
     # 头像存储（issue #102）：内容寻址，首次上传建目录
     app.state.avatar_store = avatar_store or FileAvatarStore(avatars_dir or Path("data/avatars"))
+    app.include_router(auth.router, prefix="/api/v1")
+    app.include_router(admin.router, prefix="/api/v1")
+
+    @app.get("/api/v1/health")
+    def health() -> dict[str, bool]:
+        return {"ok": True}
+
     app.include_router(rest.router, prefix="/api/v1")
     app.include_router(rest.tts_router, prefix="/api/v1")
     app.include_router(ws.router, prefix="/api/v1")
@@ -148,6 +209,12 @@ def create_app(
 
         return h
 
+    async def _unverified(request: Request, exc: Exception) -> JSONResponse:
+        return JSONResponse(
+            status_code=401, content={"detail": "邮箱未验证", "reason": "unverified"}
+        )
+
+    app.add_exception_handler(UnverifiedError, _unverified)
     app.add_exception_handler(LobbyError, _handler(409))
     app.add_exception_handler(NotYourTurnError, _handler(409))
     app.add_exception_handler(ToolCallError, _handler(400))

@@ -1,12 +1,14 @@
 """头像端点（issue #102）。上传：raw body（不用 multipart，免 python-multipart 依赖）；
-读取：内容寻址，可永久缓存。无鉴权——头像随 /meta 对已终局对局公开，不是秘密。"""
+上传需登录；读取公开（内容寻址，id 不可猜），可永久缓存。"""
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse
 
+from app.api.auth import require_user
 from app.runtime.avatar_store import MAX_AVATAR_BYTES, AvatarStore, UnsupportedImageError
+from app.runtime.users import User
 
 router = APIRouter(prefix="/avatars", tags=["avatars"])
 
@@ -19,7 +21,7 @@ def get_avatar_store(request: Request) -> AvatarStore:
 
 
 @router.put("")
-async def upload_avatar(request: Request) -> dict[str, object]:
+async def upload_avatar(request: Request, _: User = Depends(require_user)) -> dict[str, object]:
     """PUT raw 图片字节 → {avatar_id, bytes}。超 512 KB → 413；魔数不是 PNG/JPEG/WebP → 415。"""
     limit_kb = MAX_AVATAR_BYTES // 1024
     length = request.headers.get("content-length")

@@ -5,8 +5,9 @@ import {
   createGame,
   getAudioManifest,
   getGameAvatars,
+  getMeta,
   getReplay,
-  getTtsStatus, designVoice, voiceAnchorUrl } from "./rest";
+  getTtsStatus, designVoice, voiceAnchorUrl, req, setUnauthorizedHandler } from "./rest";
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -25,7 +26,7 @@ describe("rest.ts", () => {
       jsonResponse(200, {
         game_id: "g1",
         host_token: "h",
-        spectator_token: "s",
+        share_token: "s",
         gm_token: "gm",
         config: {},
         agents: {},
@@ -72,7 +73,7 @@ describe("rest.ts", () => {
     const fetchMock = vi.fn(async () => jsonResponse(200, []));
     vi.stubGlobal("fetch", fetchMock);
 
-    await getReplay("g1", "tok-123");
+    await getReplay("g1", { token: "tok-123" });
 
     const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toBe("/api/v1/games/g1/replay");
@@ -100,7 +101,7 @@ describe("rest.ts", () => {
         }),
     );
     vi.stubGlobal("fetch", fetchMock);
-    expect(await getGameAvatars("g_x", "tok")).toEqual({ "0": "a.png" });
+    expect(await getGameAvatars("g_x", { token: "tok" })).toEqual({ "0": "a.png" });
     expect((fetchMock.mock.calls[0] as unknown as [string, RequestInit])[1].headers).toMatchObject(
       { Authorization: "Bearer tok" },
     );
@@ -128,7 +129,7 @@ describe("rest.ts", () => {
     const fetchMock = vi.fn(async () => jsonResponse(200, { "0": [{ part: 0, duration: 1.2 }] }));
     vi.stubGlobal("fetch", fetchMock);
 
-    expect(await getAudioManifest("g_x", "tok")).toEqual({ "0": [{ part: 0, duration: 1.2 }] });
+    expect(await getAudioManifest("g_x", { token: "tok" })).toEqual({ "0": [{ part: 0, duration: 1.2 }] });
     const [url0, init0] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     expect(url0).toBe("/api/v1/games/g_x/audio");
     expect(init0.headers).toMatchObject({ Authorization: "Bearer tok" });
@@ -140,7 +141,7 @@ describe("rest.ts", () => {
 
   it("audioUrl 拼出音频分段地址；有 token 时追加 ?token=（issue #103 fix round 1）", () => {
     expect(audioUrl("g_x", 57, 0)).toBe("/api/v1/games/g_x/audio/57/0");
-    expect(audioUrl("g_x", 57, 0, "tok-123")).toBe("/api/v1/games/g_x/audio/57/0?token=tok-123");
+    expect(audioUrl("g_x", 57, 0, { token: "tok-123" })).toBe("/api/v1/games/g_x/audio/57/0?token=tok-123");
   });
 });
 
@@ -158,4 +159,41 @@ it("designVoice POST /voices/design；voiceAnchorUrl 形状", async () => {
   expect(url).toContain("/api/v1/voices/design");
   expect(init.method).toBe("POST");
   expect(voiceAnchorUrl("0123456789abcdef.wav")).toBe("/api/v1/voices/0123456789abcdef.wav");
+});
+
+describe("401 回调（issue #114）", () => {
+  afterEach(() => setUnauthorizedHandler(null));
+
+  it("带对局 token / 访问 /auth/* 的 401 不触发；无 token 的其他 401 触发一次", async () => {
+    const spy = vi.fn();
+    setUnauthorizedHandler(spy);
+    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse(401, { detail: "x" })));
+    await expect(req("GET", "/games/x/state", { token: "T" })).rejects.toBeInstanceOf(ApiError);
+    await expect(req("GET", "/auth/me")).rejects.toBeInstanceOf(ApiError);
+    expect(spy).not.toHaveBeenCalled();
+    await expect(req("GET", "/games")).rejects.toBeInstanceOf(ApiError);
+    expect(spy).toHaveBeenCalledTimes(1);
+    vi.unstubAllGlobals();
+  });
+
+  it("GameAuth：token 走 Authorization，share 走 ?share=，都没有则裸请求带 cookie", async () => {
+    const calls: [string, RequestInit][] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string, init: RequestInit) => {
+        calls.push([url, init]);
+        return Promise.resolve(new Response("{}", { status: 200 }));
+      }),
+    );
+    await getMeta("g_1", { token: "T" });
+    await getMeta("g_1", { share: "S" });
+    await getMeta("g_1");
+    expect((calls[0]![1].headers as Record<string, string>).Authorization).toBe("Bearer T");
+    expect(calls[1]![0]).toBe("/api/v1/games/g_1/meta?share=S");
+    expect(calls[2]![0]).toBe("/api/v1/games/g_1/meta");
+    expect(calls[2]![1].credentials).toBe("same-origin");
+    expect(audioUrl("g_1", 3, 0, { share: "S" })).toBe("/api/v1/games/g_1/audio/3/0?share=S");
+    expect(audioUrl("g_1", 3, 0, { token: "T" })).toBe("/api/v1/games/g_1/audio/3/0?token=T");
+    expect(audioUrl("g_1", 3, 0)).toBe("/api/v1/games/g_1/audio/3/0");
+  });
 });

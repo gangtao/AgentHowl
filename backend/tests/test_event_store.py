@@ -335,3 +335,25 @@ def test_event_meta_skills_roundtrips_jsonl(tmp_path: Path) -> None:
         store.append("g1", e)
     store.append("g1", tagged)
     assert JsonFileEventStore(tmp_path).load_events("g1")[5].meta["skills"] == "a,b"
+
+
+def test_game_meta_owner_id_roundtrip_and_legacy_default(tmp_path: Path) -> None:
+    from app.engine.config import build_preset
+    from app.store.event_store import GameMeta, JsonFileEventStore, SeatName
+
+    store = JsonFileEventStore(tmp_path)
+    meta = GameMeta(
+        game_id="g_owner",
+        config=build_preset("std_9_kill_side"),
+        roster=tuple(SeatName(seat=i, display_name=f"P{i}") for i in range(9)),
+        owner_id="u_1",
+    )
+    store.create_game(meta)
+    assert JsonFileEventStore(tmp_path).load_meta("g_owner").owner_id == "u_1"
+    # 旧文件（首行无 owner_id）→ None
+    assert (
+        GameMeta.model_validate(
+            {"game_id": "g_old", "config": meta.config.model_dump(mode="json"), "roster": []}
+        ).owner_id
+        is None
+    )

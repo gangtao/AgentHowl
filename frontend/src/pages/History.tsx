@@ -1,10 +1,12 @@
-// 历史对局页（issue #98 设计 §3）：列出 data/games/ 里的全部对局，已结束的可无 token 回放。
+// 历史对局页（issue #98 设计 §3）：列出 data/games/ 里的全部对局，已结束的可回放。
 // 删除（issue #100）：行内「删除」→ ConfirmDialog → store.remove；服务端 409/404 落到页面错误条。
 
 import { useEffect, useState } from "react";
 import type { GameSummary } from "../api/history";
 import ConfirmDialog from "../components/ConfirmDialog/ConfirmDialog";
 import HistoryTable from "../components/HistoryTable/HistoryTable";
+import ShareDialog from "../components/ShareDialog/ShareDialog";
+import { useAuth } from "../store/auth";
 import { useHistory } from "../store/history";
 import styles from "./History.module.css";
 
@@ -14,7 +16,9 @@ export default function History(): JSX.Element {
   const error = useHistory((s) => s.error);
   const refresh = useHistory((s) => s.refresh);
   const remove = useHistory((s) => s.remove);
+  const user = useAuth((s) => s.user);
   const [deleting, setDeleting] = useState<GameSummary | null>(null);
+  const [sharing, setSharing] = useState<GameSummary | null>(null);
 
   useEffect(() => {
     void refresh();
@@ -38,7 +42,7 @@ export default function History(): JSX.Element {
         <div>
           <h3 className={styles.title}>历史对局</h3>
           <p className="text-muted" style={{ fontSize: 13, margin: 0 }}>
-            {items.length} 局 · {finished} 局可回放 · 事件流存于 data/games/（服务端重启不丢）
+            {items.length} 局 · {finished} 局可回放 · {user?.role === "admin" ? "全部用户的对局" : "只显示你创建的对局"}
           </p>
         </div>
         <div className={styles.headActions}>
@@ -55,7 +59,25 @@ export default function History(): JSX.Element {
           载入中…
         </p>
       ) : (
-        <HistoryTable items={items} onDelete={setDeleting} />
+        <HistoryTable
+          items={items}
+          showOwner={user?.role === "admin"}
+          onShare={setSharing}
+          onDelete={setDeleting}
+        />
+      )}
+
+      {sharing !== null && (
+        <ShareDialog
+          gameId={sharing.game_id}
+          gmToken={null}
+          shareToken={sharing.share_token}
+          onEnter={() => {
+            window.location.hash = `#/g/${sharing.game_id}`;
+            setSharing(null);
+          }}
+          onLater={() => setSharing(null)}
+        />
       )}
 
       {deleting !== null && (

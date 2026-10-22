@@ -14,11 +14,11 @@ from pydantic import BaseModel
 from app.agent.agent_player import AgentConfig, AgentPlayerPort
 from app.agent.memory import ReflectionResult
 from app.cli.bot import RandomBot
-from app.main import create_app
 from app.runtime.game_runner import RunnerTimeouts
 from app.runtime.player_port import PlayerPort
 from app.runtime.registry import GameHandle
 from app.store.event_store import InMemoryEventStore
+from tests.conftest import login_as, make_app
 from tests.llm_helpers import ScriptedLLMClient, action_to_decision
 from tests.test_api_play import _auth, _start_ai_game, _wait_done
 
@@ -47,21 +47,23 @@ def _scripted_agent_factory():
 @pytest.fixture()
 def client() -> Iterator[TestClient]:
     """标准 RandomBot 填充 fixture（非 Task 1 的 agent_client）：供活 WS 隔离矩阵测试使用。"""
-    app = create_app(
+    app = make_app(
         store=InMemoryEventStore(), timeouts=RunnerTimeouts(speech_sec=10.0, action_sec=10.0)
     )
     with TestClient(app) as c:
+        login_as(c, "host", role="admin")
         yield c
 
 
 @pytest.fixture()
 def agent_client() -> Iterator[TestClient]:
-    app = create_app(
+    app = make_app(
         store=InMemoryEventStore(),
         timeouts=RunnerTimeouts(speech_sec=10.0, action_sec=10.0),
         agent_port_factory=_scripted_agent_factory(),
     )
     with TestClient(app) as c:
+        login_as(c, "host", role="admin")
         yield c
 
 
@@ -82,7 +84,9 @@ def test_all_agentplayer_game_via_http_ws(agent_client: TestClient) -> None:
     assert r.status_code == 200 and r.json()["num_players"] == 9
 
     frames: list[dict[str, Any]] = []
-    with agent_client.websocket_connect(f"/api/v1/ws?token={created['spectator_token']}") as ws:
+    with agent_client.websocket_connect(
+        f"/api/v1/ws?game_id={gid}&share={created['share_token']}"
+    ) as ws:
         while True:
             frame = ws.receive_json()
             frames.append(frame)
@@ -95,16 +99,16 @@ def test_all_agentplayer_game_via_http_ws(agent_client: TestClient) -> None:
     assert handle.ports and all(isinstance(p, AgentPlayerPort) for p in handle.ports.values())
     # replay 终局一致
     replay = agent_client.get(
-        f"/api/v1/games/{gid}/replay", headers=_auth(created["spectator_token"])
+        f"/api/v1/games/{gid}/replay", params={"share": created["share_token"]}
     ).json()
     assert replay[-1]["type"] == "GAME_OVER"
     _wait_done(agent_client, gid)
 
 
-def _drain_ws_events(client: TestClient, gid: str, token: str) -> list[dict[str, Any]]:
+def _drain_ws_events(client: TestClient, query: str) -> list[dict[str, Any]]:
     """从 from_seq=1 连 WS，收集全部 game_event 帧直至 game_over。"""
     out: list[dict[str, Any]] = []
-    with client.websocket_connect(f"/api/v1/ws?token={token}&from_seq=1") as ws:
+    with client.websocket_connect(f"/api/v1/ws?{query}&from_seq=1") as ws:
         while True:
             frame = ws.receive_json()
             if frame["type"] == "game_event":
@@ -130,11 +134,11 @@ def test_ws_isolation_matrix_wolf_villager_spectator(client: TestClient) -> None
 
     wolf_tok = tokens.issue(TokenInfo(game_id=gid, seat=wolf_seat, kind="PLAYER"))
     vill_tok = tokens.issue(TokenInfo(game_id=gid, seat=villager_seat, kind="PLAYER"))
-    spec_tok = created["spectator_token"]
+    spec_tok = created["share_token"]
 
-    wolf_ev = _drain_ws_events(client, gid, wolf_tok)
-    vill_ev = _drain_ws_events(client, gid, vill_tok)
-    spec_ev = _drain_ws_events(client, gid, spec_tok)
+    wolf_ev = _drain_ws_events(client, f"token={wolf_tok}")
+    vill_ev = _drain_ws_events(client, f"token={vill_tok}")
+    spec_ev = _drain_ws_events(client, f"game_id={gid}&share={spec_tok}")
 
     # 狼座 WS 流含 WOLVES 事件；民座与观战流均无
     assert any(e["visibility"] == "WOLVES" for e in wolf_ev)

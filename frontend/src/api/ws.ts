@@ -1,5 +1,5 @@
 // WS hook：直播事件订阅（规格 §6，对应 backend/app/api/ws.py）。
-// URL：/api/v1/ws?token=…&from_seq=…；帧：{type:"game_event", seq, event}
+// URL：/api/v1/ws?token=…&from_seq=… | ?game_id=…&share=…&from_seq=… | ?game_id=…&from_seq=…（cookie）；帧：{type:"game_event", seq, event}
 // / {type:"phase_change", to, round} / {type:"game_over", winner} / {type:"error", detail}
 // / {type:"action_result", ...} / {type:"your_turn", ...}（后两者本 hook 不消费，观战/上帝视角只读）
 // / {type:"speech_audio", seq, part, url, duration, kind}（配音分段，issue #103；`kind` 为 `speech|narration`（issue #110，缺省按 speech）：转给 useVoice.enqueue，
@@ -12,6 +12,8 @@
 import { useEffect, useRef } from "react";
 import { useGameStore } from "../store/game";
 import { useVoice } from "../store/voice";
+import { withAuth } from "./rest";
+import type { GameAuth } from "./rest";
 import type { Event } from "../engine/types";
 
 /** 关闭码 → 中文提示（规格 §6）。 */
@@ -46,19 +48,24 @@ interface WsFrame {
 
 export interface UseLiveEventsArgs {
   gameId: string | null;
-  token: string | null;
+  auth: GameAuth;
   enabled: boolean;
 }
 
-function wsUrl(fromSeq: number, token: string): string {
+/** 三种形式（issue #114）：对局 token / 分享 token / cookie 会话。 */
+export function wsUrl(fromSeq: number, gameId: string, auth: GameAuth): string {
   const proto = location.protocol === "https:" ? "wss" : "ws";
   const host = location.host || "localhost";
-  return `${proto}://${host}/api/v1/ws?token=${encodeURIComponent(token)}&from_seq=${fromSeq}`;
+  const base = `${proto}://${host}/api/v1/ws`;
+  if (auth.token) return `${base}?token=${encodeURIComponent(auth.token)}&from_seq=${fromSeq}`;
+  const g = `game_id=${encodeURIComponent(gameId)}`;
+  if (auth.share) return `${base}?${g}&share=${encodeURIComponent(auth.share)}&from_seq=${fromSeq}`;
+  return `${base}?${g}&from_seq=${fromSeq}`;
 }
 
 /** 直播事件订阅：把 WS 帧转成对 useGameStore 的 appendEvents 调用。
  * StrictMode 双挂载安全：socket 存在 ref 里，effect 清理时关闭旧连接。 */
-export function useLiveEvents({ gameId, token, enabled }: UseLiveEventsArgs): void {
+export function useLiveEvents({ gameId, auth, enabled }: UseLiveEventsArgs): void {
   const socketRef = useRef<WebSocket | null>(null);
   const bufferRef = useRef<Event[]>([]);
   const rafRef = useRef<number | null>(null);
@@ -69,7 +76,7 @@ export function useLiveEvents({ gameId, token, enabled }: UseLiveEventsArgs): vo
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    if (!enabled || !gameId || !token) return;
+    if (!enabled || !gameId) return;
 
     gameOverRef.current = false;
     closingForCleanupRef.current = false;
@@ -122,7 +129,7 @@ export function useLiveEvents({ gameId, token, enabled }: UseLiveEventsArgs): vo
 
     const connect = (): void => {
       useGameStore.getState().setConnection("connecting");
-      const url = wsUrl(lastSeqRef.current + 1, token);
+      const url = wsUrl(lastSeqRef.current + 1, gameId, auth);
       const ws = new WebSocket(url);
       socketRef.current = ws;
 
@@ -148,8 +155,8 @@ export function useLiveEvents({ gameId, token, enabled }: UseLiveEventsArgs): vo
           useGameStore.getState().setError(frame.detail);
         } else if (frame.type === "speech_audio" && frame.url !== undefined) {
           // 直播期间该文件端点匿名必 401（fix round 1）：<audio> 发不出 Authorization 头，
-          // 这里把本连接的 token 原样拼到 URL 查询参数上，后端 audio_part_endpoint 认 ?token=。
-          const url = token ? `${frame.url}?token=${encodeURIComponent(token)}` : frame.url;
+          // 这里把本连接的凭据（?token= / ?share=，cookie 模式不拼）拼到 URL 上。
+          const url = withAuth(frame.url, auth);
           useVoice.getState().enqueue({
             seq: frame.seq as number,
             part: frame.part as number,
@@ -206,5 +213,5 @@ export function useLiveEvents({ gameId, token, enabled }: UseLiveEventsArgs): vo
       cleanupSocket();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gameId, token, enabled]);
+  }, [gameId, auth.token, auth.share, enabled]);
 }

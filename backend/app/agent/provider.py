@@ -66,6 +66,7 @@ class Provider(BaseModel):
     default_model: str | None
     created_at: str
     updated_at: str
+    owner_id: str | None = None
 
 
 class ProviderPublic(BaseModel):

@@ -1,0 +1,49 @@
+.page {
+  display: grid;
+  place-items: center;
+  padding: 48px 16px;
+  overflow: auto;
+}
+
+.card {
+  width: 100%;
+  max-width: 400px;
+  display: grid;
+  gap: 14px;
+  padding: 24px;
+  border: 1px solid var(--ah-border, rgba(127, 127, 127, 0.3));
+  border-radius: var(--radius-sm);
+  background: var(--ah-surface, transparent);
+}
+
+.title {
+  margin: 0;
+  font-size: 18px;
+}
+
+.error {
+  font-size: 12px;
+  color: var(--ah-err);
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--ah-err) 10%, transparent);
+}
+
+.notice {
+  font-size: 12px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, currentColor 8%, transparent);
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+}
+
+.links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  font-size: 13px;
+}

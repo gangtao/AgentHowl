@@ -70,17 +70,22 @@ afterEach(() => {
 });
 
 describe("useLiveEvents", () => {
-  it("连接 URL 含 token 与 from_seq=1", () => {
-    renderHook(() => useLiveEvents({ gameId: "g1", token: "tok", enabled: true }));
-    expect(FakeWebSocket.instances).toHaveLength(1);
-    const url = FakeWebSocket.instances[0]!.url;
-    expect(url).toContain("token=tok");
-    expect(url).toContain("from_seq=1");
+  it("连接 URL 三种形式：token / share / cookie", () => {
+    const loc = location.host || "localhost";
+    const proto = location.protocol === "https:" ? "wss" : "ws";
+    const base = `${proto}://${loc}/api/v1/ws`;
+    renderHook(() => useLiveEvents({ gameId: "g_1", auth: { token: "T" }, enabled: true }));
+    renderHook(() => useLiveEvents({ gameId: "g_1", auth: { share: "S" }, enabled: true }));
+    renderHook(() => useLiveEvents({ gameId: "g_1", auth: {}, enabled: true }));
+    const urls = FakeWebSocket.instances.map((i) => i.url);
+    expect(urls[0]).toBe(`${base}?token=T&from_seq=1`);
+    expect(urls[1]).toBe(`${base}?game_id=g_1&share=S&from_seq=1`);
+    expect(urls[2]).toBe(`${base}?game_id=g_1&from_seq=1`);
   });
 
   it("连续 emit 3 个 game_event 后，一帧 rAF 内只调用一次 appendEvents", () => {
     const appendSpy = vi.spyOn(useGameStore.getState(), "appendEvents");
-    renderHook(() => useLiveEvents({ gameId: "g1", token: "tok", enabled: true }));
+    renderHook(() => useLiveEvents({ gameId: "g1", auth: { token: "tok" }, enabled: true }));
     const socket = FakeWebSocket.instances[0]!;
 
     socket.emit({ type: "game_event", seq: 1, event: makeEvent(1) });
@@ -97,7 +102,7 @@ describe("useLiveEvents", () => {
   });
 
   it("close(4404) → error 为「对局不存在」且不重连", () => {
-    renderHook(() => useLiveEvents({ gameId: "g1", token: "tok", enabled: true }));
+    renderHook(() => useLiveEvents({ gameId: "g1", auth: { token: "tok" }, enabled: true }));
     const socket = FakeWebSocket.instances[0]!;
 
     socket.close(4404);
@@ -110,7 +115,7 @@ describe("useLiveEvents", () => {
   });
 
   it("意外 close(1006) 且未终局 → 1s 后重连，且 URL from_seq=lastSeq+1", () => {
-    renderHook(() => useLiveEvents({ gameId: "g1", token: "tok", enabled: true }));
+    renderHook(() => useLiveEvents({ gameId: "g1", auth: { token: "tok" }, enabled: true }));
     const socket = FakeWebSocket.instances[0]!;
     socket.emit({ type: "game_event", seq: 1, event: makeEvent(1) });
     vi.advanceTimersByTime(16); // 让 seq=1 落盘到 lastSeqRef
@@ -127,7 +132,7 @@ describe("useLiveEvents", () => {
   });
 
   it("gap 分支清空 rAF 缓冲：残留陈旧事件不会在补发后触发第二次重连", () => {
-    renderHook(() => useLiveEvents({ gameId: "g1", token: "tok", enabled: true }));
+    renderHook(() => useLiveEvents({ gameId: "g1", auth: { token: "tok" }, enabled: true }));
     const socket1 = FakeWebSocket.instances[0]!;
 
     // 攒 202 条到 rAF 缓冲：前 150 条连续，之后跳号到 300 起再垫 52 条——
@@ -163,7 +168,7 @@ describe("useLiveEvents", () => {
   });
 
   it("speech_audio 帧 → useVoice.enqueue，url 带本连接的 token；speech_audio_end 被忽略", () => {
-    renderHook(() => useLiveEvents({ gameId: "g1", token: "tok", enabled: true }));
+    renderHook(() => useLiveEvents({ gameId: "g1", auth: { token: "tok" }, enabled: true }));
     const socket = FakeWebSocket.instances[0]!;
 
     socket.emit({ type: "speech_audio", seq: 3, part: 0, url: "/a/3/0", duration: 1.5 });
@@ -186,7 +191,7 @@ describe("useLiveEvents", () => {
   });
 
   it("收到 game_over 后 close 不重连", () => {
-    renderHook(() => useLiveEvents({ gameId: "g1", token: "tok", enabled: true }));
+    renderHook(() => useLiveEvents({ gameId: "g1", auth: { token: "tok" }, enabled: true }));
     const socket = FakeWebSocket.instances[0]!;
 
     socket.emit({ type: "game_over", winner: "GOOD" });

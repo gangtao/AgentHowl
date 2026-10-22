@@ -40,6 +40,9 @@ class GameSummary(BaseModel):
     rounds: int
     seats: list[SeatSummary]
     seq: int
+    owner_id: str | None = None
+    owner_name: str | None = None  # rest 层按 UserStore 补；普通用户列表里就是自己
+    share_token: str | None = None  # rest 层按站点密钥补
 
 
 def is_finished(events: Sequence[Event]) -> bool:
@@ -76,6 +79,7 @@ def summarize_game(meta: GameMeta, events: Sequence[Event], live: bool) -> GameS
         rounds=rounds,
         seats=seats,
         seq=events[-1].seq if events else 0,
+        owner_id=meta.owner_id,
     )
 
 

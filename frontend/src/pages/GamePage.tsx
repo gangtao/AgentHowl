@@ -1,9 +1,10 @@
 // 对局页（设计稿 1c/1d/1g/1h/1i/1j）：直播 + 回放同一页面，GM 与观众只差数据。
 //
 // 引导流程（规格 §6 + 后端实况）：
+//   凭据（issue #114）：token（Bearer）→ share（?share=）→ 都没有则靠登录 cookie（GM）。
 //   1. GET /meta —— 后端只在终局后开放（rest.py::meta_endpoint 与 /replay 同门槛）。
 //      200 ⇒ 对局已结束 ⇒ 直接 GET /replay 一次性装入，mode="replay"、cursor=0。
-//      404 ⇒ 对局不存在（4404）；401 ⇒ token 无效；403 ⇒ 对局进行中或未开局，转第 2 步。
+//      404 ⇒ 对局不存在（4404）；401 ⇒ 凭据无效/未登录（auth 错误态）；403 ⇒ 对局进行中或未开局，转第 2 步。
 //   2. GET /state —— 直播期唯一能拿到名单/配置的端点。
 //      200 ⇒ 由快照补出 GameMeta（GM 拿完整 state，观众拿 SpectatorView）并订阅 WS 直播。
 //      409 ⇒ 尚未开局：显示「等待开局」，每 2 秒重试整个引导流程。
@@ -17,7 +18,7 @@ import {
   getReplay,
   getState,
 } from "../api/rest";
-import type { AudioPartInfo } from "../api/rest";
+import type { AudioPartInfo, GameAuth } from "../api/rest";
 import { useLiveEvents } from "../api/ws";
 import { replayControls } from "../lib/replayControls";
 import { useVoice } from "../store/voice";
@@ -53,8 +54,8 @@ export interface GamePageProps {
   gameId?: string;
   token?: string;
   viewer?: Viewer;
-  /** 无 token 回放（`#/g/{id}?replay=1`，issue #98）：跳过 /state 探测，直接 /meta + /replay。 */
-  replay?: boolean;
+  /** 分享链接 token（`?share=`，issue #114）：匿名观众（SPECTATOR）。 */
+  share?: string;
 }
 
 /** 未开局轮询间隔（毫秒，规格 §7.3：4409 每 2s 重试）。 */
@@ -91,7 +92,13 @@ function metaFromState(gameId: string, raw: Record<string, unknown>): GameMeta {
   return { game_id: gameId, config, roster, agents: {} };
 }
 
-export default function GamePage({ gameId, token, viewer, replay }: GamePageProps): JSX.Element {
+export default function GamePage({ gameId, token, share, viewer }: GamePageProps): JSX.Element {
+  const auth = useMemo<GameAuth>(() => {
+    const a: GameAuth = {};
+    if (token) a.token = token;
+    if (share) a.share = share;
+    return a;
+  }, [token, share]);
   const [ready, setReady] = useState(false);
   const [errorKind, setErrorKind] = useState<ErrorKind | null>(null);
   const [attempt, setAttempt] = useState(0);
@@ -117,79 +124,9 @@ export default function GamePage({ gameId, token, viewer, replay }: GamePageProp
   const playing = useGameStore((s) => s.playing);
   const speed = useGameStore((s) => s.speed);
 
-  // 回放模式没有 token，视角固定为上帝——服务端对已结束对局本就返回全量事件流
-  // （issue #98 设计 §1 访问策略 A），前端不做任何裁剪。
-  const effectiveViewer: Viewer | undefined = replay === true ? "GM" : viewer;
-
-  // ---- 引导：replay ⇒ /meta + /replay（无 token）；否则 /meta →（403）/state ----
+  // ---- 引导：/meta →（403）/state ----
   useEffect(() => {
-    if (!gameId || (!replay && (!token || !viewer))) {
-      setErrorKind("auth");
-      return;
-    }
-
-    if (replay) {
-      // 历史回放：无 token，直接装入（后端只对已结束对局开放）
-      let cancelled = false;
-      void (async () => {
-        try {
-          const meta = await getMeta(gameId);
-          const events = await getReplay(gameId);
-          if (cancelled) return;
-          const store = useGameStore.getState();
-          store.load(meta, { gameId, token: "", viewer: "GM", mode: "replay" });
-          store.appendEvents(events);
-          setErrorKind(null);
-          setDetail(null);
-          setReady(true);
-          getGameAvatars(gameId)
-            .then((m) => {
-              if (!cancelled) setAvatars(Object.fromEntries(Object.entries(m).map(([k, v]) => [Number(k), v])));
-            })
-            .catch(() => {
-              /* 头像拿不到只是没图：不阻断对局页 */
-            });
-          getAudioManifest(gameId)
-            .then((m) => {
-              if (cancelled) return;
-              setManifest(m);
-              if (Object.keys(m).length > 0) useVoice.getState().markAvailable();
-            })
-            .catch(() => {
-              /* 清单拿不到就是没有配音：不阻断对局页 */
-            });
-        } catch (err) {
-          if (cancelled) return;
-          if (err instanceof ApiError && err.status === 404) {
-            setErrorKind("4404");
-            setDetail(err.detail);
-            return;
-          }
-          // 403（对局未结束）与 401 合成同一条文案：回放模式本就无 token，用户也无从提供
-          // token——开关 AGENTHOWL_PUBLIC_HISTORY=0 时 401 的含义同样是「这局现在不给你看」，
-          // 对无 token 的访客与「对局进行中」没有区别，不该暴露成 token 问题（复核 M1 / 裁决 R6）。
-          if (err instanceof ApiError && (err.status === 403 || err.status === 401)) {
-            setErrorKind("error");
-            setDetail("对局进行中，暂不可回放（已结束的对局可从历史页回放）");
-            return;
-          }
-          setErrorKind("error");
-          setDetail(err instanceof ApiError ? `${err.status} · ${err.detail}` : String(err));
-        }
-      })();
-      return () => {
-        cancelled = true;
-        useGameStore.getState().reset();
-        setReady(false);
-        setManifest({});
-        // 直播中途离页不会自己停播（只有回放门控的卸载才调 clear()）；这里顺带把
-        // available 也清掉，避免 🔊 开关残留到下一局还没判定出清单的空窗（fix round 3）。
-        useVoice.getState().clear(true);
-      };
-    }
-
-    // 非回放路径：上面的守卫已保证 token/viewer 存在，这里再显式收窄一次让 TS 看见。
-    if (!token || !viewer) {
+    if (!gameId || !viewer) {
       setErrorKind("auth");
       return;
     }
@@ -221,22 +158,22 @@ export default function GamePage({ gameId, token, viewer, replay }: GamePageProp
       tries += 1;
       // 1) 终局对局：/meta 开放 → 一次性装入回放
       try {
-        const meta = await getMeta(gameId, token);
-        const replayEvents = await getReplay(gameId, token);
+        const meta = await getMeta(gameId, auth);
+        const replayEvents = await getReplay(gameId, auth);
         if (cancelled) return;
         const store = useGameStore.getState();
-        store.load(meta, { gameId, token, viewer, mode: "replay" });
+        store.load(meta, { gameId, token: token ?? "", viewer, mode: "replay" });
         store.appendEvents(replayEvents);
         setErrorKind(null);
         setReady(true);
-        getGameAvatars(gameId, token || undefined)
+        getGameAvatars(gameId, auth)
           .then((m) => {
             if (!cancelled) setAvatars(Object.fromEntries(Object.entries(m).map(([k, v]) => [Number(k), v])));
           })
           .catch(() => {
             /* 头像拿不到只是没图：不阻断对局页 */
           });
-        getAudioManifest(gameId, token || undefined)
+        getAudioManifest(gameId, auth)
           .then((m) => {
             if (cancelled) return;
             setManifest(m);
@@ -254,21 +191,21 @@ export default function GamePage({ gameId, token, viewer, replay }: GamePageProp
 
       // 2) 直播 / 未开局
       try {
-        const snapshot = await getState(gameId, token);
+        const snapshot = await getState(gameId, auth);
         if (cancelled) return;
         const meta = metaFromState(gameId, snapshot);
-        useGameStore.getState().load(meta, { gameId, token, viewer, mode: "live" });
+        useGameStore.getState().load(meta, { gameId, token: token ?? "", viewer, mode: "live" });
         setErrorKind(null);
         setDetail(null);
         setReady(true);
-        getGameAvatars(gameId, token || undefined)
+        getGameAvatars(gameId, auth)
           .then((m) => {
             if (!cancelled) setAvatars(Object.fromEntries(Object.entries(m).map(([k, v]) => [Number(k), v])));
           })
           .catch(() => {
             /* 头像拿不到只是没图：不阻断对局页 */
           });
-        getAudioManifest(gameId, token || undefined)
+        getAudioManifest(gameId, auth)
           .then((m) => {
             if (cancelled) return;
             setManifest(m);
@@ -309,7 +246,7 @@ export default function GamePage({ gameId, token, viewer, replay }: GamePageProp
       // 同上：直播卸载也要停播 + 清 available（fix round 3）。
       useVoice.getState().clear(true);
     };
-  }, [gameId, token, viewer, replay]);
+  }, [gameId, token, auth, viewer]);
 
   useEffect(() => {
     manifestRef.current = manifest;
@@ -323,13 +260,13 @@ export default function GamePage({ gameId, token, viewer, replay }: GamePageProp
     if (mode !== "replay" || !gameId) return;
     useGameStore.getState().setReplayGate((seq) => {
       const parts = manifestRef.current[String(seq)];
-      return parts ? useVoice.getState().playSeq(gameId, seq, parts, token || undefined) : null;
+      return parts ? useVoice.getState().playSeq(gameId, seq, parts, auth) : null;
     });
     return () => {
       useGameStore.getState().setReplayGate(null);
       useVoice.getState().clear();
     };
-  }, [mode, gameId, token]);
+  }, [mode, gameId, auth]);
 
   // ---- 直播订阅（回放模式不连） ----
   // 同时要求 head 非空：引导重跑时 store 会被 reset（head=null、mode 回到 "live"），
@@ -337,7 +274,7 @@ export default function GamePage({ gameId, token, viewer, replay }: GamePageProp
   // 这一条避免在「已重置但尚未装入」的空窗里连出一个立刻被关掉的 WS。
   useLiveEvents({
     gameId: gameId ?? null,
-    token: token ?? null,
+    auth,
     enabled: ready && mode === "live" && head !== null,
   });
 
@@ -399,7 +336,7 @@ export default function GamePage({ gameId, token, viewer, replay }: GamePageProp
   if (errorKind !== null) {
     return <ErrorState kind={errorKind} attempt={attempt} detail={detail} />;
   }
-  if (!ready || view === null || effectiveViewer === undefined) {
+  if (!ready || view === null || viewer === undefined) {
     return (
       <div className={styles.loading} role="status">
         正在载入对局…
@@ -418,7 +355,7 @@ export default function GamePage({ gameId, token, viewer, replay }: GamePageProp
       : null;
 
   const rightPanel = isNight(view.phase) ? (
-    <NightSummary rows={nightRows} round={view.round} viewer={effectiveViewer} />
+    <NightSummary rows={nightRows} round={view.round} viewer={viewer} />
   ) : view.phase === "SHERIFF_ELECTION" || view.phase === "SHERIFF_PK" ? (
     <ElectionPanel state={view} events={visibleEvents} />
   ) : view.phase === "VOTE" || view.phase === "VOTE_PK" || view.phase === "EXILE" ? (
@@ -436,7 +373,7 @@ export default function GamePage({ gameId, token, viewer, replay }: GamePageProp
       <PhaseBar
         state={view}
         mode={mode}
-        viewer={effectiveViewer}
+        viewer={viewer}
         connection={connection}
         lastSeq={atSeq}
         totalSeq={totalSeq}
@@ -480,7 +417,7 @@ export default function GamePage({ gameId, token, viewer, replay }: GamePageProp
             speakingSeat={speaking}
             avatars={avatars}
           />
-          <NightOverlay phase={view.phase} viewer={effectiveViewer} />
+          <NightOverlay phase={view.phase} viewer={viewer} />
         </div>
 
         <div className={styles.right}>{rightPanel}</div>

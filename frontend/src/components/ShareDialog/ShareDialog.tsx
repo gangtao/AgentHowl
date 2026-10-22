@@ -6,13 +6,14 @@ import styles from "./ShareDialog.module.css";
 
 export interface ShareDialogProps {
   gameId: string;
-  gmToken: string;
-  spectatorToken: string | null;
+  /** null = 无 GM 链接（历史页：本人靠登录态进入）。 */
+  gmToken: string | null;
+  shareToken: string | null;
   onEnter(): void;
   onLater(): void;
 }
 
-function linkFor(gameId: string, param: "gm" | "spec", token: string): string {
+function linkFor(gameId: string, param: "gm" | "share", token: string): string {
   const base = typeof window === "undefined" ? "" : window.location.origin + window.location.pathname;
   return `${base}#/g/${gameId}?${param}=${token}`;
 }
@@ -20,7 +21,7 @@ function linkFor(gameId: string, param: "gm" | "spec", token: string): string {
 export default function ShareDialog({
   gameId,
   gmToken,
-  spectatorToken,
+  shareToken,
   onEnter,
   onLater,
 }: ShareDialogProps): JSX.Element {
@@ -36,26 +37,28 @@ export default function ShareDialog({
     }
   }
 
-  const gmLink = linkFor(gameId, "gm", gmToken);
-  const specLink = spectatorToken === null ? null : linkFor(gameId, "spec", spectatorToken);
+  const gmLink = gmToken === null ? null : linkFor(gameId, "gm", gmToken);
+  const specLink = shareToken === null ? null : linkFor(gameId, "share", shareToken);
 
   return (
     <div className="dialog-backdrop" style={{ zIndex: 60 }}>
-      <div className="dialog" role="dialog" aria-modal="true" aria-label="对局已创建">
-        <div className="dialog-title">对局已创建</div>
+      <div className="dialog" role="dialog" aria-modal="true" aria-label={gmLink === null ? "分享对局" : "对局已创建"}>
+        <div className="dialog-title">{gmLink === null ? "分享对局" : "对局已创建"}</div>
         <div className="dialog-body" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-          <div className="field">
-            <label htmlFor="share-gm">上帝视角链接 · GM</label>
-            <div className={styles.row}>
-              <input id="share-gm" className={`input ${styles.mono}`} readOnly value={gmLink} />
-              <button type="button" className="btn btn-secondary" onClick={() => void copy("gm", gmLink)}>
-                {copied === "gm" ? "已复制" : "复制"}
-              </button>
+          {gmLink !== null && (
+            <div className="field">
+              <label htmlFor="share-gm">上帝视角链接 · GM</label>
+              <div className={styles.row}>
+                <input id="share-gm" className={`input ${styles.mono}`} readOnly value={gmLink} />
+                <button type="button" className="btn btn-secondary" onClick={() => void copy("gm", gmLink)}>
+                  {copied === "gm" ? "已复制" : "复制"}
+                </button>
+              </div>
             </div>
-          </div>
+          )}
           {specLink !== null && (
             <div className="field">
-              <label htmlFor="share-spec">观众链接 · 仅公开信息</label>
+              <label htmlFor="share-spec">观众链接 · 仅公开信息，可匿名打开</label>
               <div className={styles.row}>
                 <input id="share-spec" className={`input ${styles.mono}`} readOnly value={specLink} />
                 <button
@@ -68,12 +71,19 @@ export default function ShareDialog({
               </div>
             </div>
           )}
-          <div className={styles.warn}>
-            <span>⚠</span>
-            <span>
-              上帝视角链接含全部身份信息，勿分享给玩家。token 只存在于链接中，关闭页面后需重新打开链接。
-            </span>
-          </div>
+          {gmLink !== null && (
+            <div className={styles.warn}>
+              <span>⚠</span>
+              <span>
+                上帝视角链接含全部身份信息，勿分享给玩家。token 只存在于链接中，关闭页面后需重新打开链接。
+              </span>
+            </div>
+          )}
+          {gmLink === null && specLink === null && (
+            <div className={styles.warn}>
+              <span>该对局未开放观众，没有可分享的链接。</span>
+            </div>
+          )}
         </div>
         <div className="dialog-actions">
           <button type="button" className="btn btn-ghost" onClick={onLater}>

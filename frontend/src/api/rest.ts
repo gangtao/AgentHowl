@@ -10,18 +10,28 @@ export const API_BASE = "/api/v1";
 export class ApiError extends Error {
   status: number;
   detail: string;
+  /** 机器可读原因（如登录 401 的 `unverified`）；后端没给就是 undefined。 */
+  reason?: string;
 
-  constructor(status: number, detail: string) {
+  constructor(status: number, detail: string, reason?: string) {
     super(detail);
     this.name = "ApiError";
     this.status = status;
     this.detail = detail;
+    if (reason !== undefined) this.reason = reason;
   }
+}
+
+let onUnauthorized: (() => void) | null = null;
+/** 401 回调（issue #114）：App 注册为「重新确认登录态」；避免 api 层 import store 造成环。 */
+export function setUnauthorizedHandler(fn: (() => void) | null): void {
+  onUnauthorized = fn;
 }
 
 interface ReqOptions {
   token?: string;
   body?: unknown;
+  query?: Record<string, string>;
 }
 
 function stringifyDetail(detail: unknown): string {
@@ -41,18 +51,30 @@ export async function req<T>(method: string, path: string, opts: ReqOptions = {}
   if (opts.token) {
     headers.Authorization = `Bearer ${opts.token}`;
   }
-  const res = await fetch(`${API_BASE}${path}`, { method, headers, body });
+  let url = `${API_BASE}${path}`;
+  if (opts.query) {
+    const qs = new URLSearchParams(opts.query).toString();
+    if (qs) url += `${url.includes("?") ? "&" : "?"}${qs}`;
+  }
+  const res = await fetch(url, { method, headers, body, credentials: "same-origin" });
   if (!res.ok) {
     let detail = res.statusText;
+    let reason: string | undefined;
     try {
       const data: unknown = await res.json();
       if (data && typeof data === "object" && "detail" in data) {
         detail = stringifyDetail((data as { detail: unknown }).detail);
       }
+      if (data && typeof data === "object" && "reason" in data) {
+        const r = (data as { reason: unknown }).reason;
+        if (typeof r === "string") reason = r;
+      }
     } catch {
       // 响应体不是 JSON：退回 statusText
     }
-    throw new ApiError(res.status, detail);
+    // 带对局 token 的 401 是 token 问题；/auth/* 的 401 是认证流程本身（避免回调递归）。
+    if (res.status === 401 && !opts.token && !path.startsWith("/auth/") && onUnauthorized) onUnauthorized();
+    throw new ApiError(res.status, detail, reason);
   }
   if (res.status === 204) {
     return undefined as T;
@@ -79,7 +101,8 @@ export interface CreateGameRequest {
 export interface CreateGameResponse {
   game_id: string;
   host_token: string;
-  spectator_token: string | null;
+  /** 分享 token（issue #114，原 spectator_token）；关闭观众时为 null。 */
+  share_token: string | null;
   gm_token: string;
   config: Record<string, unknown>;
   agents: Record<string, unknown>;
@@ -107,10 +130,22 @@ export function startGame(
   });
 }
 
-/** token 可省略：开关 AGENTHOWL_PUBLIC_HISTORY 开启时，已结束对局的 /meta 无需 token
- * （issue #98 设计 §2.2）。`req` 在 token 为 undefined 时不发 Authorization 头。 */
-export function getMeta(gameId: string, token?: string): Promise<GameMeta> {
-  return req<GameMeta>("GET", `/games/${gameId}/meta`, { token });
+/** 对局读端点的凭据（issue #114）：对局 token（Bearer）或分享 token（?share=）；都没有 → 只靠 cookie 会话。 */
+export interface GameAuth {
+  token?: string;
+  share?: string;
+}
+
+function gameOpts(auth: GameAuth | undefined, extra: ReqOptions = {}): ReqOptions {
+  const o: ReqOptions = { ...extra };
+  if (auth?.token) o.token = auth.token;
+  else if (auth?.share) o.query = { ...(o.query ?? {}), share: auth.share };
+  return o;
+}
+
+/** 终局后开放；终局前 403（页面退回 /state）。 */
+export function getMeta(gameId: string, auth?: GameAuth): Promise<GameMeta> {
+  return req<GameMeta>("GET", `/games/${gameId}/meta`, gameOpts(auth));
 }
 
 /**
@@ -118,25 +153,28 @@ export function getMeta(gameId: string, token?: string): Promise<GameMeta> {
  *
  * 为什么需要它：后端的 `/meta` 与 `/replay` 同一门槛——终局后才开放（rest.py::meta_endpoint），
  * 所以对局进行中拿不到 GameMeta。GamePage 用本端点补出 `initialState()` 所需的
- * `{game_id, config, roster}`：GM token 返回完整 GameState（含 config/players），
- * 观众 token 返回 SpectatorView（只有 seats）。返回体按视角不同，调用方自行判别。
+ * `{game_id, config, roster}`：GM 凭据返回完整 GameState（含 config/players），
+ * 观众凭据返回 SpectatorView（只有 seats）。返回体按视角不同，调用方自行判别。
  */
-export function getState(gameId: string, token: string): Promise<Record<string, unknown>> {
-  return req<Record<string, unknown>>("GET", `/games/${gameId}/state`, { token });
+export function getState(gameId: string, auth?: GameAuth): Promise<Record<string, unknown>> {
+  return req<Record<string, unknown>>("GET", `/games/${gameId}/state`, gameOpts(auth));
 }
 
-/** token 可省略，同 `getMeta`。 */
-export function getReplay(gameId: string, token?: string): Promise<Event[]> {
-  return req<Event[]>("GET", `/games/${gameId}/replay`, { token });
+export function getReplay(gameId: string, auth?: GameAuth): Promise<Event[]> {
+  return req<Event[]>("GET", `/games/${gameId}/replay`, gameOpts(auth));
 }
 
-export function getEvents(gameId: string, token: string, fromSeq = 0): Promise<Event[]> {
-  return req<Event[]>("GET", `/games/${gameId}/events?from_seq=${fromSeq}`, { token });
+export function getEvents(gameId: string, auth: GameAuth | undefined, fromSeq = 0): Promise<Event[]> {
+  return req<Event[]>(
+    "GET",
+    `/games/${gameId}/events`,
+    gameOpts(auth, { query: { from_seq: String(fromSeq) } }),
+  );
 }
 
-/** 座位 → 头像 id（issue #102）：直播中需本局 token；终局公开策略同 /replay。 */
-export function getGameAvatars(gameId: string, token?: string): Promise<Record<string, string>> {
-  return req<Record<string, string>>("GET", `/games/${gameId}/avatars`, { token });
+/** 座位 → 头像 id（issue #102）：直播中需本局凭据；终局公开策略同 /replay。 */
+export function getGameAvatars(gameId: string, auth?: GameAuth): Promise<Record<string, string>> {
+  return req<Record<string, string>>("GET", `/games/${gameId}/avatars`, gameOpts(auth));
 }
 
 // ---- 配音（issue #103，app/runtime/tts.py + /tts/status、/games/{id}/audio） ----
@@ -176,16 +214,21 @@ export interface AudioPartInfo {
 /** 发言音频清单 {seq: [{part, duration}]}；权限同 /replay（终局前需本局 token）。 */
 export function getAudioManifest(
   gameId: string,
-  token?: string,
+  auth?: GameAuth,
 ): Promise<Record<string, AudioPartInfo[]>> {
-  return req<Record<string, AudioPartInfo[]>>("GET", `/games/${gameId}/audio`, { token });
+  return req<Record<string, AudioPartInfo[]>>("GET", `/games/${gameId}/audio`, gameOpts(auth));
 }
 
-/** 音频分段文件地址（不经 req：浏览器 <audio>/<source> 直接拉取，发不出 Authorization 头）。
- * `token` 非空时拼成 `?token=`——直播期间（未终局）该端点走 /replay 同一道门槛，匿名必 401，
- * 这条 query token 是 fix round 1 加给后端 `audio_part_endpoint` 的旁路，等价于 WS 端点早有的
- * `?token=` 先例（`api/ws.ts` 的 `wsUrl()`）。 */
-export function audioUrl(gameId: string, seq: number, part: number, token?: string): string {
-  const base = `${API_BASE}/games/${gameId}/audio/${seq}/${part}`;
-  return token ? `${base}?token=${encodeURIComponent(token)}` : base;
+/** 给不能带 Authorization 头的 URL（<audio>、WS 帧里的音频地址）拼凭据：
+ * token → `?token=`，share → `?share=`，都没有原样返回（浏览器带 cookie）。 */
+export function withAuth(url: string, auth?: GameAuth): string {
+  const sep = url.includes("?") ? "&" : "?";
+  if (auth?.token) return `${url}${sep}token=${encodeURIComponent(auth.token)}`;
+  if (auth?.share) return `${url}${sep}share=${encodeURIComponent(auth.share)}`;
+  return url;
+}
+
+/** 音频分段文件地址（不经 req：浏览器 <audio>/<source> 直接拉取，发不出 Authorization 头）。 */
+export function audioUrl(gameId: string, seq: number, part: number, auth?: GameAuth): string {
+  return withAuth(`${API_BASE}/games/${gameId}/audio/${seq}/${part}`, auth);
 }

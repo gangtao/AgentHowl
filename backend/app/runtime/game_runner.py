@@ -84,7 +84,9 @@ class GameLobby:
             raise LobbyError(f"未满员：{len(self._entries)}/{self._config.num_players}")
         return tuple(self._entries)
 
-    def game_meta(self, agents: AgentProfiles | None = None) -> GameMeta:
+    def game_meta(
+        self, agents: AgentProfiles | None = None, owner_id: str | None = None
+    ) -> GameMeta:
         return GameMeta(
             game_id=self._game_id,
             config=self._config,
@@ -92,6 +94,7 @@ class GameLobby:
                 SeatName(seat=i, display_name=e.display_name) for i, e in enumerate(self.roster())
             ),
             agents=dict(agents or {}),
+            owner_id=owner_id,
         )
 
 
@@ -131,6 +134,7 @@ class GameRunner:
         agents: AgentProfiles | None = None,
         speech_audio: SpeechAudioSink | None = None,
         narration_enabled: bool = False,
+        owner_id: str | None = None,
     ) -> None:
         self._store = store
         self._config = config
@@ -144,6 +148,7 @@ class GameRunner:
         self._state: GameState | None = None
         self._speech_audio = speech_audio
         self._narration_enabled = narration_enabled
+        self._owner_id = owner_id
 
     @property
     def state(self) -> GameState:
@@ -159,6 +164,7 @@ class GameRunner:
                 SeatName(seat=i, display_name=e.display_name) for i, e in enumerate(self._roster)
             ),
             agents=self._agents,
+            owner_id=self._owner_id,
         )
         self._store.create_game(meta)
         res = create_game(self._config, self._game_id, roster=self._roster)

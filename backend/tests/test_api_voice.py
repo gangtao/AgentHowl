@@ -12,13 +12,13 @@ from fastapi.testclient import TestClient
 
 from app.agent.profile import VoiceSpec
 from app.engine.events import EventType
-from app.main import create_app
 from app.runtime.agent_library import InMemoryAgentLibrary
 from app.runtime.game_runner import RunnerTimeouts
 from app.runtime.narration import NarrationConfig
 from app.runtime.player_port import BotPlayerPort
 from app.runtime.tts import AudioPart, TtsError, TtsStatus
 from app.store.event_store import InMemoryEventStore
+from tests.conftest import login_as, make_app
 
 
 def _wav(seconds: float) -> bytes:
@@ -57,8 +57,8 @@ class FakeTts:
         )
 
 
-def _app(tmp_path: Path, tts: Any, public_history: bool | None = None) -> TestClient:
-    app = create_app(
+def _app(tmp_path: Path, tts: Any) -> TestClient:
+    app = make_app(
         store=InMemoryEventStore(),
         agent_library=InMemoryAgentLibrary(),
         timeouts=RunnerTimeouts(speech_sec=0.5, action_sec=0.5),
@@ -66,9 +66,10 @@ def _app(tmp_path: Path, tts: Any, public_history: bool | None = None) -> TestCl
         tts_client=tts,
         audio_dir=tmp_path / "audio",
         voices_dir=tmp_path / "voices",
-        public_history=public_history,
     )
-    return TestClient(app)
+    c = TestClient(app)
+    login_as(c, "tester", role="admin")
+    return c
 
 
 @pytest.fixture()
@@ -139,7 +140,7 @@ def test_voiced_game_streams_frames_and_stores_audio(client: TestClient, tmp_pat
     gid = created["game_id"]
     frames: list[dict[str, Any]] = []
     client.post(f"/api/v1/games/{gid}/start", json={}, headers=_auth(created["host_token"]))
-    with client.websocket_connect(f"/api/v1/ws?token={created['spectator_token']}") as ws:
+    with client.websocket_connect(f"/api/v1/ws?game_id={gid}&share={created['share_token']}") as ws:
         while True:
             f = ws.receive_json()
             frames.append(f)
@@ -182,20 +183,21 @@ def test_audio_part_endpoint_accepts_query_token_during_live_game(client: TestCl
     gid = created["game_id"]
     client.post(f"/api/v1/games/{gid}/start", json={}, headers=_auth(created["host_token"]))
     url: str | None = None
-    with client.websocket_connect(f"/api/v1/ws?token={created['spectator_token']}") as ws:
+    with client.websocket_connect(f"/api/v1/ws?game_id={gid}&share={created['share_token']}") as ws:
         while url is None:
             f = ws.receive_json()
             if f["type"] == "speech_audio":
                 url = f["url"]
     assert url is not None and url.startswith(f"/api/v1/games/{gid}/audio/")
 
-    # 匿名：未终局，_finished_or_handle 的无 token 分支必 401
-    assert client.get(url).status_code == 401
-    # ?token=<spectator_token>：按 query token 解析出合法 info，放行
-    r = client.get(url, params={"token": created["spectator_token"]})
+    # 匿名（无 cookie、无分享）：401
+    anon = TestClient(client.app)
+    assert anon.get(url).status_code == 401
+    # ?share=<share_token>：分享视角放行
+    r = anon.get(url, params={"share": created["share_token"]})
     assert r.status_code == 200 and r.headers["content-type"].startswith("audio/wav")
     # ?token=garbage：解析不出 info，401（而不是被悄悄当成匿名）
-    assert client.get(url, params={"token": "garbage"}).status_code == 401
+    assert anon.get(url, params={"token": "garbage"}).status_code == 401
 
 
 def test_unvoiced_game_has_no_audio(client: TestClient) -> None:
@@ -205,19 +207,17 @@ def test_unvoiced_game_has_no_audio(client: TestClient) -> None:
     assert client.get(f"/api/v1/games/{gid}/audio").json() == {}
 
 
-def test_audio_endpoints_follow_replay_policy(tmp_path: Path) -> None:
-    with _app(tmp_path, FakeTts(), public_history=False) as c:
+def test_audio_endpoints_follow_viewer_policy(tmp_path: Path) -> None:
+    """音频清单 / 文件鉴权同读端点：分享 token 或本人 cookie 可取，匿名 401，他局 token 403。"""
+    with _app(tmp_path, FakeTts()) as c:
+        anon = TestClient(c.app)
         created = _voiced_game(c)
         gid = created["game_id"]
-        # 进行中：匿名 401；本局观众 200
         c.post(f"/api/v1/games/{gid}/start", json={}, headers=_auth(created["host_token"]))
-        assert c.get(f"/api/v1/games/{gid}/audio").status_code == 401
-        assert (
-            c.get(
-                f"/api/v1/games/{gid}/audio", headers=_auth(created["spectator_token"])
-            ).status_code
-            == 200
-        )
+        assert anon.get(f"/api/v1/games/{gid}/audio").status_code == 401
+        share = {"share": created["share_token"]}
+        assert anon.get(f"/api/v1/games/{gid}/audio", params=share).status_code == 200
+        assert c.get(f"/api/v1/games/{gid}/audio").status_code == 200  # 本人 cookie
         other = c.post("/api/v1/games", json={"preset": "std_9_kill_side"}).json()
         assert (
             c.get(f"/api/v1/games/{gid}/audio", headers=_auth(other["gm_token"])).status_code == 403
@@ -226,9 +226,11 @@ def test_audio_endpoints_follow_replay_policy(tmp_path: Path) -> None:
         deadline = time.time() + 60
         while not (handle.task is not None and handle.task.done()) and time.time() < deadline:
             time.sleep(0.05)
-        # 开关关：终局匿名仍 401
-        assert c.get(f"/api/v1/games/{gid}/audio").status_code == 401
-    assert c.get("/api/v1/games/g_nope/audio").status_code in (401, 404)
+        # 终局后匿名没有分享链接仍 401
+        assert anon.get(f"/api/v1/games/{gid}/audio").status_code == 401
+        assert anon.get(f"/api/v1/games/{gid}/audio", params=share).status_code == 200
+        assert anon.get("/api/v1/games/g_nope/audio").status_code == 401
+        assert c.get("/api/v1/games/g_nope/audio").status_code == 404
 
 
 def test_voice_design_preview_and_fetch(client: TestClient, tmp_path: Path) -> None:
@@ -306,11 +308,9 @@ class SlowNarrationTts(FakeTts):
         yield AudioPart(index=0, wav=_wav(dur), duration_sec=dur)
 
 
-def _narr_app(
-    tmp_path: Path, tts: Any, events: frozenset[EventType], public_history: bool | None = None
-) -> TestClient:
+def _narr_app(tmp_path: Path, tts: Any, events: frozenset[EventType]) -> TestClient:
     cfg = NarrationConfig(speaker="uncle_fu", events=events, cache_dir=tmp_path / "narration")
-    app = create_app(
+    app = make_app(
         store=InMemoryEventStore(),
         agent_library=InMemoryAgentLibrary(),
         timeouts=RunnerTimeouts(speech_sec=0.5, action_sec=0.5),
@@ -318,10 +318,11 @@ def _narr_app(
         tts_client=tts,
         audio_dir=tmp_path / "audio",
         voices_dir=tmp_path / "voices",
-        public_history=public_history,
         narration_config=cfg,
     )
-    return TestClient(app)
+    c = TestClient(app)
+    login_as(c, "tester", role="admin")
+    return c
 
 
 def test_create_game_narration_requires_voice(client: TestClient) -> None:
@@ -404,12 +405,11 @@ def test_live_audio_filtered_by_viewer(tmp_path: Path) -> None:
                     seq = f["seq"]
             # 此刻 runner 正在等这句（0.6s）播完：对局仍在直播
             gm = _auth(created["gm_token"])
-            sp = _auth(created["spectator_token"])
+            sp = {"share": created["share_token"]}
             assert str(seq) in c.get(f"/api/v1/games/{gid}/audio", headers=gm).json()
-            assert str(seq) not in c.get(f"/api/v1/games/{gid}/audio", headers=sp).json()
+            assert str(seq) not in c.get(f"/api/v1/games/{gid}/audio", params=sp).json()
             assert c.get(url, headers=gm).status_code == 200
-            assert c.get(url, headers=sp).status_code == 404
-            assert c.get(url, params={"token": created["spectator_token"]}).status_code == 404
+            assert c.get(url, params=sp).status_code == 404
         _finish(c, created)
         # 终局公开：匿名全量
         assert c.get(url).status_code == 200

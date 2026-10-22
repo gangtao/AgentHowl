@@ -8,18 +8,20 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import FileResponse, JSONResponse
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import ValidationError
 
 from app.agent.profile import AgentProfiles, profile_for
+from app.api.auth import can_access, current_user, require_user
 from app.api.deps import (
     TokenInfo,
     TokenRegistry,
     get_games,
     get_tokens,
-    optional_token,
     require_kind,
     require_token,
 )
+from app.api.providers import visible_providers
 from app.api.views import event_json_for_viewer
 from app.engine.config import build_preset
 from app.engine.events import Event, EventType, Visibility
@@ -29,8 +31,10 @@ from app.runtime.agent_library import AgentLibraryStore
 from app.runtime.history import GameSummary, is_finished, list_history
 from app.runtime.player_port import NotYourTurnError, TurnPrompt
 from app.runtime.registry import GameHandle, GameRegistry
+from app.runtime.secret import share_token, verify_share_token
 from app.runtime.speech_audio import SpeechAudioSink
 from app.runtime.tts import TtsClient, TtsStatus
+from app.runtime.users import User, UserStore
 from app.schemas.actions import (
     ActionResponse,
     ToolCall,
@@ -60,12 +64,14 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/games", tags=["games"])
 tts_router = APIRouter(prefix="/tts", tags=["tts"])
+_bearer = HTTPBearer(auto_error=False)
 
 
 @router.post("")
 async def create_game_endpoint(
     req: CreateGameRequest,
     request: Request,
+    user: User = Depends(require_user),
     games: GameRegistry = Depends(get_games),
     tokens: TokenRegistry = Depends(get_tokens),
 ) -> CreateGameResponse:
@@ -85,6 +91,12 @@ async def create_game_endpoint(
                 status_code=400,
                 detail=f"TTS 服务不可用，无法开启语音：{status.detail or ''}".rstrip("："),
             )
+    # 普通用户只能引用自己的 provider；admin 不限（issue #114）
+    allowed: set[str] | None = (
+        None
+        if user.role == "admin"
+        else {p.provider_id for p in visible_providers(request.app.state.provider_store, user)}
+    )
     try:
         handle = games.create(
             config,
@@ -95,20 +107,23 @@ async def create_game_endpoint(
             ai_model_speech=req.ai_model_speech,
             voice=req.voice,
             narration=req.narration,
+            owner_id=user.user_id,
+            allowed_providers=allowed,
+            require_provider=user.role != "admin",
         )
     except ValueError as exc:
         raise ToolCallError(f"agents 非法：{exc}") from exc
-    host_token = tokens.issue(TokenInfo(game_id=handle.game_id, seat=None, kind="HOST"))
-    spectator_token = (
-        tokens.issue(TokenInfo(game_id=handle.game_id, seat=None, kind="SPECTATOR"))
-        if req.allow_spectators
-        else None
+    host_token = tokens.issue(
+        TokenInfo(game_id=handle.game_id, seat=None, kind="HOST", user_id=user.user_id)
     )
-    gm_token = tokens.issue(TokenInfo(game_id=handle.game_id, seat=None, kind="GM"))
+    share = share_token(request.app.state.secret, handle.game_id) if req.allow_spectators else None
+    gm_token = tokens.issue(
+        TokenInfo(game_id=handle.game_id, seat=None, kind="GM", user_id=user.user_id)
+    )
     return CreateGameResponse(
         game_id=handle.game_id,
         host_token=host_token,
-        spectator_token=spectator_token,
+        share_token=share,
         gm_token=gm_token,
         # 回显 handle.config 而非请求侧 config：未指定 seed 时 registry 会抽一个随机种子写入
         config=handle.config.model_dump(mode="json"),
@@ -122,12 +137,23 @@ async def create_game_endpoint(
 def join_endpoint(
     game_id: str,
     req: JoinRequest,
+    creds: HTTPAuthorizationCredentials | None = Depends(_bearer),
+    user: User | None = Depends(current_user),
     games: GameRegistry = Depends(get_games),
     tokens: TokenRegistry = Depends(get_tokens),
 ) -> JoinResponse:
+    """入座：登录会话（记录 user_id），或本局 host_token（外部 Agent 客户端，user_id=None）。"""
+    user_id: str | None
+    if user is not None:
+        user_id = user.user_id
+    else:
+        info = tokens.resolve(creds.credentials) if creds is not None else None
+        if info is None or info.kind != "HOST" or info.game_id != game_id:
+            raise HTTPException(status_code=401, detail="入座需登录，或携带本局 host_token")
+        user_id = None
     handle = games.get(game_id)
     seat = games.join(handle, req.display_name, req.player_type)
-    token = tokens.issue(TokenInfo(game_id=game_id, seat=seat, kind="PLAYER"))
+    token = tokens.issue(TokenInfo(game_id=game_id, seat=seat, kind="PLAYER", user_id=user_id))
     return JoinResponse(player_token=token, seat=seat, ws_url=f"/api/v1/ws?token={token}")
 
 
@@ -150,40 +176,134 @@ def _handle_for(games: GameRegistry, game_id: str) -> GameHandle:
     return handle
 
 
-def _public_history(request: Request) -> bool:
-    return bool(getattr(request.app.state, "public_history", True))
+def viewer_of(info: TokenInfo) -> Any:
+    """token → 可见性 viewer：座位号 / "SPECTATOR" / "GM"（GM 全量，issue #26）。"""
+    if info.kind == "PLAYER":
+        return info.seat
+    return "GM" if info.kind == "GM" else "SPECTATOR"
 
 
-def _require_history_access(info: TokenInfo | None, public: bool) -> None:
-    if info is None and not public:
-        raise HTTPException(status_code=401, detail="缺少 Bearer token")
+def _owner_of(games: GameRegistry, game_id: str) -> str | None:
+    """对局归属：活 handle 优先；否则读事件文件首行；都没有 → 404。"""
+    try:
+        return games.get(game_id).owner_id
+    except LookupError:
+        pass
+    try:
+        return games.store.load_meta(game_id).owner_id
+    except (LookupError, StoreError):
+        raise HTTPException(status_code=404, detail=f"对局不存在：{game_id}") from None
+
+
+def _finished(games: GameRegistry, game_id: str) -> bool:
+    """对局是否已终局；既无 handle 又无事件文件 → 404（不落到全局 500）。"""
+    try:
+        handle = games.get(game_id)
+    except LookupError:
+        try:
+            return is_finished(games.store.load_events(game_id))
+        except (LookupError, StoreError):
+            raise HTTPException(status_code=404, detail=f"对局不存在：{game_id}") from None
+    return handle.started and handle.live_state().phase == Phase.GAME_OVER
+
+
+def _require_finished(games: GameRegistry, game_id: str) -> None:
+    if not _finished(games, game_id):
+        raise HTTPException(status_code=403, detail="对局未结束，上帝视角回放未开放")
+
+
+def _share_viewer(games: GameRegistry, secret: bytes, game_id: str, share: str) -> TokenInfo:
+    """分享 token（issue #114）：直播期间要求 allow_spectators；终局一律放行。"""
+    if not verify_share_token(secret, game_id, share):
+        raise HTTPException(status_code=401, detail="分享链接无效")
+    try:
+        handle: GameHandle | None = games.get(game_id)
+    except LookupError:
+        handle = None
+    if handle is not None and not handle.allow_spectators and not _finished(games, game_id):
+        raise HTTPException(status_code=403, detail="该对局不开放观战")
+    return TokenInfo(game_id=game_id, seat=None, kind="SPECTATOR")
+
+
+def _session_viewer(games: GameRegistry, user: User | None, game_id: str) -> TokenInfo:
+    """登录态：建局者 / admin → GM；其他人 → 404（不泄露存在性）；未登录 → 401。"""
+    if user is None:
+        raise HTTPException(status_code=401, detail="请登录或使用分享链接")
+    if not can_access(user, _owner_of(games, game_id)):
+        raise HTTPException(status_code=404, detail=f"对局不存在：{game_id}")
+    return TokenInfo(game_id=game_id, seat=None, kind="GM", user_id=user.user_id)
+
+
+def resolve_viewer(
+    game_id: str,
+    request: Request,
+    token: str | None = Query(default=None),
+    share: str | None = Query(default=None),
+    creds: HTTPAuthorizationCredentials | None = Depends(_bearer),
+    user: User | None = Depends(current_user),
+    games: GameRegistry = Depends(get_games),
+    tokens: TokenRegistry = Depends(get_tokens),
+) -> TokenInfo:
+    """读端点统一视角解析（spec §6）：对局 token → 分享 token → 会话归属 → 401。
+    `?token=` 与 Bearer 等价（<audio>/WS 发不出头）。"""
+    raw = creds.credentials if creds is not None else token
+    if raw:
+        info = tokens.resolve(raw)
+        if info is None:
+            raise HTTPException(status_code=401, detail="token 无效")
+        if info.game_id != game_id:
+            raise HTTPException(status_code=403, detail="token 与对局不匹配")
+        return info
+    if share:
+        return _share_viewer(games, request.app.state.secret, game_id, share)
+    return _session_viewer(games, user, game_id)
+
+
+def _reject_host(info: TokenInfo) -> None:
+    if info.kind == "HOST":
+        raise HTTPException(status_code=403, detail="host_token 无读流权限")
 
 
 @router.get("")
 def list_games_endpoint(
     request: Request,
-    info: TokenInfo | None = Depends(optional_token),
+    user: User = Depends(require_user),
     games: GameRegistry = Depends(get_games),
 ) -> list[GameSummary]:
-    """历史对局列表（issue #98）：文件里的全部对局 + registry 的进行中状态。"""
-    _require_history_access(info, _public_history(request))
-    return list_history(games.store, games)
+    """历史对局列表（issue #98）：按归属过滤（本人 / admin 全部），补 owner_name 与分享 token。"""
+    users: UserStore = request.app.state.users
+    secret: bytes = request.app.state.secret
+    out: list[GameSummary] = []
+    for s in list_history(games.store, games):
+        if not can_access(user, s.owner_id):
+            continue
+        owner = users.get(s.owner_id) if s.owner_id else None
+        out.append(
+            s.model_copy(
+                update={
+                    "owner_name": owner.username if owner else None,
+                    "share_token": share_token(secret, s.game_id),
+                }
+            )
+        )
+    return out
 
 
 @router.delete("/{game_id}", status_code=204, response_class=Response)
 def delete_game_endpoint(
     game_id: str,
     request: Request,
+    user: User = Depends(require_user),
     games: GameRegistry = Depends(get_games),
     tokens: TokenRegistry = Depends(get_tokens),
 ) -> Response:
     """删除历史对局（issue #100）：删事件文件 + 摘 handle + 作废该局 token。
 
-    权限跟随 AGENTHOWL_PUBLIC_HISTORY：开关关 → 一律 404（功能不存在，带 token 也一样）。
+    仅建局者 / admin 可删；他人与不存在一律 404（issue #114）。
     有 handle 且 task 未结束（含未开局）→ 409；已终局 / 崩溃 / 仅存文件的中断局都可删。
     不触碰 agent 跨局记忆（experience）——那是档案的数据，不随对局走。
     """
-    if not _public_history(request):
+    if not can_access(user, _owner_of(games, game_id)):
         raise HTTPException(status_code=404, detail=f"对局不存在：{game_id}")
     try:
         handle: GameHandle | None = games.get(game_id)
@@ -209,78 +329,6 @@ def delete_game_endpoint(
     return Response(status_code=204)
 
 
-def _finished_from_store(games: GameRegistry, game_id: str) -> GameMeta:
-    """registry 没有该局时退回事件文件：存在且已终局才开放，否则与现状同样的 404/403。
-
-    注：GameNotFoundError 是 StoreError 的子类而非 LookupError（核对 event_store.py），
-    两者都要捕获才能把"文件不存在"映射成 404（而非落到全局 StoreError→500 handler）。
-    非法 game_id（_check_game_id 拒绝的字符）与损坏事件文件也从 StoreError 派生或直出——
-    同样映射成 404，而不是把文件名/解析错误回给匿名访客（终审 m1）。
-    """
-    try:
-        meta = games.store.load_meta(game_id)
-    except (LookupError, GameNotFoundError, StoreError):
-        raise HTTPException(status_code=404, detail=f"对局不存在：{game_id}") from None
-    if not is_finished(games.store.load_events(game_id)):
-        raise HTTPException(status_code=403, detail="对局未结束，上帝视角回放未开放")
-    return meta
-
-
-def _finished_or_handle(
-    games: GameRegistry,
-    game_id: str,
-    info: TokenInfo | None,
-    public: bool,
-    *kinds: str,
-    require_finished: bool = True,
-) -> None:
-    """三个终局接口共用的门槛（issue #98 fix round 1，评审 Blocker 1 / Ruling 3-4）。
-
-    有 handle（对局在本进程注册过）：
-      - 无 token：仅当开关开 + 已终局才放行，否则 401——与改造前一致，未变。
-      - 有 token：开关开且已终局时，**任意有效 token 都降级为匿名放行**——不再校验 kind /
-        game_id（既然该局对匿名完全公开，持 token 的访问者不该比匿名更受限，这是刻意的不对称：
-        "终局 + 公开" 这一条件本身已经是最宽的闸门，token 只在它不满足时才需要起约束作用）；
-        否则（未终局，或开关关）按原逻辑校验 kind，并按 `require_finished` 决定是否额外要求
-        GAME_OVER —— `/speeches` 传 `False` 以保留"进行中/未开局也可读"的现状，`/replay` `/meta`
-        保持默认 `True`。
-
-    无 handle（registry 没有该局，典型如重启后换了新 registry）：
-      - 开关关：不走 store 回退，与改造前严格一致——无 token 401（`require_token` 当年的
-        行为：没带 token 根本进不到 `_handle_for`），带了（哪怕有效）token 则 404（`games.get`
-        的裸 `LookupError`），都不理会 kind。
-      - 开关开：退回 store；存在性/终局判断（`_finished_from_store` → 404/403）先于任何 token
-        逻辑；通过后与上面"有 handle + 已终局 + 公开"同理，不再校验 kind。
-    """
-    try:
-        handle = games.get(game_id)
-    except LookupError:
-        if not public:
-            if info is None:
-                raise HTTPException(status_code=401, detail="缺少 Bearer token") from None
-            raise HTTPException(status_code=404, detail=f"对局不存在：{game_id}") from None
-        _finished_from_store(games, game_id)
-        return
-    # 匿名 401 必须先于 ensure_healthy（终审 M1）：live_state() 只读 runner.state，不碰 task
-    # 健康状态，崩溃 runner 不会让这行炸；这样未认证访客拿不到崩溃对局的内部异常文本。
-    finished = handle.started and handle.live_state().phase == Phase.GAME_OVER
-    if info is None and not (public and finished):
-        raise HTTPException(status_code=401, detail="缺少 Bearer token")
-    handle.ensure_healthy()
-    if info is None or (public and finished):
-        return
-    require_kind(info, game_id, *kinds)
-    if require_finished and not finished:
-        raise HTTPException(status_code=403, detail="对局未结束，上帝视角回放未开放")
-
-
-def _viewer_for(info: TokenInfo) -> Any:
-    """token → 可见性 viewer：座位号 / "SPECTATOR" / "GM"（GM 全量，issue #26）。"""
-    if info.kind == "PLAYER":
-        return info.seat
-    return "GM" if info.kind == "GM" else "SPECTATOR"
-
-
 def games_store_events(games: GameRegistry, game_id: str) -> list[Event]:
     return games.store.load_events(game_id)
 
@@ -288,11 +336,11 @@ def games_store_events(games: GameRegistry, game_id: str) -> list[Event]:
 @router.get("/{game_id}/state")
 def state_endpoint(
     game_id: str,
-    info: TokenInfo = Depends(require_token),
+    info: TokenInfo = Depends(resolve_viewer),
     games: GameRegistry = Depends(get_games),
 ) -> dict[str, Any]:
     handle = _handle_for(games, game_id)
-    require_kind(info, game_id, "PLAYER", "SPECTATOR", "GM")
+    _reject_host(info)
     live = handle.live_state()  # 未开局 → LobbyError(409)
     if info.kind == "PLAYER":
         assert info.seat is not None
@@ -321,26 +369,15 @@ def state_endpoint(
 @router.get("/{game_id}/speeches")
 def speeches_endpoint(
     game_id: str,
-    request: Request,
     round: int | None = Query(default=None),
     phase: str | None = Query(default=None),
-    info: TokenInfo | None = Depends(optional_token),
+    _info: TokenInfo = Depends(resolve_viewer),
     games: GameRegistry = Depends(get_games),
 ) -> list[SpeechItem]:
-    _finished_or_handle(
-        games,
-        game_id,
-        info,
-        _public_history(request),
-        "PLAYER",
-        "SPECTATOR",
-        "GM",
-        require_finished=False,  # 进行中/未开局也可读：规格 §2.2 要求 /speeches 行为完全同现状
-    )
     try:
         handle: GameHandle | None = games.get(game_id)
     except LookupError:
-        handle = None  # 无活 handle：已经过 _finished_or_handle 校验，必已终局，事件齐全
+        handle = None  # 无活 handle：resolve_viewer 已校验归属 / 分享，事件文件齐全
     if handle is not None:
         handle.ensure_healthy()
         if not handle.started:
@@ -396,14 +433,14 @@ def speeches_endpoint(
 def events_endpoint(
     game_id: str,
     from_seq: int = Query(default=0),
-    info: TokenInfo = Depends(require_token),
+    info: TokenInfo = Depends(resolve_viewer),
     games: GameRegistry = Depends(get_games),
 ) -> list[dict[str, Any]]:
     handle = _handle_for(games, game_id)
-    require_kind(info, game_id, "PLAYER", "SPECTATOR", "GM")
+    _reject_host(info)
     if not handle.started:
         return []
-    viewer: Any = _viewer_for(info)
+    viewer: Any = viewer_of(info)
     events = games.store.load_events(game_id, from_seq=from_seq)
     visible = visible_events(handle.live_state(), events, viewer)
     return [event_json_for_viewer(e, viewer) for e in visible]
@@ -412,30 +449,24 @@ def events_endpoint(
 @router.get("/{game_id}/replay")
 def replay_endpoint(
     game_id: str,
-    request: Request,
-    info: TokenInfo | None = Depends(optional_token),
+    _info: TokenInfo = Depends(resolve_viewer),
     games: GameRegistry = Depends(get_games),
 ) -> list[dict[str, Any]]:
-    _finished_or_handle(
-        games, game_id, info, _public_history(request), "PLAYER", "SPECTATOR", "HOST", "GM"
-    )
+    _require_finished(games, game_id)
     return [event_to_json(e) for e in games.store.load_events(game_id)]
 
 
 @router.get("/{game_id}/meta")
 def meta_endpoint(
     game_id: str,
-    request: Request,
-    info: TokenInfo | None = Depends(optional_token),
+    _info: TokenInfo = Depends(resolve_viewer),
     games: GameRegistry = Depends(get_games),
 ) -> GameMeta:
     """对局头记录（配置 / 名单 / 各座位实际生效的 Agent 档案，issue #64）。
 
     与 /replay 同一门槛：终局后才开放——档案含模型与技能等 GM 层信息，不经 observation 暴露。
     """
-    _finished_or_handle(
-        games, game_id, info, _public_history(request), "PLAYER", "SPECTATOR", "HOST", "GM"
-    )
+    _require_finished(games, game_id)
     return games.store.load_meta(game_id)
 
 
@@ -443,25 +474,14 @@ def meta_endpoint(
 def avatars_endpoint(
     game_id: str,
     request: Request,
-    info: TokenInfo | None = Depends(optional_token),
+    _info: TokenInfo = Depends(resolve_viewer),
     games: GameRegistry = Depends(get_games),
 ) -> dict[str, str]:
-    """座位 → 头像 id（issue #102）。直播中：本局任意有效 token；终局：公开策略同 /replay。
+    """座位 → 头像 id（issue #102）。视角解析同其他读端点（resolve_viewer）。
 
     来源：已开局取 GameMeta.agents（开局时实际生效的档案，真人占座已剔除），否则取 handle.agents
     按 profile_for 展开 "*"。只含有头像的座位；头像 id 本就是公开资源引用。
     """
-    _finished_or_handle(
-        games,
-        game_id,
-        info,
-        _public_history(request),
-        "PLAYER",
-        "SPECTATOR",
-        "HOST",
-        "GM",
-        require_finished=False,
-    )
     try:
         handle: GameHandle | None = games.get(game_id)
     except LookupError:
@@ -504,12 +524,10 @@ def avatars_endpoint(
     return out
 
 
-def _audio_visible_seqs(
-    games: GameRegistry, game_id: str, info: TokenInfo | None
-) -> set[int] | None:
+def _audio_visible_seqs(games: GameRegistry, game_id: str, info: TokenInfo) -> set[int] | None:
     """直播期间按 token 视角可见的事件 seq 集合；None = 不过滤（终局 / GM / 未开局）。
     与 /replay 口径一致：终局后全量；HOST 按观众处理。唯一可见性判定是 visible_events。"""
-    if info is None or info.kind == "GM":
+    if info.kind == "GM":
         return None
     try:
         handle = games.get(game_id)
@@ -517,7 +535,7 @@ def _audio_visible_seqs(
         return None
     if not handle.started or handle.live_state().phase == Phase.GAME_OVER:
         return None
-    viewer: Any = _viewer_for(info)
+    viewer: Any = viewer_of(info)
     events = games.store.load_events(game_id)
     return {e.seq for e in visible_events(handle.live_state(), events, viewer)}
 
@@ -526,22 +544,11 @@ def _audio_visible_seqs(
 def audio_manifest_endpoint(
     game_id: str,
     request: Request,
-    info: TokenInfo | None = Depends(optional_token),
+    info: TokenInfo = Depends(resolve_viewer),
     games: GameRegistry = Depends(get_games),
 ) -> dict[str, list[dict[str, Any]]]:
     """发言音频清单 {seq: [{part, duration}]}（issue #103）；权限同 /replay，
     直播期间按视角过滤（issue #110）。"""
-    _finished_or_handle(
-        games,
-        game_id,
-        info,
-        _public_history(request),
-        "PLAYER",
-        "SPECTATOR",
-        "HOST",
-        "GM",
-        require_finished=False,
-    )
     sink: SpeechAudioSink = request.app.state.speech_audio
     manifest = sink.manifest(game_id)
     allowed = _audio_visible_seqs(games, game_id, info)
@@ -556,31 +563,11 @@ def audio_part_endpoint(
     seq: int,
     part: int,
     request: Request,
-    token: str | None = Query(default=None),
-    info: TokenInfo | None = Depends(optional_token),
-    tokens: TokenRegistry = Depends(get_tokens),
+    info: TokenInfo = Depends(resolve_viewer),
     games: GameRegistry = Depends(get_games),
 ) -> FileResponse:
-    """发言音频文件（issue #103）；权限同 /replay，另外接受 `?token=` 查询参数（fix round 1）：
-    浏览器 `<audio>` 元素发不出 Authorization 头，直播期间（未终局）这个端点走
-    `_finished_or_handle` 的「无 token 必须 401」分支——没有这条 query token 后路，
-    直播配音在匿名场景下（含公开历史关闭时的正常对局内观众）一句都放不出来。
-    等价于 WS 端点早就有的 `?token=` 先例（`wsUrl()`）。直播期间按视角过滤（issue #110）。"""
-    if info is None and token is not None:
-        info = tokens.resolve(token)
-        if info is None:
-            raise HTTPException(status_code=401, detail="token 无效")
-    _finished_or_handle(
-        games,
-        game_id,
-        info,
-        _public_history(request),
-        "PLAYER",
-        "SPECTATOR",
-        "HOST",
-        "GM",
-        require_finished=False,
-    )
+    """发言音频文件（issue #103）；视角解析同 /replay（`?token=` / `?share=` 均可，
+    浏览器 `<audio>` 发不出 Authorization 头）。直播期间按视角过滤（issue #110）。"""
     sink: SpeechAudioSink = request.app.state.speech_audio
     allowed = _audio_visible_seqs(games, game_id, info)
     if allowed is not None and seq not in allowed:
@@ -596,7 +583,7 @@ def audio_part_endpoint(
 
 
 @tts_router.get("/status")
-async def tts_status_endpoint(request: Request) -> TtsStatus:
+async def tts_status_endpoint(request: Request, _: User = Depends(require_user)) -> TtsStatus:
     """TTS 服务探测状态（issue #103）；响应绝不含 api key。"""
     tts: TtsClient = request.app.state.tts
     return await tts.probe()
