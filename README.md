@@ -205,7 +205,7 @@ make fe-check         # 或 cd frontend && npm run check —— 确认 TS reduce
 
 **模型服务（Providers 页）**：`/api/v1/providers` CRUD + `/test`（连通性探测）+ `/models`
 （拉取可用模型列表），供建局 / Agent 编辑器的 `ModelSelect` 选用，免去每次手填模型字符串。
-密钥落盘在 `backend/data/providers/*.json`，**文件权限 0600、明文存储**——面向本地单用户部署，
+密钥落盘在 `backend/data/providers/*.json`，**文件权限 0600、明文存储**——按用户归属（BYOK：每个用户只用、只见自己的密钥，admin 可见全部），
 不加密、无轮换；API 响应一律 `ProviderPublic`，**永不回传明文密钥**，只给 `has_key` 与密钥
 末 4 位 `key_hint`。
 
@@ -269,8 +269,9 @@ uv run uvicorn app.main:app --reload   # http://localhost:8000
 
 ```bash
 # 0) 登录（建局需要登录；cookie 存 cookies.txt。首次先 POST $BASE/auth/register）
+# 注意：纯 http（本地 make serve）下须设 AGENTHOWL_COOKIE_SECURE=0，否则 Secure cookie 会被 curl/浏览器丢弃
 curl -s -c cookies.txt -b cookies.txt -X POST $BASE/auth/login -H 'Content-Type: application/json' \
-  -d '{"username":"alice","password":"..."}'
+  -d '{"identifier":"alice","password":"..."}'
 
 # 1) 建局：9 人屠边预设，空位由 LLM Agent 填充（ai_model 省略则用内置随机 bot）
 curl -s -c cookies.txt -b cookies.txt -X POST $BASE/games -H 'Content-Type: application/json' \
@@ -328,8 +329,8 @@ Providers 页用，详见「前端 / Frontend」小节）：
 
 ```bash
 curl -s -b cookies.txt $BASE/agents                                    # 已存 Agent 档案
-curl -s $BASE/skills                                     # 技能包清单
-curl -s $BASE/presets                                     # 板子摘要
+curl -s -b cookies.txt $BASE/skills                                     # 技能包清单
+curl -s -b cookies.txt $BASE/presets                                     # 板子摘要
 curl -s -b cookies.txt $BASE/providers                                   # 已配置模型服务（不含明文密钥）
 ```
 
