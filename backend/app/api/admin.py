@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import threading
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
@@ -9,6 +11,10 @@ from app.api.auth import get_users, require_admin
 from app.runtime.users import Role, Status, User, UserPublic, UserStore, now_iso
 
 router = APIRouter(prefix="/admin", tags=["admin"])
+
+# 单进程守卫：同步 handler 跑在线程池里，「统计 active admin → 写入」必须串行，
+# 否则两个管理员互相降级会同时通过检查而让 active admin 归零。多进程部署需换成库级事务。
+_PATCH_LOCK = threading.Lock()
 
 
 class PatchUserRequest(BaseModel):
@@ -41,20 +47,21 @@ def patch_user(
     me: User = Depends(require_admin),
     users: UserStore = Depends(get_users),
 ) -> UserPublic:
-    target = _get(users, user_id)
-    if target.user_id == me.user_id:
-        raise HTTPException(status_code=400, detail="不能修改自己的角色或状态")
-    role = body.role if body.role is not None else target.role
-    status = body.status if body.status is not None else target.status
-    loses_admin = target.role == "admin" and target.status == "active"
-    stays_admin = role == "admin" and status == "active"
-    if loses_admin and not stays_admin and _active_admins(users) <= 1:
-        raise HTTPException(status_code=400, detail="至少保留一个可用的管理员")
-    updated = target.model_copy(update={"role": role, "status": status})
-    users.put(updated)
-    if status == "disabled":
-        users.delete_sessions_of(target.user_id)
-    return updated.public()
+    with _PATCH_LOCK:
+        target = _get(users, user_id)
+        if target.user_id == me.user_id:
+            raise HTTPException(status_code=400, detail="不能修改自己的角色或状态")
+        role = body.role if body.role is not None else target.role
+        status = body.status if body.status is not None else target.status
+        loses_admin = target.role == "admin" and target.status == "active"
+        stays_admin = role == "admin" and status == "active"
+        if loses_admin and not stays_admin and _active_admins(users) <= 1:
+            raise HTTPException(status_code=400, detail="至少保留一个可用的管理员")
+        updated = target.model_copy(update={"role": role, "status": status})
+        users.put(updated)
+        if status == "disabled":
+            users.delete_sessions_of(target.user_id)
+        return updated.public()
 
 
 @router.post("/users/{user_id}/verify")

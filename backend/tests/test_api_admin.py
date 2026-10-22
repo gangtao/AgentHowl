@@ -56,3 +56,20 @@ def test_admin_cannot_lock_itself_out() -> None:
         assert root2.get("/api/v1/admin/users").status_code == 403
         r = root2.patch(f"/api/v1/admin/users/{uid}", json={"role": "user"})
         assert r.status_code == 403
+
+
+def test_concurrent_cross_demotion_keeps_one_admin() -> None:
+    """两个 admin 并发互相降级：串行化后最多一个成功，active admin 不归零。"""
+    from concurrent.futures import ThreadPoolExecutor
+
+    app = make_app()
+    with TestClient(app) as a, TestClient(app) as b:
+        ma = login_as(a, "adm_a", role="admin")
+        mb = login_as(b, "adm_b", role="admin")
+        with ThreadPoolExecutor(max_workers=2) as ex:
+            fa = ex.submit(a.patch, f"/api/v1/admin/users/{mb['user_id']}", json={"role": "user"})
+            fb = ex.submit(b.patch, f"/api/v1/admin/users/{ma['user_id']}", json={"role": "user"})
+            codes = sorted([fa.result().status_code, fb.result().status_code])
+        assert codes[0] == 200 and codes[1] in (400, 403), codes
+        admins = [u for u in app.state.users.list() if u.role == "admin" and u.status == "active"]
+        assert len(admins) == 1
