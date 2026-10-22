@@ -135,7 +135,6 @@ def test_create_game_voice_flag_and_probe(tmp_path: Path) -> None:
         )
 
 
-@pytest.mark.xfail(strict=True, reason="Task 7")
 def test_voiced_game_streams_frames_and_stores_audio(client: TestClient, tmp_path: Path) -> None:
     created = _voiced_game(client)
     gid = created["game_id"]
@@ -176,7 +175,6 @@ def test_voiced_game_streams_frames_and_stores_audio(client: TestClient, tmp_pat
     assert not (tmp_path / "audio" / gid).exists()
 
 
-@pytest.mark.xfail(strict=True, reason="Task 7")
 def test_audio_part_endpoint_accepts_query_token_during_live_game(client: TestClient) -> None:
     """fix round 1（issue #103）：`<audio>` 元素发不出 Authorization 头，直播期间（未终局）
     这个端点原先只认 Bearer，匿名必 401——配音一句都放不出来。现在额外接受 `?token=`，

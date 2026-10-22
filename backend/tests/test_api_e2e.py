@@ -24,7 +24,6 @@ def client() -> Iterator[TestClient]:
         yield c
 
 
-@pytest.mark.xfail(strict=True, reason="Task 7")
 def test_acceptance_12_ai_full_game_via_api(client: TestClient) -> None:
     """判据 1：12 AI 全自动完整对局经 API/WS 跑通（非 CLI 直连引擎）。"""
     created = client.post(
@@ -151,7 +150,6 @@ def test_acceptance_authz_matrix(client: TestClient) -> None:
     _wait_done(client, other_gid)
 
 
-@pytest.mark.xfail(strict=True, reason="Task 7")
 def test_acceptance_reconnect_restores_view(client: TestClient) -> None:
     """判据 5：断线重连恢复视角 —— WS 补发 == REST 后缀 == 错过的可见事件。"""
     gid, created = _start_ai_game(client, seed=11)

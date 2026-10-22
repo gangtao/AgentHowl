@@ -402,7 +402,6 @@ def test_events_endpoint_filters_skills_meta_from_spectators_but_replay_not() ->
     assert all("wall_ts" in e["meta"] for e in events), "所有事件应有 wall_ts"
 
 
-@pytest.mark.xfail(strict=True, reason="Task 7")
 def test_ws_replay_frames_do_not_leak_skills() -> None:
     """F2（终审）：WS 实时 + 补发共用的 _build_event_frames 同样不外泄 skills
     （Task 7 起用 ?game_id=&share= 连接）。"""

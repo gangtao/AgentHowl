@@ -19,10 +19,11 @@ import contextlib
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, HTTPException, Query, WebSocket, WebSocketDisconnect
 
+from app.api.auth import user_from_cookie
 from app.api.deps import TokenInfo
-from app.api.rest import _your_turn_payload
+from app.api.rest import _session_viewer, _share_viewer, _your_turn_payload, viewer_of
 from app.api.views import event_json_for_viewer
 from app.engine.events import Event, EventType
 from app.engine.observation import visible_events
@@ -74,8 +75,13 @@ def _seq_round_map(gm_events: list[Event]) -> dict[int, int]:
 
 @router.websocket("/ws")
 async def ws_endpoint(
-    ws: WebSocket, token: str = Query(...), from_seq: int = Query(default=0)
+    ws: WebSocket,
+    token: str | None = Query(default=None),
+    game_id: str | None = Query(default=None),
+    share: str | None = Query(default=None),
+    from_seq: int = Query(default=0),
 ) -> None:
+    """三种入口：?token=（对局 token）| ?game_id=&share=（分享链接）| ?game_id=（会话 cookie）。"""
     # accept 必须在任何 close 之前：uvicorn 会把 accept 前的 close 折叠成 HTTP 403
     # 握手失败，浏览器端 WebSocket 只能看到 CloseEvent.code === 1006，拿不到下面
     # 这些 4xxx 关闭码（Starlette TestClient 在 accept 前也能送达 code，故测试未发现）。
@@ -83,7 +89,19 @@ async def ws_endpoint(
 
     tokens = ws.app.state.tokens
     games: GameRegistry = ws.app.state.games
-    info: TokenInfo | None = tokens.resolve(token)
+    info: TokenInfo | None = None
+    if token:
+        info = tokens.resolve(token)
+    elif game_id:
+        try:
+            if share:
+                info = _share_viewer(games, ws.app.state.secret, game_id, share)
+            else:
+                user = user_from_cookie(ws.app.state.users, ws.cookies)
+                info = _session_viewer(games, user, game_id)
+        except HTTPException as exc:
+            await ws.close(code={403: 4403, 404: 4404}.get(exc.status_code, 4401))
+            return
     if info is None:
         await ws.close(code=4401)
         return
@@ -100,9 +118,7 @@ async def ws_endpoint(
         await ws.close(code=4409)
         return
 
-    viewer: Any = (
-        info.seat if info.kind == "PLAYER" else ("GM" if info.kind == "GM" else "SPECTATOR")
-    )
+    viewer: Any = viewer_of(info)
     out_q: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
 
     async def on_events(events: list[Event]) -> None:

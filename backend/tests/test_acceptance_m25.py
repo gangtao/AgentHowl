@@ -67,7 +67,6 @@ def agent_client() -> Iterator[TestClient]:
         yield c
 
 
-@pytest.mark.xfail(strict=True, reason="Task 7")
 def test_all_agentplayer_game_via_http_ws(agent_client: TestClient) -> None:
     """判据 1：全 AgentPlayer（LLM 端口，mock 客户端）经 ASGI app + WS 跑到 GAME_OVER。"""
     created = agent_client.post(
@@ -119,7 +118,6 @@ def _drain_ws_events(client: TestClient, query: str) -> list[dict[str, Any]]:
     return out
 
 
-@pytest.mark.xfail(strict=True, reason="Task 7")
 def test_ws_isolation_matrix_wolf_villager_spectator(client: TestClient) -> None:
     """判据 6：活 WS 流上——狼见 WOLVES、民不见；任何非 GM 流永不见 GM_ONLY。"""
     from app.api.deps import TokenInfo

@@ -29,7 +29,6 @@ def client() -> Iterator[TestClient]:
         yield c
 
 
-@pytest.mark.xfail(strict=True, reason="Task 7")
 def test_spectator_stream_public_only_until_game_over(client: TestClient) -> None:
     gid, created = _start_ai_game(client, seed=42)
     frames: list[dict[str, Any]] = []
@@ -129,7 +128,6 @@ def test_human_plays_whole_game_via_ws(client: TestClient) -> None:
     assert handle.task.done() and handle.task.result().winner is not None
 
 
-@pytest.mark.xfail(strict=True, reason="Task 7")
 def test_reconnect_backfills_from_seq(client: TestClient) -> None:
     gid, created = _start_ai_game(client, seed=7)
     spec = created["share_token"]
@@ -153,7 +151,6 @@ def test_reconnect_backfills_from_seq(client: TestClient) -> None:
     assert [e["seq"] for e in got] == [e["seq"] for e in rest_events]
 
 
-@pytest.mark.xfail(strict=True, reason="Task 7")
 def test_reconnect_to_running_game_loses_no_events(client: TestClient) -> None:
     """复现 issue #30 复审 Critical #1：补发与订阅之间若有窗口，运行中对局会丢事件。
 
@@ -184,7 +181,6 @@ def test_reconnect_to_running_game_loses_no_events(client: TestClient) -> None:
     assert got_seqs == [e["seq"] for e in rest_events]  # 完整、无洞、无重复
 
 
-@pytest.mark.xfail(strict=True, reason="Task 7")
 def test_backfilled_phase_change_round_is_historical(client: TestClient) -> None:
     """复现 issue #30 复审 Critical #2：补发的 phase_change 帧不得携带终局 round。"""
     gid, created = _start_ai_game(client, seed=7)
@@ -314,3 +310,42 @@ def test_ws_gm_stream_is_unfiltered(client: TestClient) -> None:
             if frame["type"] == "game_over":
                 break
     assert {"PUBLIC", "GM_ONLY"} <= vis
+
+
+def test_ws_share_and_cookie_entries() -> None:
+    """三种入口：share / cookie 会话；无效凭据关闭码 4401。"""
+    app = make_app()
+    with TestClient(app) as owner, TestClient(app) as anon, TestClient(app) as bob:
+        login_as(owner, "alice")
+        login_as(bob, "bob")
+        created = owner.post("/api/v1/games", json={"preset": "std_9_kill_side"}).json()
+        gid = created["game_id"]
+        owner.post(
+            f"/api/v1/games/{gid}/start",
+            json={},
+            headers={"Authorization": f"Bearer {created['host_token']}"},
+        )
+        with anon.websocket_connect(
+            f"/api/v1/ws?game_id={gid}&share={created['share_token']}"
+        ) as ws:
+            assert ws.receive_json()["type"] == "game_event"
+        with owner.websocket_connect(f"/api/v1/ws?game_id={gid}") as ws:  # cookie → GM
+            assert ws.receive_json()["type"] == "game_event"
+        with (
+            pytest.raises(WebSocketDisconnect) as exc,
+            bob.websocket_connect(f"/api/v1/ws?game_id={gid}") as ws,
+        ):
+            ws.receive_json()
+        assert exc.value.code == 4404
+        with (
+            pytest.raises(WebSocketDisconnect) as exc2,
+            anon.websocket_connect(f"/api/v1/ws?game_id={gid}&share=bad") as ws,
+        ):
+            ws.receive_json()
+        assert exc2.value.code == 4401
+        with (
+            pytest.raises(WebSocketDisconnect) as exc3,
+            anon.websocket_connect("/api/v1/ws") as ws,
+        ):
+            ws.receive_json()
+        assert exc3.value.code == 4401
