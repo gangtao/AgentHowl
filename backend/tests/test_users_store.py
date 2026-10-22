@@ -113,7 +113,18 @@ def test_normalize_and_validate() -> None:
         with pytest.raises(ValueError):
             validate_username(bad)
     validate_email("a@x.io")
-    for bad in ("", "noat", "a@" + "x" * 260):
+    validate_email("first.last+tag@sub.example.co")
+    for bad in (
+        "",
+        "noat",
+        "a@" + "x" * 260,
+        "a@x.com,b@y.com",
+        "a@x.com b@y.com",
+        "a\r\n@x.com",
+        "a@@x.com",
+        "a@x",
+        "a@.x.com",
+    ):
         with pytest.raises(ValueError):
             validate_email(bad)
     validate_password("12345678")

@@ -149,8 +149,20 @@ def validate_username(username: str) -> None:
         raise ValueError("用户名须为 3–32 位小写字母、数字或下划线")
 
 
+_BAD = r"\s@,;<>()\[\]\"\\\x00-\x1f\x7f"
+_EMAIL_RE = re.compile(rf"^[^{_BAD}]+@[^{_BAD}.][^{_BAD}]*\.[^{_BAD}]+$")
+
+
 def validate_email(email: str) -> None:
-    if not email or len(email) > MAX_EMAIL_LEN or "@" not in email:
+    """恰好一个 @、域名含点、无空白/分隔符/控制字符（防多收件人与头注入）。"""
+    if (
+        not email
+        or len(email) > MAX_EMAIL_LEN
+        or email.count("@") != 1
+        or not _EMAIL_RE.match(email)
+        or email.endswith(".")
+        or "\n" in email
+    ):
         raise ValueError("邮箱格式不正确")
 
 

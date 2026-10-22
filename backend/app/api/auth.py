@@ -15,7 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
 
-from app.runtime.mailer import Mailer, MailError
+from app.runtime.mailer import Mailer
 from app.runtime.ratelimit import RateLimiter
 from app.runtime.users import (
     EMAIL_CODE_MAX_ATTEMPTS,
@@ -138,8 +138,8 @@ async def _send_code(request: Request, user: User) -> None:
         await mailer.send(
             user.email, VERIFY_SUBJECT, f"您的 AgentHowl 验证码：{code}，15 分钟内有效。"
         )
-    except MailError as exc:
-        logger.error("验证码邮件发送失败 user=%s：%s", user.username, exc)
+    except Exception:  # 任何发送失败都不应让已落库的注册变 500；用户可 /resend 重试
+        logger.error("验证码邮件发送失败 user=%s", user.username)
 
 
 # ---------- 请求 / 响应 ----------

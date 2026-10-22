@@ -68,9 +68,23 @@ def test_register_validation_422(client: TestClient) -> None:
     for body in (
         {"username": "ab", "email": "a@x.io", "password": "password1"},
         {"username": "alice", "email": "nope", "password": "password1"},
+        {"username": "alice", "email": "a@x.com,b@y.com", "password": "password1"},
         {"username": "alice", "email": "a@x.io", "password": "short"},
     ):
         assert client.post("/api/v1/auth/register", json=body).status_code == 422
+
+
+def test_register_survives_mail_send_failure() -> None:
+    class BoomMailer:
+        enabled = True
+
+        async def send(self, to: str, subject: str, body: str) -> None:
+            raise RuntimeError("boom")
+
+    with TestClient(make_app(mailer=BoomMailer())) as c:  # type: ignore[arg-type]
+        body = {"username": "alice", "email": "a@x.io", "password": "password1"}
+        r = c.post("/api/v1/auth/register", json=body)
+        assert r.status_code == 201 and r.json()["verification"] == "email"
 
 
 def test_auto_verification_without_smtp() -> None:
