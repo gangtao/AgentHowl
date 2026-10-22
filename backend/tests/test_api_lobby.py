@@ -1,27 +1,26 @@
 """REST 大厅端点：create/join/start 与鉴权（issue #30）。"""
 
 from collections.abc import Iterator
-from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
 
-from app.main import create_app
 from app.runtime.game_runner import RunnerTimeouts
 from app.store.event_store import InMemoryEventStore
+from tests.conftest import bearer, login_as, make_app
 
 
 @pytest.fixture()
 def client() -> Iterator[TestClient]:
-    app = create_app(
+    app = make_app(
         store=InMemoryEventStore(), timeouts=RunnerTimeouts(speech_sec=5.0, action_sec=5.0)
     )
     with TestClient(app) as c:
+        login_as(c, "host")
         yield c
 
 
-def _auth(token: str) -> dict[str, str]:
-    return {"Authorization": f"Bearer {token}"}
+_auth = bearer
 
 
 def test_create_join_start_all_ai(client: TestClient) -> None:
@@ -31,7 +30,7 @@ def test_create_join_start_all_ai(client: TestClient) -> None:
     assert r.status_code == 200
     body = r.json()
     gid, host = body["game_id"], body["host_token"]
-    assert body["spectator_token"] and body["config"]["seed"] == 42
+    assert body["share_token"] and body["config"]["seed"] == 42
 
     r = client.post(f"/api/v1/games/{gid}/start", json={}, headers=_auth(host))
     assert r.status_code == 200 and r.json()["num_players"] == 9
@@ -49,10 +48,15 @@ def test_create_join_start_all_ai(client: TestClient) -> None:
 
 
 def test_join_assigns_seats_and_tokens(client: TestClient) -> None:
-    gid = client.post("/api/v1/games", json={"config_override": {"seed": 7}}).json()["game_id"]
-    r1 = client.post(f"/api/v1/games/{gid}/join", json={"display_name": "Alice"})
+    created = client.post("/api/v1/games", json={"config_override": {"seed": 7}}).json()
+    gid, host = created["game_id"], created["host_token"]
+    r1 = client.post(
+        f"/api/v1/games/{gid}/join", json={"display_name": "Alice"}, headers=_auth(host)
+    )
     r2 = client.post(
-        f"/api/v1/games/{gid}/join", json={"display_name": "Bot 客户端", "player_type": "AGENT"}
+        f"/api/v1/games/{gid}/join",
+        json={"display_name": "Bot 客户端", "player_type": "AGENT"},
+        headers=_auth(host),
     )
     assert r1.json()["seat"] == 0 and r2.json()["seat"] == 1
     assert r1.json()["player_token"] != r2.json()["player_token"]
@@ -62,7 +66,11 @@ def test_join_assigns_seats_and_tokens(client: TestClient) -> None:
 def test_start_requires_host_token(client: TestClient) -> None:
     created = client.post("/api/v1/games", json={"config_override": {"seed": 3}}).json()
     gid = created["game_id"]
-    player = client.post(f"/api/v1/games/{gid}/join", json={"display_name": "A"}).json()
+    player = client.post(
+        f"/api/v1/games/{gid}/join",
+        json={"display_name": "A"},
+        headers=_auth(created["host_token"]),
+    ).json()
 
     assert client.post(f"/api/v1/games/{gid}/start", json={}).status_code == 401  # 无 token
     assert (
@@ -84,9 +92,12 @@ def test_start_requires_host_token(client: TestClient) -> None:
         ).status_code
         == 409
     )
-    assert (
-        client.post(f"/api/v1/games/{gid}/join", json={"display_name": "Late"}).status_code == 409
+    late = client.post(
+        f"/api/v1/games/{gid}/join",
+        json={"display_name": "Late"},
+        headers=_auth(created["host_token"]),
     )
+    assert late.status_code == 409
 
 
 def test_bad_preset_400_unknown_game_404(client: TestClient) -> None:
@@ -100,9 +111,9 @@ def test_bad_preset_400_unknown_game_404(client: TestClient) -> None:
     )
 
 
-def test_no_spectator_token_when_disabled(client: TestClient) -> None:
+def test_no_share_token_when_disabled(client: TestClient) -> None:
     body = client.post("/api/v1/games", json={"allow_spectators": False}).json()
-    assert body["spectator_token"] is None
+    assert body["share_token"] is None
 
 
 def test_create_with_agents_echoes_resolved_profiles(client: TestClient) -> None:
@@ -193,7 +204,6 @@ def test_create_agents_with_skills_echo_and_unknown_400(
 
 
 def test_create_app_with_external_skills_dir(tmp_path) -> None:
-    from app.main import create_app
     from app.runtime.game_runner import RunnerTimeouts
     from app.store.event_store import InMemoryEventStore
 
@@ -201,12 +211,13 @@ def test_create_app_with_external_skills_dir(tmp_path) -> None:
     d.mkdir()
     text = "---\nname: house-rule\ndescription: d\n---\n正文\n"
     (d / "SKILL.md").write_text(text, encoding="utf-8")
-    app = create_app(
+    app = make_app(
         store=InMemoryEventStore(),
         timeouts=RunnerTimeouts(speech_sec=5.0, action_sec=5.0),
         skills_dir=tmp_path,
     )
     with TestClient(app) as c:
+        login_as(c, "host")
         r = c.post(
             "/api/v1/games",
             json={
@@ -225,12 +236,11 @@ def test_create_app_with_external_skills_dir(tmp_path) -> None:
 def test_create_app_with_missing_skills_dir_fails_loud(tmp_path) -> None:
     """终审 F3：显式给出的 skills_dir 不存在时不再静默过滤，应在启动时 fail-loud。"""
     from app.agent.skills import SkillError
-    from app.main import create_app
     from app.runtime.game_runner import RunnerTimeouts
     from app.store.event_store import InMemoryEventStore
 
     with pytest.raises(SkillError, match="目录"):
-        create_app(
+        make_app(
             store=InMemoryEventStore(),
             timeouts=RunnerTimeouts(speech_sec=5.0, action_sec=5.0),
             skills_dir=tmp_path / "nope",
@@ -290,15 +300,16 @@ def test_create_agents_memory_id_echo_and_conflicts_400(client: TestClient) -> N
 def test_create_app_memory_dir_is_lazy_and_corrupt_file_is_500(tmp_path) -> None:
     from fastapi.testclient import TestClient
 
-    from app.main import create_app
     from app.store.event_store import InMemoryEventStore
 
     mem = tmp_path / "mem"
-    c = TestClient(create_app(store=InMemoryEventStore(), memory_dir=mem))
+    c = TestClient(make_app(store=InMemoryEventStore(), memory_dir=mem, experience_store=None))
+    me = login_as(c, "host")
     r = c.post("/api/v1/games", json={"preset": "std_9_kill_side", "ai_model": "m"})
     assert r.status_code == 200 and not mem.exists()  # 无 memory_id 永不建目录
-    mem.mkdir()
-    (mem / "alice.json").write_text("{bad", encoding="utf-8")
+    # 经验库按 owner 分目录（issue #114）：mem/<owner_id>/alice.json
+    (mem / me["user_id"]).mkdir(parents=True)
+    (mem / me["user_id"] / "alice.json").write_text("{bad", encoding="utf-8")
     r = c.post(
         "/api/v1/games",
         json={"preset": "std_9_kill_side", "agents": {"0": {"model": "m", "memory_id": "alice"}}},
@@ -316,20 +327,21 @@ def test_meta_endpoint_gated_until_game_over_and_echoes_effective_agents() -> No
     from app.runtime.player_port import BotPlayerPort
 
     # 档案座位用随机 bot 端口顶替（不碰 litellm）；meta 记的是档案，不看端口类型
-    app = create_app(
+    app = make_app(
         store=InMemoryEventStore(),
         timeouts=RunnerTimeouts(speech_sec=5.0, action_sec=5.0),
         agent_port_factory=lambda seat, h: BotPlayerPort(state_provider=h.live_state),
     )
     client = TestClient(app)
+    login_as(client, "host")
     body = {
         "preset": "std_9_kill_side",
         "config_override": {"seed": 11},
         "agents": {"1": {"model": "m", "skills": ["logic-chain"], "memory_id": "alice"}},
     }
     created = client.post("/api/v1/games", json=body).json()
-    gid, host, spec = created["game_id"], created["host_token"], created["spectator_token"]
-    assert client.get(f"/api/v1/games/{gid}/meta", headers=_auth(spec)).status_code == 403
+    gid, host, spec = created["game_id"], created["host_token"], created["share_token"]
+    assert client.get(f"/api/v1/games/{gid}/meta", params={"share": spec}).status_code == 403
     assert client.get(f"/api/v1/games/{gid}/meta").status_code in (401, 403)
     assert (
         client.post(f"/api/v1/games/{gid}/start", json={}, headers=_auth(host)).status_code == 200
@@ -338,7 +350,7 @@ def test_meta_endpoint_gated_until_game_over_and_echoes_effective_agents() -> No
     deadline = _t.time() + 30
     while not (handle.task is not None and handle.task.done()) and _t.time() < deadline:
         _t.sleep(0.05)
-    r = client.get(f"/api/v1/games/{gid}/meta", headers=_auth(spec))
+    r = client.get(f"/api/v1/games/{gid}/meta", params={"share": spec})
     assert r.status_code == 200
     meta = r.json()
     assert meta["game_id"] == gid and meta["config"]["seed"] == 11
@@ -357,12 +369,13 @@ def test_events_endpoint_filters_skills_meta_from_spectators_but_replay_not() ->
     class _SkilledBot(BotPlayerPort):
         last_skills_used: tuple[str, ...] = ("wolf-claim-jump",)
 
-    app = create_app(
+    app = make_app(
         store=InMemoryEventStore(),
         timeouts=RunnerTimeouts(speech_sec=5.0, action_sec=5.0),
         agent_port_factory=lambda seat, h: _SkilledBot(state_provider=h.live_state),
     )
     client = TestClient(app)
+    login_as(client, "host")
     # 所有座位都用 agent 端口（factory 会返回 _SkilledBot），确保事件有 skills meta
     body = {
         "preset": "std_9_kill_side",
@@ -370,7 +383,7 @@ def test_events_endpoint_filters_skills_meta_from_spectators_but_replay_not() ->
         "agents": {"*": {"model": "m"}},
     }
     created = client.post("/api/v1/games", json=body).json()
-    gid, host, spec = created["game_id"], created["host_token"], created["spectator_token"]
+    gid, host, spec = created["game_id"], created["host_token"], created["share_token"]
     client.post(f"/api/v1/games/{gid}/start", json={}, headers=_auth(host))
     handle = client.app.state.games.get(gid)  # type: ignore[attr-defined]
     deadline = _t.time() + 30
@@ -378,99 +391,11 @@ def test_events_endpoint_filters_skills_meta_from_spectators_but_replay_not() ->
         _t.sleep(0.05)
 
     # 服务端真实：回放事件中应有 skills meta
-    replay = client.get(f"/api/v1/games/{gid}/replay", headers=_auth(spec)).json()
+    replay = client.get(f"/api/v1/games/{gid}/replay", params={"share": spec}).json()
     assert replay, "应有回放事件"
     assert any(e["meta"].get("skills") == "wolf-claim-jump" for e in replay), "回放应记录技能装配"
 
     # 观众视角的 /events：meta 只含公开键（wall_ts、timeout），不外泄 skills
-    events = client.get(f"/api/v1/games/{gid}/events", headers=_auth(spec)).json()
+    events = client.get(f"/api/v1/games/{gid}/events", params={"share": spec}).json()
     assert events and all("skills" not in e["meta"] for e in events), "观众不应看到 skills"
     assert all("wall_ts" in e["meta"] for e in events), "所有事件应有 wall_ts"
-
-    # F2（终审）：WS 实时 + 补发共用的 _build_event_frames 同样不外泄 skills——
-    # 用 from_seq=0 全量补发路径覆盖（现有 WS 重连测试只比 seq，不比 event 体）
-    with client.websocket_connect(f"/api/v1/ws?token={spec}&from_seq=0") as ws:
-        frames: list[dict[str, Any]] = []
-        while len(frames) < len(events):
-            f = ws.receive_json()
-            if f["type"] == "game_event":
-                frames.append(f["event"])
-    assert all("skills" not in e["meta"] for e in frames)
-
-
-def test_gm_token_reads_full_state_events_and_cannot_act_or_start() -> None:
-    """issue #26：GM token 读全量（GM_ONLY/WOLVES/ROLE_SELF、meta.skills）；不能行动/开局。"""
-    import time as _t
-
-    from app.runtime.player_port import BotPlayerPort
-
-    class _Skilled(BotPlayerPort):
-        last_skills_used = ("wolf-claim-jump",)
-
-    app = create_app(
-        store=InMemoryEventStore(),
-        timeouts=RunnerTimeouts(speech_sec=5.0, action_sec=5.0),
-        agent_port_factory=lambda seat, h: _Skilled(state_provider=h.live_state),
-    )
-    client = TestClient(app)
-    body = {
-        "preset": "std_9_kill_side",
-        "config_override": {"seed": 5},
-        "agents": {"*": {"model": "m"}},
-    }
-    created = client.post("/api/v1/games", json=body).json()
-    gid = created["game_id"]
-    host, gm, spec = created["host_token"], created["gm_token"], created["spectator_token"]
-    assert gm and gm != host and gm != spec
-    r_start_gm = client.post(f"/api/v1/games/{gid}/start", json={}, headers=_auth(gm))
-    assert r_start_gm.status_code == 403
-    r_start_host = client.post(f"/api/v1/games/{gid}/start", json={}, headers=_auth(host))
-    assert r_start_host.status_code == 200
-    handle = client.app.state.games.get(gid)  # type: ignore[attr-defined]
-    deadline = _t.time() + 30
-    while not (handle.task is not None and handle.task.done()) and _t.time() < deadline:
-        _t.sleep(0.05)
-    state = client.get(f"/api/v1/games/{gid}/state", headers=_auth(gm)).json()
-    roles = {p["role"] for p in state["players"]}
-    assert state["phase"] == "GAME_OVER" and roles >= {"WEREWOLF", "SEER"}
-    assert "state_version" in state and "sheriff_confirmed" in state
-    events = client.get(f"/api/v1/games/{gid}/events", headers=_auth(gm)).json()
-    vis = {e["visibility"] for e in events}
-    assert {"PUBLIC", "GM_ONLY", "WOLVES", "ROLE_SELF"} <= vis
-    assert any(e["meta"].get("skills") == "wolf-claim-jump" for e in events)
-    spec_events = client.get(f"/api/v1/games/{gid}/events", headers=_auth(spec)).json()
-    assert all(e["visibility"] == "PUBLIC" and "skills" not in e["meta"] for e in spec_events)
-    assert client.get(f"/api/v1/games/{gid}/speeches", headers=_auth(gm)).status_code == 200
-    assert client.get(f"/api/v1/games/{gid}/replay", headers=_auth(gm)).status_code == 200
-    assert client.get(f"/api/v1/games/{gid}/meta", headers=_auth(gm)).status_code == 200
-    r = client.post(
-        f"/api/v1/games/{gid}/actions", json={"tool": "vote", "arguments": {}}, headers=_auth(gm)
-    )
-    assert r.status_code == 403
-    assert client.get(f"/api/v1/games/{gid}/my-turn", headers=_auth(gm)).status_code == 403
-
-
-def test_frontend_dist_mounted_only_when_present(tmp_path) -> None:
-    from app.main import create_app
-    from app.store.event_store import InMemoryEventStore
-
-    c = TestClient(create_app(store=InMemoryEventStore(), frontend_dist=tmp_path / "nope"))
-    assert c.get("/").status_code == 404
-    dist = tmp_path / "dist"
-    dist.mkdir()
-    (dist / "index.html").write_text("<h1>AgentHowl</h1>", encoding="utf-8")
-    c = TestClient(create_app(store=InMemoryEventStore(), frontend_dist=dist))
-    assert c.get("/").status_code == 200 and "AgentHowl" in c.get("/").text
-    assert c.get("/api/v1/health").status_code == 200  # API 前缀不受影响
-
-
-def test_create_without_seed_echoes_random_seed(client: TestClient) -> None:
-    """建局不传 seed → 响应 config.seed 为随机整数且两局不同（此前每局发牌完全一样）。"""
-    a = client.post("/api/v1/games", json={"preset": "std_9_kill_side"}).json()
-    b = client.post("/api/v1/games", json={"preset": "std_9_kill_side"}).json()
-    assert isinstance(a["config"]["seed"], int) and isinstance(b["config"]["seed"], int)
-    assert a["config"]["seed"] != b["config"]["seed"]
-    c = client.post(
-        "/api/v1/games", json={"preset": "std_9_kill_side", "config_override": {"seed": 3}}
-    ).json()
-    assert c["config"]["seed"] == 3

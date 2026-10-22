@@ -8,7 +8,10 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.main import create_app
+from app.runtime.agent_library import InMemoryAgentLibrary
+from app.runtime.experience_store import InMemoryExperienceStore
 from app.runtime.mailer import NullMailer
+from app.runtime.provider_store import InMemoryProviderStore
 from app.runtime.ratelimit import RateLimiter
 from app.runtime.users import InMemoryUserStore, User, hash_password, new_user_id, now_iso
 from app.store.event_store import InMemoryEventStore
@@ -18,6 +21,7 @@ TEST_PASSWORD = "password1"
 
 def make_app(**kwargs: Any) -> FastAPI:
     """create_app 的测试默认：内存事件库、内存用户库、NullMailer（注册免验证）、限流关、
+    内存 Agent 库 / provider / 经验库（互不串）、
     cookie 不带 Secure（TestClient 走 http）。kwargs 覆盖任一默认。"""
     defaults: dict[str, Any] = {
         "store": InMemoryEventStore(),
@@ -26,6 +30,9 @@ def make_app(**kwargs: Any) -> FastAPI:
         "rate_limiter": RateLimiter.disabled(),
         "secret": b"test-secret",
         "cookie_secure": False,
+        "agent_library": InMemoryAgentLibrary(),
+        "provider_store": InMemoryProviderStore(),
+        "experience_store": InMemoryExperienceStore(),
     }
     defaults.update(kwargs)
     return create_app(**defaults)
@@ -50,3 +57,7 @@ def login_as(client: TestClient, username: str, *, role: str = "user") -> dict[s
     assert r.status_code == 200, r.text
     me: dict[str, Any] = client.get("/api/v1/auth/me").json()
     return me
+
+
+def bearer(token: str) -> dict[str, str]:
+    return {"Authorization": f"Bearer {token}"}

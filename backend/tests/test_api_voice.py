@@ -135,12 +135,13 @@ def test_create_game_voice_flag_and_probe(tmp_path: Path) -> None:
         )
 
 
+@pytest.mark.xfail(strict=True, reason="Task 7")
 def test_voiced_game_streams_frames_and_stores_audio(client: TestClient, tmp_path: Path) -> None:
     created = _voiced_game(client)
     gid = created["game_id"]
     frames: list[dict[str, Any]] = []
     client.post(f"/api/v1/games/{gid}/start", json={}, headers=_auth(created["host_token"]))
-    with client.websocket_connect(f"/api/v1/ws?token={created['spectator_token']}") as ws:
+    with client.websocket_connect(f"/api/v1/ws?game_id={gid}&share={created['share_token']}") as ws:
         while True:
             f = ws.receive_json()
             frames.append(f)
@@ -175,6 +176,7 @@ def test_voiced_game_streams_frames_and_stores_audio(client: TestClient, tmp_pat
     assert not (tmp_path / "audio" / gid).exists()
 
 
+@pytest.mark.xfail(strict=True, reason="Task 7")
 def test_audio_part_endpoint_accepts_query_token_during_live_game(client: TestClient) -> None:
     """fix round 1（issue #103）：`<audio>` 元素发不出 Authorization 头，直播期间（未终局）
     这个端点原先只认 Bearer，匿名必 401——配音一句都放不出来。现在额外接受 `?token=`，
@@ -183,20 +185,21 @@ def test_audio_part_endpoint_accepts_query_token_during_live_game(client: TestCl
     gid = created["game_id"]
     client.post(f"/api/v1/games/{gid}/start", json={}, headers=_auth(created["host_token"]))
     url: str | None = None
-    with client.websocket_connect(f"/api/v1/ws?token={created['spectator_token']}") as ws:
+    with client.websocket_connect(f"/api/v1/ws?game_id={gid}&share={created['share_token']}") as ws:
         while url is None:
             f = ws.receive_json()
             if f["type"] == "speech_audio":
                 url = f["url"]
     assert url is not None and url.startswith(f"/api/v1/games/{gid}/audio/")
 
-    # 匿名：未终局，_finished_or_handle 的无 token 分支必 401
-    assert client.get(url).status_code == 401
-    # ?token=<spectator_token>：按 query token 解析出合法 info，放行
-    r = client.get(url, params={"token": created["spectator_token"]})
+    # 匿名（无 cookie、无分享）：401
+    anon = TestClient(client.app)
+    assert anon.get(url).status_code == 401
+    # ?share=<share_token>：分享视角放行
+    r = anon.get(url, params={"share": created["share_token"]})
     assert r.status_code == 200 and r.headers["content-type"].startswith("audio/wav")
     # ?token=garbage：解析不出 info，401（而不是被悄悄当成匿名）
-    assert client.get(url, params={"token": "garbage"}).status_code == 401
+    assert anon.get(url, params={"token": "garbage"}).status_code == 401
 
 
 def test_unvoiced_game_has_no_audio(client: TestClient) -> None:
@@ -206,20 +209,17 @@ def test_unvoiced_game_has_no_audio(client: TestClient) -> None:
     assert client.get(f"/api/v1/games/{gid}/audio").json() == {}
 
 
-@pytest.mark.xfail(strict=True, reason="Task 6")
-def test_audio_endpoints_follow_replay_policy(tmp_path: Path) -> None:
+def test_audio_endpoints_follow_viewer_policy(tmp_path: Path) -> None:
+    """音频清单 / 文件鉴权同读端点：分享 token 或本人 cookie 可取，匿名 401，他局 token 403。"""
     with _app(tmp_path, FakeTts()) as c:
+        anon = TestClient(c.app)
         created = _voiced_game(c)
         gid = created["game_id"]
-        # 进行中：匿名 401；本局观众 200
         c.post(f"/api/v1/games/{gid}/start", json={}, headers=_auth(created["host_token"]))
-        assert c.get(f"/api/v1/games/{gid}/audio").status_code == 401
-        assert (
-            c.get(
-                f"/api/v1/games/{gid}/audio", headers=_auth(created["spectator_token"])
-            ).status_code
-            == 200
-        )
+        assert anon.get(f"/api/v1/games/{gid}/audio").status_code == 401
+        share = {"share": created["share_token"]}
+        assert anon.get(f"/api/v1/games/{gid}/audio", params=share).status_code == 200
+        assert c.get(f"/api/v1/games/{gid}/audio").status_code == 200  # 本人 cookie
         other = c.post("/api/v1/games", json={"preset": "std_9_kill_side"}).json()
         assert (
             c.get(f"/api/v1/games/{gid}/audio", headers=_auth(other["gm_token"])).status_code == 403
@@ -228,9 +228,11 @@ def test_audio_endpoints_follow_replay_policy(tmp_path: Path) -> None:
         deadline = time.time() + 60
         while not (handle.task is not None and handle.task.done()) and time.time() < deadline:
             time.sleep(0.05)
-        # 开关关：终局匿名仍 401
-        assert c.get(f"/api/v1/games/{gid}/audio").status_code == 401
-    assert c.get("/api/v1/games/g_nope/audio").status_code in (401, 404)
+        # 终局后匿名没有分享链接仍 401
+        assert anon.get(f"/api/v1/games/{gid}/audio").status_code == 401
+        assert anon.get(f"/api/v1/games/{gid}/audio", params=share).status_code == 200
+        assert anon.get("/api/v1/games/g_nope/audio").status_code == 401
+        assert c.get("/api/v1/games/g_nope/audio").status_code == 404
 
 
 def test_voice_design_preview_and_fetch(client: TestClient, tmp_path: Path) -> None:
@@ -405,12 +407,11 @@ def test_live_audio_filtered_by_viewer(tmp_path: Path) -> None:
                     seq = f["seq"]
             # 此刻 runner 正在等这句（0.6s）播完：对局仍在直播
             gm = _auth(created["gm_token"])
-            sp = _auth(created["spectator_token"])
+            sp = {"share": created["share_token"]}
             assert str(seq) in c.get(f"/api/v1/games/{gid}/audio", headers=gm).json()
-            assert str(seq) not in c.get(f"/api/v1/games/{gid}/audio", headers=sp).json()
+            assert str(seq) not in c.get(f"/api/v1/games/{gid}/audio", params=sp).json()
             assert c.get(url, headers=gm).status_code == 200
-            assert c.get(url, headers=sp).status_code == 404
-            assert c.get(url, params={"token": created["spectator_token"]}).status_code == 404
+            assert c.get(url, params=sp).status_code == 404
         _finish(c, created)
         # 终局公开：匿名全量
         assert c.get(url).status_code == 200

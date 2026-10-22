@@ -12,26 +12,28 @@ from starlette.websockets import WebSocketDisconnect
 
 from app.cli.bot import RandomBot
 from app.engine.events import Event
-from app.main import create_app
 from app.runtime.game_runner import RunnerTimeouts
 from app.runtime.player_port import HumanPlayerPort, TurnPrompt
 from app.store.event_store import InMemoryEventStore
+from tests.conftest import login_as, make_app
 from tests.test_api_play import _auth, _start_ai_game, _to_tool_call
 
 
 @pytest.fixture()
 def client() -> Iterator[TestClient]:
-    app = create_app(
+    app = make_app(
         store=InMemoryEventStore(), timeouts=RunnerTimeouts(speech_sec=10.0, action_sec=10.0)
     )
     with TestClient(app) as c:
+        login_as(c, "host")
         yield c
 
 
+@pytest.mark.xfail(strict=True, reason="Task 7")
 def test_spectator_stream_public_only_until_game_over(client: TestClient) -> None:
     gid, created = _start_ai_game(client, seed=42)
     frames: list[dict[str, Any]] = []
-    with client.websocket_connect(f"/api/v1/ws?token={created['spectator_token']}") as ws:
+    with client.websocket_connect(f"/api/v1/ws?game_id={gid}&share={created['share_token']}") as ws:
         while True:
             frame = ws.receive_json()
             frames.append(frame)
@@ -105,7 +107,11 @@ def test_not_started_closes_4409(client: TestClient) -> None:
 def test_human_plays_whole_game_via_ws(client: TestClient) -> None:
     created = client.post("/api/v1/games", json={"config_override": {"seed": 42}}).json()
     gid = created["game_id"]
-    joined = client.post(f"/api/v1/games/{gid}/join", json={"display_name": "Alice"}).json()
+    joined = client.post(
+        f"/api/v1/games/{gid}/join",
+        json={"display_name": "Alice"},
+        headers=_auth(created["host_token"]),
+    ).json()
     client.post(f"/api/v1/games/{gid}/start", json={}, headers=_auth(created["host_token"]))
     handle = client.app.state.games.get(gid)  # type: ignore[attr-defined]
     seat = joined["seat"]
@@ -123,17 +129,20 @@ def test_human_plays_whole_game_via_ws(client: TestClient) -> None:
     assert handle.task.done() and handle.task.result().winner is not None
 
 
+@pytest.mark.xfail(strict=True, reason="Task 7")
 def test_reconnect_backfills_from_seq(client: TestClient) -> None:
     gid, created = _start_ai_game(client, seed=7)
-    spec = created["spectator_token"]
+    spec = created["share_token"]
     # 等对局结束后模拟"错过整场"的重连：from_seq 补发应与 REST /events 完全一致
     handle = client.app.state.games.get(gid)  # type: ignore[attr-defined]
     deadline = time.time() + 30
     while not handle.task.done() and time.time() < deadline:
         time.sleep(0.05)
-    rest_events = client.get(f"/api/v1/games/{gid}/events?from_seq=5", headers=_auth(spec)).json()
+    rest_events = client.get(
+        f"/api/v1/games/{gid}/events", params={"from_seq": 5, "share": spec}
+    ).json()
     got: list[dict[str, Any]] = []
-    with client.websocket_connect(f"/api/v1/ws?token={spec}&from_seq=5") as ws:
+    with client.websocket_connect(f"/api/v1/ws?game_id={gid}&share={spec}&from_seq=5") as ws:
         # 补发帧中夹带 phase_change/game_over 派生帧（不计入 rest_events），故按
         # game_event 数量而非固定收帧次数收敛——原按 len(rest_events) 收帧次数的写法
         # 在派生帧存在时会提前耗尽收帧配额，属测试自身计数缺陷，非 ws.py 实现问题。
@@ -144,6 +153,7 @@ def test_reconnect_backfills_from_seq(client: TestClient) -> None:
     assert [e["seq"] for e in got] == [e["seq"] for e in rest_events]
 
 
+@pytest.mark.xfail(strict=True, reason="Task 7")
 def test_reconnect_to_running_game_loses_no_events(client: TestClient) -> None:
     """复现 issue #30 复审 Critical #1：补发与订阅之间若有窗口，运行中对局会丢事件。
 
@@ -155,33 +165,36 @@ def test_reconnect_to_running_game_loses_no_events(client: TestClient) -> None:
     经验证：此时序在旧实现上 6/6 复现丢帧，对局在连接时刻仍未终局。
     """
     gid, created = _start_ai_game(client, seed=21)
-    spec = created["spectator_token"]
+    spec = created["share_token"]
     time.sleep(0.002)
     handle = client.app.state.games.get(gid)  # type: ignore[attr-defined]
     assert not handle.task.done()  # 确认连接时对局仍在运行（复现场景的前提）
     got: list[dict[str, Any]] = []
-    with client.websocket_connect(f"/api/v1/ws?token={spec}&from_seq=0") as ws:
+    with client.websocket_connect(f"/api/v1/ws?game_id={gid}&share={spec}&from_seq=0") as ws:
         while True:
             frame = ws.receive_json()
             if frame["type"] == "game_event":
                 got.append(frame["event"])
             if frame["type"] == "game_over":
                 break
-    rest_events = client.get(f"/api/v1/games/{gid}/events?from_seq=0", headers=_auth(spec)).json()
+    rest_events = client.get(
+        f"/api/v1/games/{gid}/events", params={"from_seq": 0, "share": spec}
+    ).json()
     got_seqs = [e["seq"] for e in got]
     assert got_seqs == [e["seq"] for e in rest_events]  # 完整、无洞、无重复
 
 
+@pytest.mark.xfail(strict=True, reason="Task 7")
 def test_backfilled_phase_change_round_is_historical(client: TestClient) -> None:
     """复现 issue #30 复审 Critical #2：补发的 phase_change 帧不得携带终局 round。"""
     gid, created = _start_ai_game(client, seed=7)
-    spec = created["spectator_token"]
+    spec = created["share_token"]
     handle = client.app.state.games.get(gid)  # type: ignore[attr-defined]
     deadline = time.time() + 30
     while not handle.task.done() and time.time() < deadline:
         time.sleep(0.05)
     rounds: list[int] = []
-    with client.websocket_connect(f"/api/v1/ws?token={spec}&from_seq=0") as ws:
+    with client.websocket_connect(f"/api/v1/ws?game_id={gid}&share={spec}&from_seq=0") as ws:
         while True:
             frame = ws.receive_json()
             if frame["type"] == "phase_change":

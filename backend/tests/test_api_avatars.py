@@ -92,7 +92,7 @@ def test_fetch_missing_or_illegal_id_404(client: TestClient) -> None:
 
 
 def test_game_avatars_map_live_and_finished(client: TestClient) -> None:
-    """建局时带头像的档案 → 直播中任意本局 token 可取映射；终局后匿名可取（公开策略同 /replay）。"""
+    """建局时带头像的档案 → 直播中任意本局 token 可取映射；匿名凭分享 token 可取。"""
     aid = _put(client, PNG).json()["avatar_id"]
     body = client.post(
         "/api/v1/games",
@@ -103,9 +103,10 @@ def test_game_avatars_map_live_and_finished(client: TestClient) -> None:
         },
     ).json()
     gid = body["game_id"]
-    assert client.get(f"/api/v1/games/{gid}/avatars").status_code == 401  # 未终局匿名不可
-    spect = {"Authorization": f"Bearer {body['spectator_token']}"}
-    r = client.get(f"/api/v1/games/{gid}/avatars", headers=spect)
+    anon = TestClient(client.app)
+    assert anon.get(f"/api/v1/games/{gid}/avatars").status_code == 401  # 匿名无分享不可
+    spect = {"share": body["share_token"]}
+    r = anon.get(f"/api/v1/games/{gid}/avatars", params=spect)
     assert r.status_code == 200 and r.json() == {"0": aid}
     # 开局（fixture 固定用 RandomBot 填充所有座位，不会真调 LLM）
     # —— 这里只验映射来源切到 GameMeta.agents 后仍一致
@@ -119,7 +120,7 @@ def test_game_avatars_map_live_and_finished(client: TestClient) -> None:
     while not (handle.task is not None and handle.task.done()) and time.time() < deadline:
         time.sleep(0.05)
     assert handle.task is not None and handle.task.done()
-    assert client.get(f"/api/v1/games/{gid}/avatars").json() == {"0": aid}  # 终局匿名
+    assert anon.get(f"/api/v1/games/{gid}/avatars", params=spect).json() == {"0": aid}  # 终局分享
     assert client.get("/api/v1/games/g_nope/avatars").status_code == 404
 
 
@@ -143,5 +144,5 @@ def test_game_avatars_fall_back_to_library_by_name(client: TestClient) -> None:
         },
     ).json()
     gid = body["game_id"]
-    spect = {"Authorization": f"Bearer {body['spectator_token']}"}
-    assert client.get(f"/api/v1/games/{gid}/avatars", headers=spect).json() == {"0": aid}
+    spect = {"share": body["share_token"]}
+    assert client.get(f"/api/v1/games/{gid}/avatars", params=spect).json() == {"0": aid}

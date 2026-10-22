@@ -19,6 +19,7 @@ class TokenInfo(BaseModel):
     game_id: str
     seat: int | None  # HOST/SPECTATOR/GM 无座位
     kind: Literal["HOST", "PLAYER", "SPECTATOR", "GM"]  # GM = 上帝视角只读全量，issue #26
+    user_id: str | None = None  # 登录者（建局 / 登录入座）；外部 Agent 入座为 None（issue #114）
 
 
 class TokenRegistry:

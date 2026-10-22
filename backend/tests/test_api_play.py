@@ -8,22 +8,22 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.cli.bot import RandomBot
-from app.main import create_app
 from app.runtime.game_runner import RunnerTimeouts
 from app.store.event_store import InMemoryEventStore
+from tests.conftest import bearer, login_as, make_app
 
 
 @pytest.fixture()
 def client() -> Iterator[TestClient]:
-    app = create_app(
+    app = make_app(
         store=InMemoryEventStore(), timeouts=RunnerTimeouts(speech_sec=10.0, action_sec=10.0)
     )
     with TestClient(app) as c:
+        login_as(c, "host")
         yield c
 
 
-def _auth(token: str) -> dict[str, str]:
-    return {"Authorization": f"Bearer {token}"}
+_auth = bearer
 
 
 def _wait_done(client: TestClient, gid: str, timeout: float = 30.0) -> None:
@@ -48,35 +48,35 @@ def _start_ai_game(client: TestClient, seed: int = 42) -> tuple[str, dict[str, A
 class TestReadEndpoints:
     def test_spectator_state_events_replay_gating(self, client: TestClient) -> None:
         gid, created = _start_ai_game(client)
-        spec = created["spectator_token"]
-        r = client.get(f"/api/v1/games/{gid}/state", headers=_auth(spec))
+        spec = created["share_token"]
+        r = client.get(f"/api/v1/games/{gid}/state", params={"share": spec})
         assert r.status_code == 200 and r.json()["game_id"] == gid  # SpectatorView
         _wait_done(client, gid)
         # 观众事件流：只有 PUBLIC
-        events = client.get(f"/api/v1/games/{gid}/events", headers=_auth(spec)).json()
+        events = client.get(f"/api/v1/games/{gid}/events", params={"share": spec}).json()
         assert events and all(e["visibility"] == "PUBLIC" for e in events)
         # GM 回放：局终开放且含 GM_ONLY
-        replay = client.get(f"/api/v1/games/{gid}/replay", headers=_auth(spec)).json()
+        replay = client.get(f"/api/v1/games/{gid}/replay", params={"share": spec}).json()
         assert any(e["visibility"] == "GM_ONLY" for e in replay)
         assert replay[0]["type"] == "GAME_CREATED"
 
     def test_replay_forbidden_before_game_over(self, client: TestClient) -> None:
         created = client.post("/api/v1/games", json={"config_override": {"seed": 7}}).json()
         gid = created["game_id"]
-        client.post(f"/api/v1/games/{gid}/join", json={"display_name": "A"})
+        host = _auth(created["host_token"])
+        client.post(f"/api/v1/games/{gid}/join", json={"display_name": "A"}, headers=host)
         # 未开局：replay 409（未开局），state 玩家 409
-        tok = client.post(f"/api/v1/games/{gid}/join", json={"display_name": "B"}).json()[
-            "player_token"
-        ]
+        tok = client.post(f"/api/v1/games/{gid}/join", json={"display_name": "B"}, headers=host)
+        tok = tok.json()["player_token"]
         assert client.get(f"/api/v1/games/{gid}/state", headers=_auth(tok)).status_code == 409
 
     def test_speeches_public_only_with_filters(self, client: TestClient) -> None:
         gid, created = _start_ai_game(client, seed=7)
         _wait_done(client, gid)
-        spec = created["spectator_token"]
-        all_speeches = client.get(f"/api/v1/games/{gid}/speeches", headers=_auth(spec)).json()
+        spec = created["share_token"]
+        all_speeches = client.get(f"/api/v1/games/{gid}/speeches", params={"share": spec}).json()
         assert all_speeches and all(s["kind"] in ("speech", "last_words") for s in all_speeches)
-        r1 = client.get(f"/api/v1/games/{gid}/speeches?round=1", headers=_auth(spec)).json()
+        r1 = client.get(f"/api/v1/games/{gid}/speeches", params={"round": 1, "share": spec}).json()
         assert r1 and all(s["round"] == 1 for s in r1)
 
     def test_events_isolation_between_seats(self, client: TestClient) -> None:
@@ -84,7 +84,7 @@ class TestReadEndpoints:
         _wait_done(client, gid)
         # 局终后按 GM 回放找出狼座与民座
         replay = client.get(
-            f"/api/v1/games/{gid}/replay", headers=_auth(created["spectator_token"])
+            f"/api/v1/games/{gid}/replay", params={"share": created["share_token"]}
         ).json()
         roles = next(e for e in replay if e["type"] == "ROLES_ASSIGNED")["payload"]["assignments"]
         wolf_seat = next(s for s, r in roles if r == "WEREWOLF")
@@ -104,11 +104,11 @@ class TestReadEndpoints:
     def test_from_seq_suffix(self, client: TestClient) -> None:
         gid, created = _start_ai_game(client, seed=9)
         _wait_done(client, gid)
-        spec = created["spectator_token"]
-        full = client.get(f"/api/v1/games/{gid}/events", headers=_auth(spec)).json()
+        spec = created["share_token"]
+        full = client.get(f"/api/v1/games/{gid}/events", params={"share": spec}).json()
         mid = full[len(full) // 2]["seq"]
         suffix = client.get(
-            f"/api/v1/games/{gid}/events?from_seq={mid}", headers=_auth(spec)
+            f"/api/v1/games/{gid}/events", params={"from_seq": mid, "share": spec}
         ).json()
         assert suffix == [e for e in full if e["seq"] >= mid]
 
@@ -137,7 +137,11 @@ class TestActions:
     def test_human_seat_plays_via_rest(self, client: TestClient) -> None:
         created = client.post("/api/v1/games", json={"config_override": {"seed": 42}}).json()
         gid = created["game_id"]
-        joined = client.post(f"/api/v1/games/{gid}/join", json={"display_name": "Alice"}).json()
+        joined = client.post(
+            f"/api/v1/games/{gid}/join",
+            json={"display_name": "Alice"},
+            headers=_auth(created["host_token"]),
+        ).json()
         tok, seat = joined["player_token"], joined["seat"]
         client.post(f"/api/v1/games/{gid}/start", json={}, headers=_auth(created["host_token"]))
         handle = client.app.state.games.get(gid)  # type: ignore[attr-defined]
@@ -162,7 +166,11 @@ class TestActions:
     def test_reject_then_retry_and_not_your_turn(self, client: TestClient) -> None:
         created = client.post("/api/v1/games", json={"config_override": {"seed": 7}}).json()
         gid = created["game_id"]
-        joined = client.post(f"/api/v1/games/{gid}/join", json={"display_name": "A"}).json()
+        joined = client.post(
+            f"/api/v1/games/{gid}/join",
+            json={"display_name": "A"},
+            headers=_auth(created["host_token"]),
+        ).json()
         tok = joined["player_token"]
         # 未开局提交 → 409
         r = client.post(
@@ -191,19 +199,26 @@ class TestActions:
         # 后台放完剩余对局
         _drain(client, gid, tok, joined["seat"])
 
-    def test_spectator_cannot_act_wrong_game_403(self, client: TestClient) -> None:
+    def test_gm_token_cannot_act_and_wrong_game_403(self, client: TestClient) -> None:
         gid, created = _start_ai_game(client, seed=3)
         r = client.post(
             f"/api/v1/games/{gid}/actions",
             json={"tool": "vote", "arguments": {}},
-            headers=_auth(created["spectator_token"]),
+            headers=_auth(created["gm_token"]),
         )
         assert r.status_code == 403
+        # 分享 token 不是 Bearer token：当作无效 token → 401
+        r = client.post(
+            f"/api/v1/games/{gid}/actions",
+            json={"tool": "vote", "arguments": {}},
+            headers=_auth(created["share_token"]),
+        )
+        assert r.status_code == 401
         gid2, _ = _start_ai_game(client, seed=4)
-        # 用 gid 的观战 token 查 gid2 → 403
+        # 用 gid 的 gm token 查 gid2 → 403
         assert (
             client.get(
-                f"/api/v1/games/{gid2}/events", headers=_auth(created["spectator_token"])
+                f"/api/v1/games/{gid2}/events", headers=_auth(created["gm_token"])
             ).status_code
             == 403
         )
