@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { setUnauthorizedHandler } from "./api/rest";
 import { parseHash } from "./api/tokens";
 import type { ParsedHash } from "./api/tokens";
+import AdminUsers from "./pages/AdminUsers";
 import AgentLibrary from "./pages/AgentLibrary";
 import GamePage from "./pages/GamePage";
 import History from "./pages/History";
@@ -93,8 +94,8 @@ export default function App(): JSX.Element {
   } else if (hash.route === "providers") {
     body = <Providers />;
   } else {
-    // admin 页由 Task 12 接入；非 admin 一律退回大厅。
-    body = <Lobby />;
+    // admin 页仅管理员可见；非 admin 一律退回大厅。
+    body = hash.route === "admin" && user?.role === "admin" ? <AdminUsers /> : <Lobby />;
   }
 
   return (
