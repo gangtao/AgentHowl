@@ -32,7 +32,7 @@ const STEPS = [
 interface Created {
   gameId: string;
   gmToken: string;
-  spectatorToken: string | null;
+  shareToken: string | null;
 }
 
 const TTS_DISABLED: TtsStatus = { enabled: false, ok: false, url: null, detail: null, supports_style: false };
@@ -127,7 +127,7 @@ export default function Lobby(): JSX.Element {
       setCreated({
         gameId: res.game_id,
         gmToken: res.gm_token,
-        spectatorToken: res.spectator_token,
+        shareToken: res.share_token,
       });
     } catch (err) {
       setCreateError(err instanceof ApiError ? `${err.status} · ${err.detail}` : String(err));
@@ -381,7 +381,7 @@ export default function Lobby(): JSX.Element {
         <ShareDialog
           gameId={created.gameId}
           gmToken={created.gmToken}
-          spectatorToken={created.spectatorToken}
+          shareToken={created.shareToken}
           onLater={() => setCreated(null)}
           onEnter={() => {
             window.location.hash = `#/g/${created.gameId}?gm=${created.gmToken}`;

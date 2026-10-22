@@ -1,5 +1,5 @@
 // 历史对局列表（issue #98 设计 §2.1）：GET /api/v1/games → GameSummary[]。
-// 开关 AGENTHOWL_PUBLIC_HISTORY 开启（默认）时无需 token；关闭时后端要求任意有效 token（401）。
+// 登录态 cookie：普通用户只看到自己的对局，管理员看到全部（issue #114）。
 
 import { req } from "./rest";
 
@@ -22,6 +22,11 @@ export interface GameSummary {
   rounds: number;
   seats: SeatSummary[];
   seq: number;
+  /** 建局者（issue #114）；旧对局可能无主。 */
+  owner_id: string | null;
+  owner_name: string | null;
+  /** 分享 token；null = 未开放观众。 */
+  share_token: string | null;
 }
 
 /** 后端已按 started_at 倒序返回，前端不再排序（零裁决：只渲染服务端给的顺序与字段）。 */

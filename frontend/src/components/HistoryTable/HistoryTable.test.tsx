@@ -7,6 +7,9 @@ const base = {
   num_players: 9,
   rounds: 2,
   seq: 50,
+  owner_id: "u_1",
+  owner_name: "alice",
+  share_token: "S" as string | null,
   seats: [
     { seat: 0, display_name: "夜枭", agent: true },
     { seat: 1, display_name: "Bot1", agent: false },
@@ -46,7 +49,8 @@ describe("HistoryTable", () => {
       />,
     );
     const replay = screen.getByRole("link", { name: /回放/ });
-    expect(replay).toHaveAttribute("href", "#/g/g_f?replay=1");
+    expect(replay).toHaveAttribute("href", "#/g/g_f");
+    expect(screen.getByRole("link", { name: /观看/ })).toHaveAttribute("href", "#/g/g_l");
     expect(screen.getByText(/狼人胜/)).toBeInTheDocument();
     expect(screen.getByText(/直播中/)).toBeInTheDocument();
     expect(screen.getByText(/中断/)).toBeInTheDocument();
@@ -102,5 +106,30 @@ describe("HistoryTable", () => {
   it("空态", () => {
     render(<HistoryTable items={[]} />);
     expect(screen.getByText(/还没有对局/)).toBeInTheDocument();
+  });
+  it("onShare：有「分享」按钮，share_token 为 null 时禁用；showOwner 多一列创建者", () => {
+    const onShare = vi.fn();
+    const row = {
+      ...base,
+      game_id: "g_f",
+      status: "finished" as const,
+      started_at: null,
+      ended_at: null,
+      winner: "GOOD",
+    };
+    render(
+      <HistoryTable
+        items={[row, { ...row, game_id: "g_n", share_token: null, owner_name: null }]}
+        onShare={onShare}
+        showOwner
+      />,
+    );
+    expect(screen.getByRole("columnheader", { name: "创建者" })).toBeInTheDocument();
+    expect(screen.getByText("alice")).toBeInTheDocument();
+    const btns = screen.getAllByRole("button", { name: "分享" });
+    expect(btns[0]).toBeEnabled();
+    expect(btns[1]).toBeDisabled();
+    fireEvent.click(btns[0]!);
+    expect(onShare).toHaveBeenCalledWith(expect.objectContaining({ game_id: "g_f" }));
   });
 });

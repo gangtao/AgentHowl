@@ -1,5 +1,4 @@
-// 对局页测试：终局对局经 /meta + /replay 装入（replay=1 无 token 路径已随 issue #114 移除，
-// cookie 会话用例由 Task 11 补）。
+// 对局页测试：终局对局经 /meta + /replay 装入；覆盖 token / share / cookie（无凭据）三种凭据（issue #114）。
 
 import { act, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -22,7 +21,8 @@ function jsonResponse(status: number, body: unknown): Response {
 /** 按路径分发的 fetch 桩：/meta 返回 metaRes()，/replay 返回事件流，
  * /audio（发言音频清单，issue #103）返回空清单——本文件不测配音，给个空对象足够。 */
 function stubFetch(metaRes: () => Response): ReturnType<typeof vi.fn> {
-  const fetchMock = vi.fn(async (url: string) => {
+  const fetchMock = vi.fn(async (rawUrl: string) => {
+    const url = rawUrl.split("?")[0] as string;
     if (url.endsWith("/meta")) return metaRes();
     if (url.endsWith("/audio")) return jsonResponse(200, {});
     return jsonResponse(200, events);
@@ -63,5 +63,35 @@ describe("GamePage 聚光牌跟随配音（issue #110）", () => {
     expect(await screen.findByRole("status", { name: "GM 旁白中" })).toBeInTheDocument();
     expect(screen.getByText("旁白中 🔊")).toBeInTheDocument();
     useVoice.getState().clear();
+  });
+});
+
+describe("GamePage 凭据模式（issue #114）", () => {
+  it("cookie 模式：无 token、viewer=GM，/meta 裸请求（带 cookie）→ 装入回放", async () => {
+    const fetchMock = stubFetch(() => jsonResponse(200, meta));
+    vi.stubGlobal("WebSocket", vi.fn());
+    render(<GamePage gameId="g_x" viewer="GM" />);
+    await screen.findByText(new RegExp(`已结束 · ${events.length} 条事件`));
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe("/api/v1/games/g_x/meta");
+    expect(init.credentials).toBe("same-origin");
+    expect((init.headers as Record<string, string>).Authorization).toBeUndefined();
+  });
+
+  it("share 模式：请求带 ?share=", async () => {
+    const fetchMock = stubFetch(() => jsonResponse(200, meta));
+    vi.stubGlobal("WebSocket", vi.fn());
+    render(<GamePage gameId="g_x" share="S" viewer="SPECTATOR" />);
+    await screen.findByText(new RegExp(`已结束 · ${events.length} 条事件`));
+    const urls = fetchMock.mock.calls.map((c) => c[0]);
+    expect(urls).toContain("/api/v1/games/g_x/meta?share=S");
+    expect(urls).toContain("/api/v1/games/g_x/replay?share=S");
+  });
+
+  it("401 → 显示登录提示", async () => {
+    stubFetch(() => jsonResponse(401, { detail: "未登录" }));
+    render(<GamePage gameId="g_x" viewer="GM" />);
+    expect(await screen.findByText("请登录，或使用建局者提供的分享链接")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "去登录" })).toHaveAttribute("href", "#/login");
   });
 });

@@ -1,5 +1,6 @@
 // 历史对局表格（issue #98 设计 §3）：零过滤——只渲染服务端 GameSummary 给出的字段。
-// 操作列：finished → 无 token 回放链接；live → 提示用建局链接观看；aborted → 无法回放。
+// 操作列：finished → 回放、live → 观看（均为 `#/g/{id}`，靠登录态 cookie 以 GM 身份进入）；aborted → 无法回放。
+// onShare：每行「分享」按钮（share_token 为 null 时禁用）；showOwner：管理员多一列「创建者」。
 // 传入 onDelete 时每行多一个「删除」（issue #100）：直播中禁用，确认框由页面负责。
 
 import type { GameSummary } from "../../api/history";
@@ -8,6 +9,8 @@ import styles from "./HistoryTable.module.css";
 export interface HistoryTableProps {
   items: GameSummary[];
   onDelete?: (row: GameSummary) => void;
+  onShare?: (row: GameSummary) => void;
+  showOwner?: boolean;
 }
 
 /** 板子 id → 中文名（后端 presets）；未知 id 原样显示。 */
@@ -44,7 +47,7 @@ function statusTagClass(status: GameSummary["status"]): string {
   return "tag tag-neutral";
 }
 
-export default function HistoryTable({ items, onDelete }: HistoryTableProps): JSX.Element {
+export default function HistoryTable({ items, onDelete, onShare, showOwner = false }: HistoryTableProps): JSX.Element {
   if (items.length === 0) {
     return (
       <div className={styles.empty}>
@@ -53,7 +56,7 @@ export default function HistoryTable({ items, onDelete }: HistoryTableProps): JS
           还没有对局，<a href="#/">去建一局</a>
         </span>
         <span className={styles.emptyDesc}>
-          打完的对局会留在 data/games/ 里，服务端重启后仍可在这里回放。
+          打完的对局会留在这里，服务端重启后仍可回放。
         </span>
       </div>
     );
@@ -65,6 +68,7 @@ export default function HistoryTable({ items, onDelete }: HistoryTableProps): JS
         <tr>
           <th>开始时间</th>
           <th>板子</th>
+          {showOwner && <th>创建者</th>}
           <th>人数</th>
           <th>状态</th>
           <th>胜方</th>
@@ -87,6 +91,7 @@ export default function HistoryTable({ items, onDelete }: HistoryTableProps): JS
                 </code>
               </td>
               <td>{PRESET_LABEL[row.preset] ?? row.preset}</td>
+              {showOwner && <td>{row.owner_name ?? "—"}</td>}
               <td>{row.num_players}</td>
               <td className={styles.nowrap}>
                 <span className={statusTagClass(row.status)}>{statusLabel(row)}</span>
@@ -99,15 +104,28 @@ export default function HistoryTable({ items, onDelete }: HistoryTableProps): JS
               </td>
               <td className={styles.nowrap}>
                 {row.status === "finished" ? (
-                  <a className="btn btn-primary" href={`#/g/${row.game_id}?replay=1`}>
+                  <a className="btn btn-primary" href={`#/g/${row.game_id}`}>
                     回放
                   </a>
                 ) : row.status === "live" ? (
-                  <span className={styles.hint}>用建局时的链接观看</span>
+                  <a className="btn btn-primary" href={`#/g/${row.game_id}`}>
+                    观看
+                  </a>
                 ) : (
                   <span className={styles.hint} title="没有终局事件，服务端不开放回放">
                     无法回放
                   </span>
+                )}
+                {onShare !== undefined && (
+                  <button
+                    type="button"
+                    className={`btn btn-ghost ${styles.deleteBtn}`}
+                    disabled={row.share_token === null}
+                    title={row.share_token === null ? "该对局未开放观众" : "复制观众分享链接"}
+                    onClick={() => onShare(row)}
+                  >
+                    分享
+                  </button>
                 )}
                 {onDelete !== undefined && (
                   <button

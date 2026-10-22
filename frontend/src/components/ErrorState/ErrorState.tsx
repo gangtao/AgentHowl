@@ -64,9 +64,12 @@ export default function ErrorState({ kind, attempt, detail }: ErrorStateProps): 
       <div className={styles.root} role="alert">
         <div className={styles.box}>
           <span className={styles.code}>4401 / 4403</span>
-          <span className={styles.title}>token 无效</span>
-          <span className={styles.desc}>该 token 无权观战。请向建局者索取新链接。</span>
+          <span className={styles.title}>需要登录</span>
+          <span className={styles.desc}>请登录，或使用建局者提供的分享链接</span>
           {detail && <span className={styles.detail}>{detail}</span>}
+          <a className={`btn btn-primary ${styles.back}`} href="#/login">
+            去登录
+          </a>
         </div>
       </div>
     );
