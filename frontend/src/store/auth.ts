@@ -15,18 +15,27 @@ interface AuthState {
   markAnon(): void;
 }
 
+let inflight: Promise<void> | null = null;
+
 export const useAuth = create<AuthState>((set) => ({
   user: null,
   status: "loading",
 
-  async load() {
-    try {
-      const user = await api.me();
-      set({ user, status: "authed" });
-    } catch {
-      // 401 即匿名；网络 / 5xx 也按匿名处理（页面落到登录页，重试即可）
-      set({ user: null, status: "anon" });
-    }
+  load() {
+    // 并发 load() 合并为同一个请求，避免 401 回调与启动加载互相放大。
+    if (inflight) return inflight;
+    inflight = (async () => {
+      try {
+        const user = await api.me();
+        set({ user, status: "authed" });
+      } catch {
+        // 401 即匿名；网络 / 5xx 也按匿名处理（页面落到登录页，重试即可）
+        set({ user: null, status: "anon" });
+      } finally {
+        inflight = null;
+      }
+    })();
+    return inflight;
   },
 
   async login(identifier, password) {

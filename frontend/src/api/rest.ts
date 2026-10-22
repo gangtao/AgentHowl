@@ -72,8 +72,8 @@ export async function req<T>(method: string, path: string, opts: ReqOptions = {}
     } catch {
       // 响应体不是 JSON：退回 statusText
     }
-    // 带对局 token 的 401 是 token 问题，不是会话丢失。
-    if (res.status === 401 && !opts.token && onUnauthorized) onUnauthorized();
+    // 带对局 token 的 401 是 token 问题；/auth/* 的 401 是认证流程本身（避免回调递归）。
+    if (res.status === 401 && !opts.token && !path.startsWith("/auth/") && onUnauthorized) onUnauthorized();
     throw new ApiError(res.status, detail, reason);
   }
   if (res.status === 204) {

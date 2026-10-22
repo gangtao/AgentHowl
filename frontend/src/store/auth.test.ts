@@ -59,4 +59,10 @@ describe("useAuth", () => {
     expect(call[1].credentials).toBe("same-origin");
     expect(new ApiError(401, "x")).toBeInstanceOf(Error);
   });
+
+  it("并发 load() 只发一次 /auth/me", async () => {
+    mockFetch(() => json(200, user));
+    await Promise.all([useAuth.getState().load(), useAuth.getState().load()]);
+    expect((fetch as unknown as ReturnType<typeof vi.fn>).mock.calls).toHaveLength(1);
+  });
 });

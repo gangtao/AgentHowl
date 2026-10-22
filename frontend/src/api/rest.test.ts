@@ -6,7 +6,7 @@ import {
   getAudioManifest,
   getGameAvatars,
   getReplay,
-  getTtsStatus, designVoice, voiceAnchorUrl } from "./rest";
+  getTtsStatus, designVoice, voiceAnchorUrl, req, setUnauthorizedHandler } from "./rest";
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -158,4 +158,20 @@ it("designVoice POST /voices/design；voiceAnchorUrl 形状", async () => {
   expect(url).toContain("/api/v1/voices/design");
   expect(init.method).toBe("POST");
   expect(voiceAnchorUrl("0123456789abcdef.wav")).toBe("/api/v1/voices/0123456789abcdef.wav");
+});
+
+describe("401 回调（issue #114）", () => {
+  afterEach(() => setUnauthorizedHandler(null));
+
+  it("带对局 token / 访问 /auth/* 的 401 不触发；无 token 的其他 401 触发一次", async () => {
+    const spy = vi.fn();
+    setUnauthorizedHandler(spy);
+    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse(401, { detail: "x" })));
+    await expect(req("GET", "/games/x/state", { token: "T" })).rejects.toBeInstanceOf(ApiError);
+    await expect(req("GET", "/auth/me")).rejects.toBeInstanceOf(ApiError);
+    expect(spy).not.toHaveBeenCalled();
+    await expect(req("GET", "/games")).rejects.toBeInstanceOf(ApiError);
+    expect(spy).toHaveBeenCalledTimes(1);
+    vi.unstubAllGlobals();
+  });
 });

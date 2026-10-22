@@ -46,7 +46,10 @@ export default function App(): JSX.Element {
   const anonLogin = status === "anon" && hash.route !== "login" && hash.route !== "register" && hash.route !== "verify" && hash.route !== "game";
 
   useEffect(() => {
-    setUnauthorizedHandler(() => void useAuth.getState().load());
+    setUnauthorizedHandler(() => {
+      // 只有「已登录后会话丢失」才需要重新确认；匿名态的 401 无需处理。
+      if (useAuth.getState().status === "authed") void useAuth.getState().load();
+    });
     void useAuth.getState().load();
     return () => setUnauthorizedHandler(null);
   }, []);
@@ -123,6 +126,9 @@ export default function App(): JSX.Element {
                     .logout()
                     .finally(() => {
                       window.location.hash = "#/login";
+                    })
+                    .catch(() => {
+                      /* 登出失败已在 finally 中置匿名，无需再抛 */
                     });
                 }}
               >
