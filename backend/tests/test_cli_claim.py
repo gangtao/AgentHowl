@@ -101,5 +101,48 @@ def test_claim_dry_run_then_real(tmp_path: Path) -> None:
 
 def test_claim_unknown_user(tmp_path: Path) -> None:
     _seed(tmp_path)
-    with pytest.raises(SystemExit):
+    with pytest.raises(SystemExit) as exc:
         main(["--user", "ghost", "--data-dir", str(tmp_path)])
+    assert exc.value.code == 2
+
+
+def test_claim_memory_collision_not_overwritten(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    uid = _seed(tmp_path)
+    (tmp_path / "agent_memory" / uid).mkdir()
+    (tmp_path / "agent_memory" / uid / "mem1.json").write_text("KEEP", encoding="utf-8")
+    assert claim(tmp_path, "alice", dry_run=True)["memory"] == 0
+    assert claim(tmp_path, "alice", dry_run=False)["memory"] == 0
+    assert (tmp_path / "agent_memory" / "mem1.json").exists()
+    assert (tmp_path / "agent_memory" / uid / "mem1.json").read_text(encoding="utf-8") == "KEEP"
+    assert f"跳过 agent_memory/mem1.json：目标 {uid}/mem1.json 已存在" in capsys.readouterr().err
+
+
+def test_claim_skips_bad_heads(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    _seed(tmp_path)
+    (tmp_path / "games" / "bad1.jsonl").write_text("[]\n", encoding="utf-8")
+    (tmp_path / "games" / "bad2.jsonl").write_bytes(b"")
+    (tmp_path / "games" / "bad3.jsonl").write_text('{"kind":"meta","data":1}\n', encoding="utf-8")
+    assert claim(tmp_path, "alice", dry_run=False)["games"] == 1
+    err = capsys.readouterr().err
+    for name in ("bad1.jsonl", "bad2.jsonl", "bad3.jsonl"):
+        assert f"跳过 {name}：首行不是合法 meta" in err
+
+
+def test_claim_preserves_crlf_lines(tmp_path: Path) -> None:
+    _seed(tmp_path)
+    path = tmp_path / "games" / "g_old.jsonl"
+    head = path.read_bytes().split(b"\n")[0]
+    path.write_bytes(head + b"\n" + b'{"kind":"event"}\r\n')
+    assert claim(tmp_path, "alice", dry_run=False)["games"] == 1
+    assert path.read_bytes().endswith(b'\n{"kind":"event"}\r\n')
+    assert json.loads(path.read_bytes().split(b"\n")[0])["data"]["owner_id"] == "u_a"
+
+
+def test_main_warns_to_stop_server(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    _seed(tmp_path)
+    main(["--user", "alice", "--data-dir", str(tmp_path), "--dry-run"])
+    assert "请先停止 AgentHowl 服务" not in capsys.readouterr().err
+    main(["--user", "alice", "--data-dir", str(tmp_path)])
+    assert "请先停止 AgentHowl 服务" in capsys.readouterr().err
