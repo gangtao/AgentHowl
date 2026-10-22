@@ -1,9 +1,9 @@
 """站点密钥与分享 token（issue #114）。"""
 
 import os
+from pathlib import Path
 
 import pytest
-from pathlib import Path
 
 from app.runtime.secret import load_secret, share_token, verify_share_token
 

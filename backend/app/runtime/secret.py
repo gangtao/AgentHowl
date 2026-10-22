@@ -18,7 +18,9 @@ MIN_SECRET_LEN = 32
 
 
 def load_secret(data_dir: Path, *, env: Mapping[str, str] | None = None) -> bytes:
-    """环境变量（strip 后）> data/secret.key（原样字节，绝不 strip）> 生成 token_hex(32) 文本落盘（0600）。
+    """环境变量（strip 后）> data/secret.key（原样字节，绝不 strip）> 生成落盘（0600）。
+
+    生成的密钥是 token_hex(32) 文本。
 
     两个来源都须至少 32 字节，否则启动即抛 ValueError（短密钥可被伪造 HMAC）。
     """
