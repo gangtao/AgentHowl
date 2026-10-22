@@ -8,7 +8,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import secrets
-from collections.abc import Callable
+from collections.abc import Callable, Collection
 from typing import TYPE_CHECKING, Literal
 
 from app.agent.experience import AgentExperience
@@ -58,6 +58,7 @@ class GameHandle:
         agents: AgentProfiles,
         voice_enabled: bool = False,
         narration_enabled: bool = False,
+        owner_id: str | None = None,
     ) -> None:
         self.game_id = game_id
         self.config = config
@@ -66,6 +67,7 @@ class GameHandle:
         self.agents = agents
         self.voice_enabled = voice_enabled
         self.narration_enabled = narration_enabled
+        self.owner_id = owner_id
         self.lobby = GameLobby(config, game_id)
         self.ports: dict[int, PlayerPort] = {}
         self.human_ports: dict[int, HumanPlayerPort] = {}
@@ -110,6 +112,7 @@ class GameRegistry:
         experience_store: ExperienceStore | None = None,
         provider_store: ProviderStore | None = None,
         speech_audio: SpeechAudioSink | None = None,
+        experience_store_for: Callable[[str], ExperienceStore] | None = None,
     ) -> None:
         self._store = store
         self._timeouts = timeouts
@@ -123,6 +126,7 @@ class GameRegistry:
             provider_store if provider_store is not None else InMemoryProviderStore()
         )
         self._speech_audio = speech_audio
+        self._experience_store_for = experience_store_for
 
     @property
     def skill_library(self) -> SkillLibrary:
@@ -130,6 +134,12 @@ class GameRegistry:
 
     @property
     def experience_store(self) -> ExperienceStore:
+        return self._experience_store
+
+    def experience_store_of(self, owner_id: str | None) -> ExperienceStore:
+        """按归属取经验存储（issue #114）：有 owner 且配置了工厂 → 该 owner 的；否则根存储。"""
+        if owner_id is not None and self._experience_store_for is not None:
+            return self._experience_store_for(owner_id)
         return self._experience_store
 
     def create(
@@ -143,10 +153,14 @@ class GameRegistry:
         ai_model_speech: str | None = None,
         voice: bool = False,
         narration: bool = False,
+        owner_id: str | None = None,
+        allowed_providers: Collection[str] | None = None,
     ) -> GameHandle:
         # 旧入口 ai_model 折叠为 "*" 默认档案；与显式 agents["*"] 冲突、座位键非法 → ValueError
         resolved = merge_profiles(agents, legacy_to_profiles(ai_model, ai_model_speech))
         providers = {p.provider_id for p in self._provider_store.list()}
+        if allowed_providers is not None:
+            providers &= set(allowed_providers)
         validate_profiles(resolved, config.num_players, self.skill_library, providers=providers)
         if config.seed is None:
             # 未指定 seed 时抽一个随机种子并写进 config（随 meta 落盘，回放仍可复现）；
@@ -161,6 +175,7 @@ class GameRegistry:
             agents=resolved,
             voice_enabled=voice,
             narration_enabled=narration,
+            owner_id=owner_id,
         )
         self._games[game_id] = handle
         return handle
@@ -220,7 +235,7 @@ class GameRegistry:
             handle.agents, handle.config.num_players, exclude=handle.ports.keys()
         )
         for seat, mid in handle.seat_memory_ids.items():
-            handle.experiences[seat] = self._experience_store.load(mid)
+            handle.experiences[seat] = self.experience_store_of(handle.owner_id).load(mid)
 
         # Provider 装配（issue #26）：create() 已校验存在性；此处仍可能因并发删除而落空
         for seat in range(handle.config.num_players):
@@ -252,6 +267,7 @@ class GameRegistry:
             agents=effective,
             speech_audio=self._speech_audio if handle.voice_enabled else None,
             narration_enabled=handle.voice_enabled and handle.narration_enabled,
+            owner_id=handle.owner_id,
         )
         handle.runner = runner
         # 订阅须在 create_task 之前完成，否则 GAME_CREATED/ROLES_ASSIGNED 首批事件漏投
@@ -277,7 +293,7 @@ class GameRegistry:
                 final_state=task.result(),
                 profiles=handle.agents,
                 ports=handle.ports,
-                store=self._experience_store,
+                store=self.experience_store_of(handle.owner_id),
             )
         )
         handle.postgame_task.add_done_callback(lambda t: _log_postgame(handle.game_id, t))

@@ -148,6 +148,9 @@ def create_app(
         or JsonFileExperienceStore(memory_dir or Path("data/agent_memory")),
         provider_store=app.state.provider_store,
         speech_audio=app.state.speech_audio,
+        experience_store_for=lambda owner_id: JsonFileExperienceStore(
+            (memory_dir or Path("data/agent_memory")) / owner_id
+        ),
     )
     app.state.tokens = TokenRegistry()
     # 用户与会话（issue #114）

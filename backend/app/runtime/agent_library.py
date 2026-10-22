@@ -28,6 +28,7 @@ class StoredAgent(BaseModel):
     profile: AgentProfile
     created_at: str
     updated_at: str
+    owner_id: str | None = None
 
 
 class AgentLibraryStore(Protocol):

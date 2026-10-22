@@ -57,6 +57,7 @@ class GameMeta(BaseModel):
 
     agents（issue #64）：实际建成 Agent 端口的座位 → 档案（键为座位号字符串；真人 / 随机 bot
     不记；"*" 已展开）。只供回放 / 档案评估（#60）使用，不经 observation 暴露；缺省 {} 兼容旧文件。
+    owner_id（issue #114）：建局者 user_id；旧文件缺省 None = 无主，仅 admin 可见。
     """
 
     model_config = ConfigDict(frozen=True)
@@ -65,6 +66,7 @@ class GameMeta(BaseModel):
     config: GameConfig
     roster: tuple[SeatName, ...]
     agents: dict[str, AgentProfile] = {}
+    owner_id: str | None = None
 
 
 def event_to_json(event: Event) -> dict[str, object]:

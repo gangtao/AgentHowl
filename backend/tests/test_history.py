@@ -91,3 +91,11 @@ async def test_list_history_sorts_desc_and_skips_corrupt(caplog) -> None:
     assert [s.game_id for s in out] == ["g_new", "g_old"]
     assert any("g_bad" in r.getMessage() for r in caplog.records)
     await asyncio.sleep(0)  # 保持 async 用例形态（asyncio_mode=auto）
+
+
+def test_summary_carries_owner_id() -> None:
+    meta = GameMeta(
+        game_id="g_1", config=build_preset("std_9_kill_side"), roster=(), owner_id="u_9"
+    )
+    s = summarize_game(meta, [], live=False)
+    assert s.owner_id == "u_9" and s.owner_name is None and s.share_token is None
