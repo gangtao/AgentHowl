@@ -38,4 +38,6 @@ def share_token(secret: bytes, game_id: str) -> str:
 
 
 def verify_share_token(secret: bytes, game_id: str, token: str) -> bool:
-    return bool(token) and hmac.compare_digest(share_token(secret, game_id), token)
+    """按 bytes 比较：compare_digest 对非 ASCII str 会抛 TypeError。"""
+    expected = share_token(secret, game_id).encode()
+    return bool(token) and hmac.compare_digest(expected, token.encode())

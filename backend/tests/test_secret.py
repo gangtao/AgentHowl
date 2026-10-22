@@ -26,3 +26,8 @@ def test_share_token_stable_and_verifies() -> None:
     assert verify_share_token(b"k", "g_1", t)
     assert not verify_share_token(b"k", "g_1", t[:-1] + "0")
     assert not verify_share_token(b"k", "g_1", "")
+
+
+def test_verify_rejects_non_ascii_and_wrong_length() -> None:
+    assert not verify_share_token(b"k", "g_1", "é" * 32)
+    assert not verify_share_token(b"k", "g_1", "x" * 31)
