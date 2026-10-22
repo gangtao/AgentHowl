@@ -13,7 +13,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from app.agent.skills import BUILTIN_SKILLS_DIR, SkillLibrary
-from app.api import agents, auth, avatars, providers, rest, voices, ws
+from app.api import admin, agents, auth, avatars, providers, rest, voices, ws
 from app.api.auth import UnverifiedError
 from app.api.deps import TokenRegistry
 from app.runtime.agent_library import AgentLibraryStore, JsonFileAgentLibrary
@@ -189,6 +189,7 @@ def create_app(
     # 头像存储（issue #102）：内容寻址，首次上传建目录
     app.state.avatar_store = avatar_store or FileAvatarStore(avatars_dir or Path("data/avatars"))
     app.include_router(auth.router, prefix="/api/v1")
+    app.include_router(admin.router, prefix="/api/v1")
 
     @app.get("/api/v1/health")
     def health() -> dict[str, bool]:
