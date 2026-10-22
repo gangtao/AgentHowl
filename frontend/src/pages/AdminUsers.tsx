@@ -13,6 +13,8 @@ export default function AdminUsers(): JSX.Element {
   const [users, setUsers] = useState<UserPublic[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // 在途请求的 user_id：同一行请求未返回前禁用该行按钮，避免响应乱序互相覆盖
+  const [busy, setBusy] = useState<ReadonlySet<string>>(new Set());
 
   useEffect(() => {
     let alive = true;
@@ -31,13 +33,20 @@ export default function AdminUsers(): JSX.Element {
     };
   }, []);
 
-  const act = useCallback(async (call: () => Promise<UserPublic>): Promise<void> => {
+  const act = useCallback(async (userId: string, call: () => Promise<UserPublic>): Promise<void> => {
     setError(null);
+    setBusy((prev) => new Set(prev).add(userId));
     try {
       const updated = await call();
       setUsers((prev) => prev.map((u) => (u.user_id === updated.user_id ? updated : u)));
     } catch (e) {
       setError(e instanceof ApiError ? e.detail : "操作失败");
+    } finally {
+      setBusy((prev) => {
+        const next = new Set(prev);
+        next.delete(userId);
+        return next;
+      });
     }
   }, []);
 
@@ -84,9 +93,10 @@ export default function AdminUsers(): JSX.Element {
                       <button
                         type="button"
                         className="btn btn-ghost"
+                        disabled={busy.has(u.user_id)}
                         aria-label={`${u.status === "active" ? "禁用" : "启用"} ${u.username}`}
                         onClick={() =>
-                          void act(() => patchUser(u.user_id, { status: u.status === "active" ? "disabled" : "active" }))
+                          void act(u.user_id, () => patchUser(u.user_id, { status: u.status === "active" ? "disabled" : "active" }))
                         }
                       >
                         {u.status === "active" ? "禁用" : "启用"}
@@ -94,9 +104,10 @@ export default function AdminUsers(): JSX.Element {
                       <button
                         type="button"
                         className="btn btn-ghost"
+                        disabled={busy.has(u.user_id)}
                         aria-label={`${u.role === "admin" ? "降为普通用户" : "设为管理员"} ${u.username}`}
                         onClick={() =>
-                          void act(() => patchUser(u.user_id, { role: u.role === "admin" ? "user" : "admin" }))
+                          void act(u.user_id, () => patchUser(u.user_id, { role: u.role === "admin" ? "user" : "admin" }))
                         }
                       >
                         {u.role === "admin" ? "降为普通用户" : "设为管理员"}
@@ -105,8 +116,9 @@ export default function AdminUsers(): JSX.Element {
                         <button
                           type="button"
                           className="btn btn-ghost"
+                          disabled={busy.has(u.user_id)}
                           aria-label={`标记已验证 ${u.username}`}
-                          onClick={() => void act(() => verifyUser(u.user_id))}
+                          onClick={() => void act(u.user_id, () => verifyUser(u.user_id))}
                         >
                           标记已验证
                         </button>
