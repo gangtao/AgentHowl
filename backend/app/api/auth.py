@@ -6,12 +6,14 @@ password_hash / session_id / 验证码明文永不进响应与日志。
 
 from __future__ import annotations
 
+import hmac
 import logging
 from collections.abc import Mapping
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel
+from starlette.concurrency import run_in_threadpool
 
 from app.runtime.mailer import Mailer, MailError
 from app.runtime.ratelimit import RateLimiter
@@ -43,6 +45,8 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 SESSION_COOKIE = "agenthowl_session"
 SESSION_MAX_AGE = 30 * 24 * 3600
 VERIFY_SUBJECT = "AgentHowl 邮箱验证码"
+# 登录时用户不存在也跑一次 scrypt，抹平时序差异（防用户枚举）
+_DUMMY_HASH = hash_password("agenthowl-dummy-password")
 
 
 class UnverifiedError(Exception):
@@ -125,6 +129,10 @@ async def _send_code(request: Request, user: User) -> None:
     users = get_users(request)
     mailer: Mailer = request.app.state.mailer
     code, record = new_email_code(user.user_id)
+    old = users.get_email_code(user.user_id)
+    if old is not None and not is_expired(old.expires_at):
+        # 重发不重置尝试次数：否则可 5 次猜测 → 重发 → 再 5 次
+        record = record.model_copy(update={"attempts": old.attempts})
     users.put_email_code(record)
     try:
         await mailer.send(
@@ -184,13 +192,14 @@ async def register(req: RegisterRequest, request: Request) -> RegisterResponse:
         validate_password(req.password)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    password_hash = await run_in_threadpool(hash_password, req.password)
     users = get_users(request)
     mailer: Mailer = request.app.state.mailer
     user = User(
         user_id=new_user_id(),
         username=username,
         email=email,
-        password_hash=hash_password(req.password),
+        password_hash=password_hash,
         email_verified_at=None if mailer.enabled else now_iso(),
         created_at=now_iso(),
     )
@@ -215,7 +224,9 @@ def verify(req: VerifyRequest, request: Request, response: Response) -> OkRespon
     record = users.get_email_code(user.user_id)
     if record is None or record.attempts >= EMAIL_CODE_MAX_ATTEMPTS:
         raise bad
-    if is_expired(record.expires_at) or record.code_hash != hash_code(req.code.strip()):
+    if is_expired(record.expires_at) or not hmac.compare_digest(
+        record.code_hash, hash_code(req.code.strip())
+    ):
         users.put_email_code(record.model_copy(update={"attempts": record.attempts + 1}))
         raise bad
     users.delete_email_code(user.user_id)
@@ -244,7 +255,10 @@ def login(req: LoginRequest, request: Request, response: Response) -> LoginRespo
     user = users.get_by_username(normalize_username(ident)) or users.get_by_email(
         normalize_email(ident)
     )
-    if user is None or not verify_password(req.password, user.password_hash):
+    if user is None:
+        verify_password(req.password, _DUMMY_HASH)
+        raise HTTPException(status_code=401, detail="用户名或密码错误")
+    if not verify_password(req.password, user.password_hash):
         raise HTTPException(status_code=401, detail="用户名或密码错误")
     if user.status != "active":
         raise HTTPException(status_code=403, detail="账号已禁用")

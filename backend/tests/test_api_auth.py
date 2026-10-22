@@ -173,3 +173,34 @@ def test_require_user_401_for_protected(client: TestClient) -> None:
     assert client.get("/api/v1/presets").status_code == 401
     assert client.get("/api/v1/skills").status_code == 401
     assert client.get("/api/v1/tts/status").status_code == 401
+
+
+def _reg(client: TestClient) -> None:
+    client.post(
+        "/api/v1/auth/register",
+        json={"username": "alice", "email": "a@x.io", "password": "password1"},
+    )
+
+
+def test_resend_does_not_reset_attempts(client: TestClient, mailer: RecordingMailer) -> None:
+    _reg(client)
+    bad = {"email": "a@x.io", "code": "999999"}
+    for _ in range(5):
+        assert client.post("/api/v1/auth/verify", json=bad).status_code == 400
+    assert client.post("/api/v1/auth/resend", json={"email": "a@x.io"}).status_code == 200
+    r = client.post("/api/v1/auth/verify", json={"email": "a@x.io", "code": _code_from(mailer)})
+    assert r.status_code == 400
+
+
+def test_resend_after_expiry_resets_attempts(client: TestClient, mailer: RecordingMailer) -> None:
+    _reg(client)
+    for _ in range(5):
+        client.post("/api/v1/auth/verify", json={"email": "a@x.io", "code": "999999"})
+    users = client.app.state.users  # type: ignore[attr-defined]
+    uid = users.get_by_email("a@x.io").user_id
+    old = users.get_email_code(uid)
+    users.put_email_code(old.model_copy(update={"expires_at": "2000-01-01T00:00:00+00:00"}))
+    assert client.post("/api/v1/auth/resend", json={"email": "a@x.io"}).status_code == 200
+    assert users.get_email_code(uid).attempts == 0
+    r = client.post("/api/v1/auth/verify", json={"email": "a@x.io", "code": _code_from(mailer)})
+    assert r.status_code == 200
