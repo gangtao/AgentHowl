@@ -158,13 +158,13 @@ React 18 + TypeScript + Vite（`frontend/`），issue #26 M3：上帝视角实�
 `src/api`（REST/WS 客户端）、`src/pages`（Lobby / GamePage / AgentLibrary / Providers / History）、
 `src/components`、`src/lib`。
 
-**历史对局**（issue #98）：导航「历史对局」→ `#/history` 列出 `backend/data/games/` 里的全部对局
-（时间、板子、胜方、轮数、座位档案、状态），已结束的一键「回放」（`#/g/{id}?replay=1`），
-**不需要 token、后端重启后依然可用**——终局后观众视角本就拿全量事件流，等于没有新泄露面。
-进行中的对局显示「直播中」，仍只能用建局时的上帝/观众链接观看；中断局（重启丢掉的中途局）
-只列出不可回放。每行的「删除」（issue #100）会删掉该局事件文件（进行中的对局不可删；Agent
-跨局记忆不受影响）。多用户场景可设 `AGENTHOWL_PUBLIC_HISTORY=0` 关闭：列表与已结束对局的
-`/replay` `/meta` `/speeches` 恢复要求 token，不再从文件回退，删除接口也一并关闭（404）。
+**历史对局**（issue #98 / #114）：导航「历史对局」→ `#/history` 只列出**自己创建的**对局（admin 看全部，
+多一列「创建者」）：时间、板子、胜方、轮数、座位档案、状态。点进去即上帝视角（创建者 / admin 凭登录
+cookie 即可，后端重启后依然可用）；已结束的对局可「回放」。每行的「分享」会生成匿名可看的
+`#/g/{id}?share=…` 链接（观战脱敏视角；`allow_spectators=false` 的对局没有分享链接）。进行中的
+对局显示「直播中」；中断局（重启丢掉的中途局）只列出不可回放。每行的「删除」（issue #100，仅创建者 /
+admin）会删掉该局事件文件（进行中的对局不可删；Agent 跨局记忆不受影响）。`/replay` `/meta` 仅在
+GAME_OVER 之后开放。`AGENTHOWL_PUBLIC_HISTORY` 已移除。
 
 **安装 / 开发 / 构建 / 检查**：
 
@@ -194,12 +194,14 @@ make fe-check         # 或 cd frontend && npm run check —— 确认 TS reduce
 `frontend/dist` 存在就挂载；不存在则只提供 API，不报错）。开发时用 `make fe-dev`（Vite 热重载
 + 代理）而非反复 `fe-build`。
 
-**链接与 token 安全**：对局页的地址携带 token（URL hash：`#/g/{game_id}?gm=<gm_token>` 或
-`?spec=<spectator_token>`），不落 localStorage。`gm_token`（issue #26）是**上帝视角只读全量**
-凭据——持有者能看到所有玩家的真实身份、夜间行动与狼队私聊，信息隔离对它整体豁免；**只应给受
-信任的主持/复盘方，绝不要把带 `?gm=` 的链接当观战链接分享**，观众一律发 `?spec=` 链接
-（`spectator_token`，服务端已脱敏）。`gm_token` 只在 `POST /games` 响应里出现一次，事后无法
-重新取回。
+**链接与凭据安全**（issue #114）：对局页有三种凭据，都不落 localStorage：
+- `#/g/{game_id}?gm=<gm_token>`：**上帝视角只读全量**，持有者能看到所有玩家的真实身份、夜间行动与狼队
+  私聊；**只应给受信任的主持/复盘方，绝不要当观战链接分享**。`gm_token` 只在 `POST /games` 响应里出现
+  一次，事后无法重新取回（但创建者登录后进入该局页，凭 cookie 即为 GM 视角）。
+- `#/g/{game_id}?share=<share_token>`：匿名只读观战（服务端已脱敏）。`share_token = HMAC(AGENTHOWL_SECRET_KEY,
+  game_id)`，由密钥派生，**重启不失效**；轮换 `AGENTHOWL_SECRET_KEY` 会让所有旧分享链接失效。
+- 裸 `#/g/{game_id}`：走登录 cookie（`agenthowl_session`），创建者 / admin 为 GM 视角。
+旧的 `?spec=` 与 `?replay=1` 链接已移除。
 
 **模型服务（Providers 页）**：`/api/v1/providers` CRUD + `/test`（连通性探测）+ `/models`
 （拉取可用模型列表），供建局 / Agent 编辑器的 `ModelSelect` 选用，免去每次手填模型字符串。
@@ -266,14 +268,19 @@ uv run uvicorn app.main:app --reload   # http://localhost:8000
 一局最小流程（`curl`；`$BASE=http://localhost:8000/api/v1`）：
 
 ```bash
+# 0) 登录（建局需要登录；cookie 存 cookies.txt。首次先 POST $BASE/auth/register）
+curl -s -c cookies.txt -b cookies.txt -X POST $BASE/auth/login -H 'Content-Type: application/json' \
+  -d '{"username":"alice","password":"..."}'
+
 # 1) 建局：9 人屠边预设，空位由 LLM Agent 填充（ai_model 省略则用内置随机 bot）
-curl -s -X POST $BASE/games -H 'Content-Type: application/json' \
+curl -s -c cookies.txt -b cookies.txt -X POST $BASE/games -H 'Content-Type: application/json' \
   -d '{"preset":"std_9_kill_side","config_override":{"seed":3},"ai_model":"ollama/llama3.1"}'
-# → {game_id, host_token, spectator_token, gm_token, config, agents}
+# → {game_id, host_token, share_token, gm_token, config, agents}
+# share_token：匿名观战（allow_spectators=false 时为 null）；
 # gm_token：上帝视角只读全量（issue #26），只在本响应出现一次；只给受信任方，别当观战链接发
 
-# 2) （可选）真人加入任意空座，拿 player_token 与 ws_url
-curl -s -X POST $BASE/games/$GID/join -H 'Content-Type: application/json' \
+# 2) （可选）真人加入任意空座，拿 player_token 与 ws_url（需登录 cookie，或外部 Agent 客户端带 host_token）
+curl -s -X POST $BASE/games/$GID/join -H "Authorization: Bearer $HOST_TOKEN" -H 'Content-Type: application/json' \
   -d '{"display_name":"Alice","player_type":"HUMAN"}'
 # → {player_token, seat, ws_url}
 
@@ -288,18 +295,19 @@ curl -s "$BASE/games/$GID/my-turn?wait=5" -H "Authorization: Bearer $PLAYER_TOKE
 curl -s -X POST $BASE/games/$GID/actions -H "Authorization: Bearer $PLAYER_TOKEN" \
   -H 'Content-Type: application/json' -d '{"tool":"vote","arguments":{"target_seat":2}}'
 
-# 6) 局终 GM 全量回放
-curl -s $BASE/games/$GID/replay -H "Authorization: Bearer $SPECTATOR_TOKEN"
+# 6) 局终 GM 全量回放（gm_token / 创建者 cookie / admin；分享链接用 ?share=）
+curl -s $BASE/games/$GID/replay -b cookies.txt
 
 # 7) 局终对局头记录：配置 / 名单 / 各座位实际生效的 Agent 档案（回放与档案评估用）
-curl -s $BASE/games/$GID/meta -H "Authorization: Bearer $SPECTATOR_TOKEN"
+curl -s "$BASE/games/$GID/meta?share=$SHARE_TOKEN"
 ```
 
 WebSocket（按视角推送过滤后事件流；断线可凭同 token + `from_seq` 重连补发）：
 
 ```
-GET /api/v1/ws?token=<token>[&from_seq=<n>]
-# token 可以是 player_token / spectator_token / gm_token（HOST token 无读流权限）
+GET /api/v1/ws?token=<token>[&from_seq=<n>]          # player_token / gm_token（HOST token 无读流权限）
+GET /api/v1/ws?game_id=<id>&share=<share_token>       # 匿名观战
+GET /api/v1/ws?game_id=<id>                           # 登录 cookie（创建者 / admin 为 GM 视角）
 # server→client 帧：game_event / your_turn / phase_change / game_over / action_result / error
 # client→server 帧：与 POST /actions 等价（同 schema 同信封）
 ```
@@ -319,10 +327,10 @@ Providers 页用，详见「前端 / Frontend」小节）：
 | GET | `/api/v1/providers/{provider_id}/models` | 拉取该服务可用模型列表 |
 
 ```bash
-curl -s $BASE/agents                                    # 已存 Agent 档案
+curl -s -b cookies.txt $BASE/agents                                    # 已存 Agent 档案
 curl -s $BASE/skills                                     # 技能包清单
 curl -s $BASE/presets                                     # 板子摘要
-curl -s $BASE/providers                                   # 已配置模型服务（不含明文密钥）
+curl -s -b cookies.txt $BASE/providers                                   # 已配置模型服务（不含明文密钥）
 ```
 
 真实模型冒烟与 token bench（默认跳过，需本地 Ollama）：
@@ -331,6 +339,35 @@ curl -s $BASE/providers                                   # 已配置模型服�
 ollama pull llama3.1 && ollama serve &
 AGENTHOWL_SMOKE_MODEL=ollama/llama3.1 uv run pytest -m smoke -q -s
 ```
+
+## 多用户 / Multi-user
+
+issue #114：账号体系 + 按用户隔离。设计见 `docs/superpowers/specs/2026-10-21-multi-user-auth-design.md`。
+
+- **注册 / 登录**：`POST /api/v1/auth/{register,verify,resend,login,logout}`、`GET /api/v1/auth/me`；会话 cookie
+  `agenthowl_session`（HttpOnly、SameSite=Lax、30 天、`Secure` 由 `AGENTHOWL_COOKIE_SECURE` 控制，默认 1）。
+  **邮箱验证只在配置了 `AGENTHOWL_SMTP_HOST` 时启用**（发验证码、`verify` 后才能登录）；未配置则注册即自动验证
+  （日志有警告）。按 IP 限流：注册 5/小时、登录 10/分钟、重发 3/小时、验证 10/分钟。
+- **管理员引导**：`AGENTHOWL_ADMIN_USERNAME` / `_EMAIL` / `_PASSWORD` 三者齐全时启动创建（幂等，已存在不改密码）；
+  只设一部分启动即报错。admin 可在 `#/admin` 禁用/启用用户、改角色、手工验证邮箱（`GET/PATCH /api/v1/admin/users`、
+  `POST /api/v1/admin/users/{id}/verify`），并能看到所有人的对局 / Agent / Provider。
+- **归属**：对局、Agent 档案、Provider 都带 `owner_id`，普通用户只看到自己的。Provider 是 BYOK（各用自己的密钥，
+  Agent 只能引用自己的 Provider）；Agent 名 / `memory_id` / Provider 名在用户内唯一。
+- **迁移旧数据**：升级前的无主数据只有 admin 可见，用 CLI 认领（**先停服务**）：
+  `cd backend && uv run python -m app.cli.claim --user <name> [--dry-run]`。Agent 记忆文件会移到
+  `data/agent_memory/<owner_id>/`，重名项跳过并警告。
+- **外部 Agent 客户端**：`POST /games/{id}/join` 需要登录 cookie，或 `Authorization: Bearer <host_token>`
+  （建局响应里的 `host_token`），无状态的脚本客户端用后者入座。
+- **其它环境变量**：`AGENTHOWL_SECRET_KEY`（缺省生成到 `data/secret.key`，0600）、`AGENTHOWL_USERS_DB`
+  （默认 `data/users.db`）、`AGENTHOWL_TRUST_PROXY`、`AGENTHOWL_SMTP_PORT/USER/PASSWORD/FROM/STARTTLS`，
+  见 `.env.example`。
+
+**公网部署清单**：
+1. 前置 HTTPS 反向代理（nginx / Caddy），保持 `AGENTHOWL_COOKIE_SECURE=1`（本地 http 调试才设 0）。
+2. `AGENTHOWL_TRUST_PROXY=1` 让限流读 `X-Forwarded-For` 首跳——**只在反代会覆写该头时开启**，否则可被伪造绕过限流。
+3. 设置 `AGENTHOWL_ADMIN_*` 引导管理员；需要邮箱验证就配 `AGENTHOWL_SMTP_*`。
+4. 固定 `AGENTHOWL_SECRET_KEY` 并持久化 `backend/data`（含 `users.db`、`secret.key`）。
+5. Provider 密钥目前仍是明文 0600 落盘（加密落盘见后续 issue）。
 
 ## M2 验收矩阵（PRD §9）
 

@@ -576,11 +576,11 @@ pydantic，零 IO）：`kind`（`ollama`/`openai`/`anthropic`/`openai_compatible
 `provider.api_base`/`api_key` **按端口**新建一个 `LiteLLMInstructorClient` 实例注入——不写入
 `AgentConfig`、不进事件日志、不经环境变量，凭据只在该端口的客户端对象生命周期内持有。
 
-**实现期简化**（相对完整的多租户凭据管理是放大范围）：单用户本地部署假设——密钥落盘明文
-（仅靠文件权限 0600 与"本机单用户"防护，不加密、无密钥轮换）；API 响应统一用 `ProviderPublic`
-（`has_key` + 末 4 位 `key_hint`）不回传明文，但本地文件本身可被同机其他进程读到。`/test` 端点
+**实现期简化**（issue #114 更新）：Provider 按用户归属（BYOK，各用户用自己的密钥，Agent 只能引用其
+所有者的 Provider），密钥仍明文落盘、仅靠 0600 文件权限防护，加密落盘见后续 issue；API 响应统一用
+`ProviderPublic`（`has_key` + 末 4 位 `key_hint`）不回传明文。`/test` 端点
 在方法内惰性 `import litellm/httpx`（`ProviderProbe`），保持 `app/runtime`/`app/api`/`app/cli`
-模块级不触碰 litellm 的约束（见 CLAUDE.md）。多用户隔离、密钥加密、审计日志均不在 M3 范围。
+模块级不触碰 litellm 的约束（见 CLAUDE.md）。密钥加密、审计日志不在当前范围。
 
 ---
 
@@ -604,10 +604,10 @@ pydantic，零 IO）：`kind`（`ollama`/`openai`/`anthropic`/`openai_compatible
 | POST | `/api/v1/games/{game_id}/actions` | 提交行动（统一入口，body 为工具调用） |
 | GET | `/api/v1/games/{game_id}/my-turn` | 长轮询：挂起至轮到本玩家（polling 降级用） |
 | GET | `/api/v1/games/{game_id}/events` | 获取事件日志（回放用，支持 `?from_seq=`） |
-| GET | `/api/v1/games/{game_id}/replay` | 上帝视角完整回放数据（对局结束后开放；已结束对局在 `AGENTHOWL_PUBLIC_HISTORY=1`（默认）下无需 token，且进程重启后从事件文件回退读取，issue #98） |
-| GET | `/api/v1/games/{game_id}/meta` | 对局头记录 `GameMeta`：配置、名单、各座位实际生效的 Agent 档案（`agents`，issue #64；对局结束后开放，公开策略同 `/replay`） |
-| GET | `/api/v1/games` | 历史对局列表 `GameSummary[]`：`game_id / preset / num_players / status(finished·live·aborted) / started_at / ended_at / winner / rounds / seats / seq`，文件里的对局 + 内存里进行中的状态合并，新的在前；公开策略同 `/replay`（issue #98） |
-| DELETE | `/api/v1/games/{game_id}` | 删除历史对局（issue #100）：删事件文件、摘 registry handle、作废该局 token；进行中/未开局 409；仅在 `AGENTHOWL_PUBLIC_HISTORY=1` 下可用（关则 404），不触碰 Agent 跨局记忆 |
+| GET | `/api/v1/games/{game_id}/replay` | 上帝视角完整回放数据（仅 GAME_OVER 之后开放；凭 gm_token / `?share=` / 创建者或 admin 的 cookie；进程重启后从事件文件回退读取，issue #98 / #114） |
+| GET | `/api/v1/games/{game_id}/meta` | 对局头记录 `GameMeta`：配置、名单、各座位实际生效的 Agent 档案（`agents`，issue #64；仅 GAME_OVER 之后开放，凭据同 `/replay`） |
+| GET | `/api/v1/games` | 历史对局列表 `GameSummary[]`：`game_id / preset / num_players / status(finished·live·aborted) / started_at / ended_at / winner / rounds / seats / seq`，文件里的对局 + 内存里进行中的状态合并，新的在前；需登录，只含自己创建的对局（admin 全部，issue #98 / #114） |
+| DELETE | `/api/v1/games/{game_id}` | 删除历史对局（issue #100）：删事件文件、摘 registry handle、作废该局 token；进行中/未开局 409；仅创建者 / admin（他人 404），不触碰 Agent 跨局记忆 |
 | PUT | `/api/v1/avatars` | 上传头像（raw body，PNG/JPEG/WebP ≤512 KB，魔数校验）→ `{avatar_id}`，内容寻址幂等（issue #102） |
 | GET | `/api/v1/avatars/{avatar_id}` | 读取头像，immutable 缓存；不鉴权 |
 | GET | `/api/v1/games/{game_id}/avatars` | 座位 → 头像 id；直播中需本局 token，终局公开策略同 `/replay`（issue #102）；对局快照里无头像的座位按档案名在当前档案库回退取（老对局也能显示事后加的头像） |
@@ -650,7 +650,7 @@ POST /api/v1/games
 {
   "game_id": "g_a1b2c3",
   "host_token": "tok_host_xyz",
-  "spectator_token": "tok_spec_xyz",
+  "share_token": "<HMAC(secret, game_id)>",
   "gm_token": "tok_gm_xyz",
   "config": { },
   "agents": { }
@@ -662,7 +662,7 @@ POST /api/v1/games
 `/ws` 均为**上帝视角只读**——服务端信息隔离对 GM 视角整体豁免，故 `gm_token` 等同于把整局
 所有玩家的私有信息（角色、夜间行动、狼队私聊）都暴露给持有者；前端把它放在 URL hash 的
 `?gm=` 参数（不进 localStorage），该链接只应给受信任的主持/复盘方，绝不能当作观战链接分享
-（观战请用 `spectator_token` 的 `?spec=` 链接，`/state` 对其返回脱敏后的 `SpectatorView`）。
+（观战请用 `share_token` 的 `?share=` 链接，`/state` 对其返回脱敏后的 `SpectatorView`）。
 
 `agents: {"<seat>"|"*": AgentProfile}`（issue #56）：每座位内置 Agent 档案，字段
 `model` / `model_speech` / `reflection_model` / `thinking` / `temperature` / `name` /
@@ -701,7 +701,7 @@ Authorization: Bearer tok_p7
 ### 5.3 WebSocket 协议
 
 连接：`wss://host/api/v1/ws?token=<token>[&from_seq=<n>]`（`token` 为 `player_token` /
-`spectator_token` / `gm_token` 之一，视角由 token 种类决定；HOST token 无读流权限，连接直接
+`gm_token` 之一，视角由 token 种类决定；另有 `?game_id=…&share=…` 匿名观战与 `?game_id=…` cookie 会话两种形态；HOST token 无读流权限，连接直接
 4403 关闭）。`from_seq` 省略即从头补发；补发路径与实时路径共用同一套帧构建，按 token 视角
 过滤（GM 不过滤）。`token` 无效 → 4401 关闭；对局不存在 → 4404；对局未开局 → 4409。
 
@@ -750,10 +750,15 @@ Authorization: Bearer tok_p7
 端口，其余连接发行动收到 `error` 帧。可纯用 REST 发、WS 只收；推荐真人客户端 WS 收 + REST
 发，Agent 亦然。
 
-### 5.4 认证与会话管理
-- **简单 token 即可**：创建/加入对局时签发 `player_token`（不透明字符串，映射到 `{game_id, seat, player_type}`）。所有 REST 带 `Authorization: Bearer`，WS 带 `?token=`。
-- 观众另发 `spectator_token`（只读、上帝视角，仅当对局配置为可观战或已结束）。
-- token 存内存 + Redis（多进程），生产可换 JWT。**MVP 阶段内存 dict 足够**。
+### 5.4 认证、用户与会话
+设计详见 `docs/superpowers/specs/2026-10-21-multi-user-auth-design.md`（issue #114）。三层凭据：
+- **对局 token**：`player_token` / `host_token` / `gm_token`（不透明字符串，映射到 `{game_id, seat, player_type}` 或对局级角色），REST 带 `Authorization: Bearer` 或 `?token=`，WS 带 `?token=`。`host_token` 无读流权限。
+- **分享 token**：`share_token = HMAC(AGENTHOWL_SECRET_KEY, game_id)`，匿名只读观战（脱敏视角），仅当 `allow_spectators=true`；由密钥派生、重启不失效，轮换密钥使旧链接失效。REST `?share=`，WS `?game_id=…&share=…`。
+- **cookie 会话**：`agenthowl_session`（HttpOnly、SameSite=Lax、30 天、Secure 可配）。`POST /games` 必须登录；创建者与 admin 凭 cookie 读自己的对局即为 GM 视角。`/join` 需 cookie 或 `Authorization: Bearer <host_token>`（外部 Agent 客户端）。
+- **邮箱验证**仅在配置 SMTP 时启用，否则注册即验证；注册/登录/重发/验证按 IP 限流。
+- **归属规则**：对局、Agent 档案、Provider 带 `owner_id`；普通用户只见自己的，admin 见全部；无主旧数据仅 admin 可见，用 `python -m app.cli.claim --user <name>` 认领。Agent 名 / `memory_id` / Provider 名在用户内唯一。
+- **admin 角色**：由 `AGENTHOWL_ADMIN_*` 启动引导；`/api/v1/admin/users` 管理用户（禁用/启用、角色、手工验证）。
+- 存储仍为进程内存 + 文件；多进程部署需改用共享存储（未在范围内）。
 
 ### 5.5 超时处理（默认行动）
 玩家/Agent 在 `deadline_ts` 前未提交时，服务器执行**默认行动**，保证对局不卡死：
