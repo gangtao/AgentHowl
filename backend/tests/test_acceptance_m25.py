@@ -51,7 +51,7 @@ def client() -> Iterator[TestClient]:
         store=InMemoryEventStore(), timeouts=RunnerTimeouts(speech_sec=10.0, action_sec=10.0)
     )
     with TestClient(app) as c:
-        login_as(c, "host")
+        login_as(c, "host", role="admin")
         yield c
 
 
@@ -63,7 +63,7 @@ def agent_client() -> Iterator[TestClient]:
         agent_port_factory=_scripted_agent_factory(),
     )
     with TestClient(app) as c:
-        login_as(c, "host")
+        login_as(c, "host", role="admin")
         yield c
 
 

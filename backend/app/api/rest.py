@@ -109,6 +109,7 @@ async def create_game_endpoint(
             narration=req.narration,
             owner_id=user.user_id,
             allowed_providers=allowed,
+            require_provider=user.role != "admin",
         )
     except ValueError as exc:
         raise ToolCallError(f"agents 非法：{exc}") from exc

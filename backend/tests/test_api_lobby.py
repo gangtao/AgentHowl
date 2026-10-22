@@ -17,7 +17,7 @@ def client() -> Iterator[TestClient]:
         store=InMemoryEventStore(), timeouts=RunnerTimeouts(speech_sec=5.0, action_sec=5.0)
     )
     with TestClient(app) as c:
-        login_as(c, "host")
+        login_as(c, "host", role="admin")
         yield c
 
 
@@ -218,7 +218,7 @@ def test_create_app_with_external_skills_dir(tmp_path) -> None:
         skills_dir=tmp_path,
     )
     with TestClient(app) as c:
-        login_as(c, "host")
+        login_as(c, "host", role="admin")
         r = c.post(
             "/api/v1/games",
             json={
@@ -305,7 +305,7 @@ def test_create_app_memory_dir_is_lazy_and_corrupt_file_is_500(tmp_path) -> None
 
     mem = tmp_path / "mem"
     c = TestClient(make_app(store=InMemoryEventStore(), memory_dir=mem, experience_store=None))
-    me = login_as(c, "host")
+    me = login_as(c, "host", role="admin")
     r = c.post("/api/v1/games", json={"preset": "std_9_kill_side", "ai_model": "m"})
     assert r.status_code == 200 and not mem.exists()  # 无 memory_id 永不建目录
     # 经验库按 owner 分目录（issue #114）：mem/<owner_id>/alice.json
@@ -334,7 +334,7 @@ def test_meta_endpoint_gated_until_game_over_and_echoes_effective_agents() -> No
         agent_port_factory=lambda seat, h: BotPlayerPort(state_provider=h.live_state),
     )
     client = TestClient(app)
-    login_as(client, "host")
+    login_as(client, "host", role="admin")
     body = {
         "preset": "std_9_kill_side",
         "config_override": {"seed": 11},
@@ -376,7 +376,7 @@ def test_events_endpoint_filters_skills_meta_from_spectators_but_replay_not() ->
         agent_port_factory=lambda seat, h: _SkilledBot(state_provider=h.live_state),
     )
     client = TestClient(app)
-    login_as(client, "host")
+    login_as(client, "host", role="admin")
     # 所有座位都用 agent 端口（factory 会返回 _SkilledBot），确保事件有 skills meta
     body = {
         "preset": "std_9_kill_side",
@@ -418,7 +418,7 @@ def test_ws_replay_frames_do_not_leak_skills() -> None:
         agent_port_factory=lambda seat, h: _SkilledBot(state_provider=h.live_state),
     )
     client = TestClient(app)
-    login_as(client, "host")
+    login_as(client, "host", role="admin")
     body = {
         "preset": "std_9_kill_side",
         "config_override": {"seed": 42},
@@ -456,7 +456,7 @@ def test_gm_token_reads_full_state_events_and_cannot_act_or_start() -> None:
         agent_port_factory=lambda seat, h: _Skilled(state_provider=h.live_state),
     )
     client = TestClient(app)
-    login_as(client, "host")
+    login_as(client, "host", role="admin")
     body = {
         "preset": "std_9_kill_side",
         "config_override": {"seed": 5},

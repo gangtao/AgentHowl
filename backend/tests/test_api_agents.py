@@ -12,7 +12,7 @@ from tests.conftest import login_as, make_app
 def client() -> TestClient:
     app = make_app(store=InMemoryEventStore(), agent_library=InMemoryAgentLibrary())
     c = TestClient(app)
-    login_as(c, "tester")
+    login_as(c, "tester", role="admin")
     return c
 
 

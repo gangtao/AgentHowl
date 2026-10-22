@@ -68,7 +68,7 @@ def _app(tmp_path: Path, tts: Any) -> TestClient:
         voices_dir=tmp_path / "voices",
     )
     c = TestClient(app)
-    login_as(c, "tester")
+    login_as(c, "tester", role="admin")
     return c
 
 
@@ -321,7 +321,7 @@ def _narr_app(tmp_path: Path, tts: Any, events: frozenset[EventType]) -> TestCli
         narration_config=cfg,
     )
     c = TestClient(app)
-    login_as(c, "tester")
+    login_as(c, "tester", role="admin")
     return c
 
 

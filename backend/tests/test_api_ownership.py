@@ -46,9 +46,11 @@ def test_agents_isolated_between_users(app: Any) -> None:
         login_as(alice, "alice")
         login_as(bob, "bob")
         login_as(root, "root", role="admin")
-        a = alice.post("/api/v1/agents", json=_agent("a1")).json()
+        pa = alice.post("/api/v1/providers", json=PROVIDER).json()["provider_id"]
+        pb = bob.post("/api/v1/providers", json=PROVIDER).json()["provider_id"]
+        a = alice.post("/api/v1/agents", json=_agent("a1", provider=pa)).json()
         assert a["owner_id"] == alice.get("/api/v1/auth/me").json()["user_id"]
-        b = bob.post("/api/v1/agents", json=_agent("b1")).json()
+        b = bob.post("/api/v1/agents", json=_agent("b1", provider=pb)).json()
         assert [x["agent_id"] for x in alice.get("/api/v1/agents").json()] == [a["agent_id"]]
         assert [x["agent_id"] for x in bob.get("/api/v1/agents").json()] == [b["agent_id"]]
         assert {x["agent_id"] for x in root.get("/api/v1/agents").json()} == {
@@ -57,16 +59,32 @@ def test_agents_isolated_between_users(app: Any) -> None:
         }
         # 跨 owner 全 404
         assert bob.get(f"/api/v1/agents/{a['agent_id']}").status_code == 404
-        assert bob.put(f"/api/v1/agents/{a['agent_id']}", json=_agent("x")).status_code == 404
+        assert (
+            bob.put(f"/api/v1/agents/{a['agent_id']}", json=_agent("x", provider=pb)).status_code
+            == 404
+        )
         assert bob.delete(f"/api/v1/agents/{a['agent_id']}").status_code == 404
         assert root.get(f"/api/v1/agents/{a['agent_id']}").status_code == 200
         # 同名按 owner 唯一：bob 可以也叫 a1，alice 自己不能重复
-        assert bob.post("/api/v1/agents", json=_agent("a1")).status_code == 201
-        assert alice.post("/api/v1/agents", json=_agent("a1")).status_code == 409
+        assert bob.post("/api/v1/agents", json=_agent("a1", provider=pb)).status_code == 201
+        assert alice.post("/api/v1/agents", json=_agent("a1", provider=pa)).status_code == 409
         # memory_id 同理
-        assert alice.post("/api/v1/agents", json=_agent("m1", memory_id="mem")).status_code == 201
-        assert bob.post("/api/v1/agents", json=_agent("m2", memory_id="mem")).status_code == 201
-        assert alice.post("/api/v1/agents", json=_agent("m3", memory_id="mem")).status_code == 409
+        assert (
+            alice.post(
+                "/api/v1/agents", json=_agent("m1", provider=pa, memory_id="mem")
+            ).status_code
+            == 201
+        )
+        assert (
+            bob.post("/api/v1/agents", json=_agent("m2", provider=pb, memory_id="mem")).status_code
+            == 201
+        )
+        assert (
+            alice.post(
+                "/api/v1/agents", json=_agent("m3", provider=pa, memory_id="mem")
+            ).status_code
+            == 409
+        )
 
 
 def test_agent_can_only_reference_own_provider(app: Any) -> None:
@@ -131,7 +149,8 @@ def test_legacy_ownerless_only_admin(app: Any) -> None:
         assert root.get("/api/v1/agents/a_old").status_code == 200
         assert root.get("/api/v1/providers/p_old").status_code == 200
         # 普通用户可以用与无主档案相同的名字（唯一性只在自己的集合里）
-        assert alice.post("/api/v1/agents", json=_agent("old")).status_code == 201
+        pa = alice.post("/api/v1/providers", json=PROVIDER).json()["provider_id"]
+        assert alice.post("/api/v1/agents", json=_agent("old", provider=pa)).status_code == 201
 
 
 def test_avatar_and_voice_require_login_but_get_public(app: Any) -> None:

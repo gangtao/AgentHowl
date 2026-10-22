@@ -14,6 +14,7 @@ from app.api.auth import can_access, require_user
 from app.engine.config import PRESET_NAMES, build_preset
 from app.runtime.agent_library import AgentLibraryStore, StoredAgent
 from app.runtime.provider_store import ProviderStore
+from app.runtime.registry import BYOK_REQUIRED_MSG
 from app.runtime.users import User
 from app.schemas.presets import PresetInfo, preset_info
 
@@ -78,6 +79,8 @@ def _check_profile(
         skills.resolve(profile.skills)
     except SkillError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if profile.provider is None and user.role != "admin":
+        raise HTTPException(status_code=400, detail=BYOK_REQUIRED_MSG)
     if profile.provider is not None:
         p = providers.get(profile.provider)
         if p is None or not can_access(user, p.owner_id):

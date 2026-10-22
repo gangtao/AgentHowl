@@ -161,7 +161,7 @@ React 18 + TypeScript + Vite（`frontend/`），issue #26 M3：上帝视角实�
 **历史对局**（issue #98 / #114）：导航「历史对局」→ `#/history` 只列出**自己创建的**对局（admin 看全部，
 多一列「创建者」）：时间、板子、胜方、轮数、座位档案、状态。点进去即上帝视角（创建者 / admin 凭登录
 cookie 即可，后端重启后依然可用）；已结束的对局可「回放」。每行的「分享」会生成匿名可看的
-`#/g/{id}?share=…` 链接（观战脱敏视角；`allow_spectators=false` 的对局没有分享链接）。进行中的
+`#/g/{id}?share=…` 链接（观战脱敏视角；`allow_spectators=false` 的对局建局响应不返回分享 token，直播期间分享链接被拒（403），但终局后历史页仍可生成分享链接回放，`GET /games` 总是给出 `share_token`）。进行中的
 对局显示「直播中」；中断局（重启丢掉的中途局）只列出不可回放。每行的「删除」（issue #100，仅创建者 /
 admin）会删掉该局事件文件（进行中的对局不可删；Agent 跨局记忆不受影响）。`/replay` `/meta` 仅在
 GAME_OVER 之后开放。`AGENTHOWL_PUBLIC_HISTORY` 已移除。
@@ -273,7 +273,8 @@ uv run uvicorn app.main:app --reload   # http://localhost:8000
 curl -s -c cookies.txt -b cookies.txt -X POST $BASE/auth/login -H 'Content-Type: application/json' \
   -d '{"identifier":"alice","password":"..."}'
 
-# 1) 建局：9 人屠边预设，空位由 LLM Agent 填充（ai_model 省略则用内置随机 bot）
+# 1) 建局：9 人屠边预设，空位由 LLM Agent 填充（ai_model 省略则用内置随机 bot；
+#    普通用户须改用 agents 并指定自己的 provider，裸 ai_model 仅管理员可用）
 curl -s -c cookies.txt -b cookies.txt -X POST $BASE/games -H 'Content-Type: application/json' \
   -d '{"preset":"std_9_kill_side","config_override":{"seed":3},"ai_model":"ollama/llama3.1"}'
 # → {game_id, host_token, share_token, gm_token, config, agents}
@@ -369,6 +370,7 @@ issue #114：账号体系 + 按用户隔离。设计见 `docs/superpowers/specs/
 3. 设置 `AGENTHOWL_ADMIN_*` 引导管理员；需要邮箱验证就配 `AGENTHOWL_SMTP_*`。
 4. 固定 `AGENTHOWL_SECRET_KEY` 并持久化 `backend/data`（含 `users.db`、`secret.key`）。
 5. Provider 密钥目前仍是明文 0600 落盘（加密落盘见后续 issue）。
+6. 普通用户的 Agent 必须绑定自己的 Provider（BYOK），服务端 `.env` 里的 `OPENAI_API_KEY` 等环境密钥只有管理员的档案会用到。
 
 ## M2 验收矩阵（PRD §9）
 

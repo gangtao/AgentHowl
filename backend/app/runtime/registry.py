@@ -42,6 +42,8 @@ if TYPE_CHECKING:
     # 用 TYPE_CHECKING 与 game_runner.py 保持一致风格更稳。
     from app.runtime.speech_audio import SpeechAudioSink
 
+BYOK_REQUIRED_MSG = "普通用户的 Agent 档案必须指定自己的 Provider（BYOK），不能使用服务端环境密钥"
+
 logger = logging.getLogger(__name__)
 
 
@@ -155,9 +157,13 @@ class GameRegistry:
         narration: bool = False,
         owner_id: str | None = None,
         allowed_providers: Collection[str] | None = None,
+        require_provider: bool = False,
     ) -> GameHandle:
         # 旧入口 ai_model 折叠为 "*" 默认档案；与显式 agents["*"] 冲突、座位键非法 → ValueError
         resolved = merge_profiles(agents, legacy_to_profiles(ai_model, ai_model_speech))
+        if require_provider and any(p.provider is None for p in resolved.values()):
+            # 无 provider 的档案走服务端环境密钥（LiteLLM 读 OPENAI_API_KEY 等），平台不为用户买单
+            raise ValueError(BYOK_REQUIRED_MSG)
         providers = {p.provider_id for p in self._provider_store.list()}
         if allowed_providers is not None:
             providers &= set(allowed_providers)

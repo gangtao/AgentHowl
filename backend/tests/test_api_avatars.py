@@ -30,7 +30,7 @@ def client() -> TestClient:
         agent_port_factory=lambda seat, h: BotPlayerPort(state_provider=h.live_state),
     )
     c = TestClient(app)
-    login_as(c, "tester")
+    login_as(c, "tester", role="admin")
     return c
 
 
