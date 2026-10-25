@@ -12,6 +12,10 @@ describe("parseHash", () => {
     ["#/g/abc?share=S", { route: "game", gameId: "abc", share: "S", viewer: "SPECTATOR" }],
     // gm 与 share 同时出现：gm 优先（上帝视角权限更高，不能被 share 参数降级）。
     ["#/g/abc?gm=T&share=U", { route: "game", gameId: "abc", token: "T", viewer: "GM" }],
+    ["#/g/abc?player=P", { route: "game", gameId: "abc", token: "P" }],
+    // gm 优先于 player（不信任 URL 的组合）；player 优先于 share
+    ["#/g/abc?player=P&share=U", { route: "game", gameId: "abc", token: "P" }],
+    ["#/g/abc?gm=T&player=P", { route: "game", gameId: "abc", token: "T", viewer: "GM" }],
     // 无法识别的路径：归为 lobby（不识别的路由没有对应页面，退回起点）。
     ["#/unknown/path", { route: "lobby" }],
   ];

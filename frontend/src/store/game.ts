@@ -10,7 +10,8 @@ export const CHECKPOINT_EVERY = 50;
 
 export type ConnectionState = "idle" | "connecting" | "open" | "closed" | "error";
 export type PlaybackMode = "live" | "replay";
-export type Viewer = "GM" | "SPECTATOR";
+/** 视角：上帝 / 观众 / 座位号（玩家，issue #115）。 */
+export type Viewer = "GM" | "SPECTATOR" | number;
 
 export interface Gap {
   expected: number;

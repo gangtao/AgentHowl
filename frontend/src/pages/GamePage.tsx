@@ -19,6 +19,7 @@ import {
   getState,
 } from "../api/rest";
 import type { AudioPartInfo, GameAuth } from "../api/rest";
+import type { ViewerHint } from "../api/tokens";
 import { useLiveEvents } from "../api/ws";
 import { replayControls } from "../lib/replayControls";
 import { useVoice } from "../store/voice";
@@ -34,7 +35,6 @@ import {
 } from "../engine/select";
 import type { Event, GameMeta, Phase } from "../engine/types";
 import { useGameStore } from "../store/game";
-import type { Viewer } from "../store/game";
 import ElectionPanel from "../components/ElectionPanel/ElectionPanel";
 import ErrorState from "../components/ErrorState/ErrorState";
 import type { ErrorKind } from "../components/ErrorState/ErrorState";
@@ -53,7 +53,7 @@ import styles from "./GamePage.module.css";
 export interface GamePageProps {
   gameId?: string;
   token?: string;
-  viewer?: Viewer;
+  viewer?: ViewerHint;
   /** 分享链接 token（`?share=`，issue #114）：匿名观众（SPECTATOR）。 */
   share?: string;
 }
