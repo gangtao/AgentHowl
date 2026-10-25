@@ -95,3 +95,29 @@ describe("GamePage 凭据模式（issue #114）", () => {
     expect(screen.getByRole("link", { name: "去登录" })).toHaveAttribute("href", "#/login");
   });
 });
+
+describe("GamePage 视角以服务端为准（issue #115）", () => {
+  it("/meta 的 viewer 覆盖 URL 提示", async () => {
+    stubFetch(() => jsonResponse(200, { ...meta, viewer: "SPECTATOR" }));
+    vi.stubGlobal("WebSocket", vi.fn());
+    render(<GamePage gameId="g_x" token="t" viewer="GM" />);
+    await screen.findByText(new RegExp(`已结束 · ${events.length} 条事件`));
+    expect(useGameStore.getState().viewer).toBe("SPECTATOR");
+  });
+
+  it("建局者入座期间用 GM 链接进来 → 封锁错误态，给玩家入口", async () => {
+    const fetchMock = vi.fn(async (rawUrl: string) => {
+      const url = rawUrl.split("?")[0] as string;
+      if (url.endsWith("/meta")) return jsonResponse(403, { detail: "对局未结束，上帝视角回放未开放" });
+      if (url.endsWith("/state"))
+        return jsonResponse(403, { detail: "建局者已入座，对局结束前不能查看上帝视角" });
+      return jsonResponse(200, {});
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("WebSocket", vi.fn());
+    render(<GamePage gameId="g_x" token="T" viewer="GM" />);
+    await screen.findByText("建局者已入座，对局结束前不能查看上帝视角");
+    const link = screen.getByRole("link", { name: /以玩家身份进入/ });
+    expect(link.getAttribute("href")).toBe("#/g/g_x");
+  });
+});

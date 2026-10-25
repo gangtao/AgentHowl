@@ -2,7 +2,7 @@
 // 支持：#/、#/agents、#/providers、#/history、#/login、#/register、#/verify、#/admin、
 // #/g/{gameId}?gm=…、#/g/{gameId}?player=…（玩家 token，issue #115）、
 // #/g/{gameId}?share=…（分享链接，issue #114）、
-// 裸 #/g/{gameId}（靠 cookie 登录态走 GM 视角，owner/admin 才放行）。
+// 裸 #/g/{gameId}（靠 cookie 登录态，视角由服务端决定：建局者已入座 → 玩家，否则 GM）。
 
 export type Route = "lobby" | "agents" | "providers" | "history" | "game" | "login" | "register" | "verify" | "admin";
 /** URL 里的视角提示（issue #115）：`?gm=` → GM、`?share=` → SPECTATOR；`?player=` 与裸路径不给提示，
@@ -19,7 +19,7 @@ export interface ParsedHash {
 }
 
 /** 解析当前 `location.hash`（或传入的字符串）。无法识别的路径一律归为 lobby；
- * `#/g/{id}` 没带 `gm=`/`share=` 时返回 game 路由、viewer 为 GM、不带 token（靠 cookie 会话）。 */
+ * `#/g/{id}` 没带 `gm=`/`share=` 时返回 game 路由、不带 viewer 提示、不带 token（靠 cookie 会话）。 */
 export function parseHash(hash: string = location.hash): ParsedHash {
   const raw = hash.replace(/^#/, "");
   if (raw === "" || raw === "/") {
@@ -57,7 +57,7 @@ export function parseHash(hash: string = location.hash): ParsedHash {
     if (share) {
       return { route: "game", gameId, share, viewer: "SPECTATOR" };
     }
-    return { route: "game", gameId, viewer: "GM" };
+    return { route: "game", gameId };
   }
   return { route: "lobby" };
 }

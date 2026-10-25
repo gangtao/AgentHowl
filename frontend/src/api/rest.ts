@@ -130,6 +130,35 @@ export function startGame(
   });
 }
 
+export interface JoinRequest {
+  display_name: string;
+  /** 指定座位（issue #115）；不传顺序分配。 */
+  seat?: number;
+  player_type?: "HUMAN" | "AGENT";
+}
+
+export interface JoinResponse {
+  player_token: string;
+  seat: number;
+  ws_url: string;
+}
+
+/** 入座（issue #115）：登录会话（cookie）即可，座位绑定当前账号。 */
+export function joinGame(gameId: string, body: JoinRequest): Promise<JoinResponse> {
+  return req<JoinResponse>("POST", `/games/${gameId}/join`, { body });
+}
+
+/** 服务端解析出的视角（issue #115）：`/state` 与 `/meta` 响应顶层的 `viewer`。 */
+export type ViewerValue = "GM" | "SPECTATOR" | number;
+
+export function viewerFrom(raw: Record<string, unknown>): ViewerValue | null {
+  const v = raw.viewer;
+  if (v === "GM" || v === "SPECTATOR" || typeof v === "number") return v;
+  return null;
+}
+
+export type MetaResponse = GameMeta & { viewer?: ViewerValue };
+
 /** 对局读端点的凭据（issue #114）：对局 token（Bearer）或分享 token（?share=）；都没有 → 只靠 cookie 会话。 */
 export interface GameAuth {
   token?: string;
@@ -144,8 +173,8 @@ function gameOpts(auth: GameAuth | undefined, extra: ReqOptions = {}): ReqOption
 }
 
 /** 终局后开放；终局前 403（页面退回 /state）。 */
-export function getMeta(gameId: string, auth?: GameAuth): Promise<GameMeta> {
-  return req<GameMeta>("GET", `/games/${gameId}/meta`, gameOpts(auth));
+export function getMeta(gameId: string, auth?: GameAuth): Promise<MetaResponse> {
+  return req<MetaResponse>("GET", `/games/${gameId}/meta`, gameOpts(auth));
 }
 
 /**
