@@ -188,10 +188,11 @@ def test_games_create_requires_login_and_owner_filtering(app: Any) -> None:
             ga["game_id"],
             gb["game_id"],
         }
-        # 删除：跨 owner 404；未开局 / 进行中 409（用未开局的局断言，开局的 bot 局几秒就完）
+        # 删除：跨 owner 404；建局者可删未开局的局（issue #115 起不再 409）
         gc = alice.post("/api/v1/games", json=body).json()
         assert bob.delete(f"/api/v1/games/{ga['game_id']}").status_code == 404
-        assert alice.delete(f"/api/v1/games/{gc['game_id']}").status_code == 409
+        assert bob.delete(f"/api/v1/games/{gc['game_id']}").status_code == 404
+        assert alice.delete(f"/api/v1/games/{gc['game_id']}").status_code == 204
 
 
 def test_create_game_provider_must_be_own(app: Any) -> None:

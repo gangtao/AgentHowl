@@ -211,11 +211,12 @@ def test_delete_after_restart_store_only(store: InMemoryEventStore) -> None:
 
 
 def test_delete_live_or_pending_game_409(store: InMemoryEventStore) -> None:
-    """进行中（task 未完成）或未开局的对局都不可删：409，且文件/handle 原样。"""
+    """进行中（task 未完成）的对局不可删：409，且文件/handle 原样；未开局可删（issue #115）。"""
     with _app(store) as c:
         body = c.post("/api/v1/games", json={"preset": "std_9_kill_side"}).json()
         gid = body["game_id"]
-        assert c.delete(f"/api/v1/games/{gid}").status_code == 409  # 未开局
+        pending = c.post("/api/v1/games", json={"preset": "std_9_kill_side"}).json()["game_id"]
+        assert c.delete(f"/api/v1/games/{pending}").status_code == 204  # 未开局可删（issue #115）
         c.post(f"/api/v1/games/{gid}/start", json={}, headers=_auth(body["host_token"]))
         handle = c.app.state.games.get(gid)  # type: ignore[attr-defined]
         real_task = handle.task

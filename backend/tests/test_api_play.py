@@ -64,6 +64,7 @@ class TestReadEndpoints:
         created = client.post("/api/v1/games", json={"config_override": {"seed": 7}}).json()
         gid = created["game_id"]
         host = _auth(created["host_token"])
+        client.cookies.clear()  # 走 host_token 外部客户端路径；同账号二次入座会被拒（issue #115）
         client.post(f"/api/v1/games/{gid}/join", json={"display_name": "A"}, headers=host)
         # 未开局：replay 409（未开局），state 玩家 409
         tok = client.post(f"/api/v1/games/{gid}/join", json={"display_name": "B"}, headers=host)

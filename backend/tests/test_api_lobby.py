@@ -51,6 +51,7 @@ def test_create_join_start_all_ai(client: TestClient) -> None:
 def test_join_assigns_seats_and_tokens(client: TestClient) -> None:
     created = client.post("/api/v1/games", json={"config_override": {"seed": 7}}).json()
     gid, host = created["game_id"], created["host_token"]
+    client.cookies.clear()  # 走 host_token 路径；同账号二次入座会被拒（#115）
     r1 = client.post(
         f"/api/v1/games/{gid}/join", json={"display_name": "Alice"}, headers=_auth(host)
     )
