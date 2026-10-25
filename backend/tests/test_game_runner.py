@@ -152,6 +152,43 @@ class TestLobby:
         assert meta.game_id == "g1"
         assert [s.display_name for s in meta.roster] == [f"Bot{i}" for i in range(9)]
 
+    def test_join_specific_seat_and_conflicts(self) -> None:
+        cfg = build_preset("std_9_kill_side")
+        lobby = GameLobby(cfg, game_id="g1")
+        assert lobby.join("Alice", seat=4) == 4
+        assert lobby.join("Bob") == 0  # 不指定 → 最小空位
+        assert lobby.empty_seats() == [1, 2, 3, 5, 6, 7, 8]
+        with pytest.raises(LobbyError, match="座位 4 已被占用"):
+            lobby.join("Carol", seat=4)
+        with pytest.raises(LobbyError, match="座位号越界：9（0–8）"):
+            lobby.join("Carol", seat=9)
+        with pytest.raises(LobbyError, match="座位号越界：-1"):
+            lobby.join("Carol", seat=-1)
+        lobby.fill_with_bots()
+        assert lobby.is_full and lobby.empty_seats() == []
+        roster = lobby.roster()
+        assert roster[4].display_name == "Alice" and roster[4].player_type == "HUMAN"
+        assert roster[0].display_name == "Bob"
+        assert [e.display_name for e in roster[1:4]] == ["Bot1", "Bot2", "Bot3"]
+        assert [e.display_name for e in roster[5:]] == ["Bot5", "Bot6", "Bot7", "Bot8"]
+
+    def test_fill_with_bots_names_by_real_seat(self) -> None:
+        cfg = build_preset("std_9_kill_side")
+        lobby = GameLobby(cfg, game_id="g1")
+        lobby.join("Alice", seat=2)
+        lobby.fill_with_bots(name_for=lambda s: f"P{s}")
+        assert [e.display_name for e in lobby.roster()] == [
+            "P0",
+            "P1",
+            "Alice",
+            "P3",
+            "P4",
+            "P5",
+            "P6",
+            "P7",
+            "P8",
+        ]
+
 
 class TestRunnerIntegration:
     async def test_full_game_memory_store(self) -> None:

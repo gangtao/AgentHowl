@@ -55,34 +55,51 @@ class RunnerTimeouts(BaseModel):
 
 
 class GameLobby:
-    """建局前大厅：收集座位（真人 join / bot 填充），产出 roster 与 GameMeta。"""
+    """建局前大厅：收集座位（真人 join / bot 填充），产出 roster 与 GameMeta。
+
+    座位按号存字典（issue #115）：join 可指定座位，不指定取最小空位；fill_with_bots 填所有空位。
+    """
 
     def __init__(self, config: GameConfig, game_id: str) -> None:
         self._config = config
         self._game_id = game_id
-        self._entries: list[RosterEntry] = []
+        self._entries: dict[int, RosterEntry] = {}
 
     @property
     def is_full(self) -> bool:
         return len(self._entries) >= self._config.num_players
 
-    def join(self, display_name: str, player_type: Literal["HUMAN", "AGENT"] = "HUMAN") -> int:
+    def empty_seats(self) -> list[int]:
+        return [s for s in range(self._config.num_players) if s not in self._entries]
+
+    def join(
+        self,
+        display_name: str,
+        player_type: Literal["HUMAN", "AGENT"] = "HUMAN",
+        seat: int | None = None,
+    ) -> int:
         if self.is_full:
             raise LobbyError(f"对局已满员（{self._config.num_players} 座）")
-        self._entries.append(RosterEntry(display_name=display_name, player_type=player_type))
-        return len(self._entries) - 1
+        n = self._config.num_players
+        if seat is None:
+            seat = self.empty_seats()[0]
+        elif not 0 <= seat < n:
+            raise LobbyError(f"座位号越界：{seat}（0–{n - 1}）")
+        elif seat in self._entries:
+            raise LobbyError(f"座位 {seat} 已被占用")
+        self._entries[seat] = RosterEntry(display_name=display_name, player_type=player_type)
+        return seat
 
     def fill_with_bots(self, name_for: Callable[[int], str] | None = None) -> None:
         """填满空位；name_for(seat) 给出展示名（issue #56 档案名），缺省 Bot{seat}。"""
-        while not self.is_full:
-            seat = len(self._entries)
+        for seat in self.empty_seats():
             name = name_for(seat) if name_for is not None else f"Bot{seat}"
-            self._entries.append(RosterEntry(display_name=name, player_type="AGENT"))
+            self._entries[seat] = RosterEntry(display_name=name, player_type="AGENT")
 
     def roster(self) -> tuple[RosterEntry, ...]:
         if not self.is_full:
             raise LobbyError(f"未满员：{len(self._entries)}/{self._config.num_players}")
-        return tuple(self._entries)
+        return tuple(self._entries[s] for s in range(self._config.num_players))
 
     def game_meta(
         self, agents: AgentProfiles | None = None, owner_id: str | None = None
