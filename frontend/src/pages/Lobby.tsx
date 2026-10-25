@@ -9,17 +9,20 @@ import type { AgentProfile } from "../api/agents";
 import {
   ApiError,
   createGame,
+  joinGame,
   getTtsStatus,
   startGame,
   type CreateGameRequest,
   type TtsStatus,
 } from "../api/rest";
+import { deleteGame } from "../api/history";
 import AgentEditor from "../components/AgentEditor/AgentEditor";
 import PresetCard from "../components/PresetCard/PresetCard";
 import SeatAssignment from "../components/SeatAssignment/SeatAssignment";
 import ShareDialog from "../components/ShareDialog/ShareDialog";
-import { assignmentSummary, buildAgentsPayload, emptyAssignment, type SeatSlot } from "../lib/seats";
+import { assignmentSummary, buildAgentsPayload, emptyAssignment, meSeat, type SeatSlot } from "../lib/seats";
 import { useAgentLibrary } from "../store/agents";
+import { useAuth } from "../store/auth";
 import { useProviders } from "../store/providers";
 import styles from "./Lobby.module.css";
 
@@ -55,6 +58,14 @@ export default function Lobby(): JSX.Element {
   const [tts, setTts] = useState<TtsStatus>(TTS_DISABLED);
   const [voice, setVoice] = useState(false);
   const [narration, setNarration] = useState(false);
+  const user = useAuth((s) => s.user);
+  const [displayName, setDisplayName] = useState("");
+  const [speechTimeout, setSpeechTimeout] = useState("120");
+  const [actionTimeout, setActionTimeout] = useState("60");
+  /** 三步编排中途失败留下的未开局对局：给「删除这局」用。 */
+  const [failedGame, setFailedGame] = useState<string | null>(null);
+  const me = meSeat(assignment);
+  const effectiveName = displayName.trim() || user?.username || "我";
 
   useEffect(() => {
     void refresh();
@@ -114,25 +125,55 @@ export default function Lobby(): JSX.Element {
     if (preset === null || creating) return;
     setCreating(true);
     setCreateError(null);
+    setFailedGame(null);
+    let gameId: string | null = null;
     try {
       const body: CreateGameRequest = { preset: preset.name, agents: agentsPayload, voice, narration: voice && narration };
+      const override: Record<string, unknown> = {};
       const seedTrimmed = seed.trim();
       if (seedTrimmed !== "") {
         const n = Number(seedTrimmed);
         if (!Number.isInteger(n)) throw new ApiError(400, "seed 必须是整数");
-        body.config_override = { seed: n };
+        override.seed = n;
       }
+      if (me !== null) {
+        // 真人座位：发言 / 行动时限放宽（issue #115）
+        const sp = Number(speechTimeout);
+        const ac = Number(actionTimeout);
+        if (!Number.isInteger(sp) || sp <= 0 || !Number.isInteger(ac) || ac <= 0) {
+          throw new ApiError(400, "时限必须是正整数（秒）");
+        }
+        override.speech_timeout_sec = sp;
+        override.action_timeout_sec = ac;
+      }
+      if (Object.keys(override).length > 0) body.config_override = override;
       const res = await createGame(body);
+      gameId = res.game_id;
+      if (me === null) {
+        await startGame(res.game_id, res.host_token);
+        setCreated({ gameId: res.game_id, gmToken: res.gm_token, shareToken: res.share_token });
+        return;
+      }
+      // 我自己入座：建局 → 以指定座位入座（cookie）→ 开始 → 直接进玩家页；GM 链接不展示
+      const joined = await joinGame(res.game_id, { display_name: effectiveName, seat: me });
       await startGame(res.game_id, res.host_token);
-      setCreated({
-        gameId: res.game_id,
-        gmToken: res.gm_token,
-        shareToken: res.share_token,
-      });
+      window.location.hash = `#/g/${res.game_id}?player=${encodeURIComponent(joined.player_token)}`;
     } catch (err) {
       setCreateError(err instanceof ApiError ? `${err.status} · ${err.detail}` : String(err));
+      if (gameId !== null) setFailedGame(gameId);
     } finally {
       setCreating(false);
+    }
+  }
+
+  async function discardFailedGame(): Promise<void> {
+    if (failedGame === null) return;
+    try {
+      await deleteGame(failedGame);
+      setFailedGame(null);
+      setCreateError(null);
+    } catch (err) {
+      setCreateError(err instanceof ApiError ? `${err.status} · ${err.detail}` : String(err));
     }
   }
 
@@ -176,7 +217,8 @@ export default function Lobby(): JSX.Element {
         <div className={styles.summary}>
           <span className="card-kicker">汇总</span>
           <span className={styles.summaryMain}>
-            {preset ? `${preset.num_players} 座位` : "未选板子"} · {summary.agentSeats} 个 Agent ·{" "}
+            {preset ? `${preset.num_players} 座位` : "未选板子"} · {summary.agentSeats} 个 Agent
+            {summary.humanSeat !== null ? ` · 我在 ${summary.humanSeat}号` : ""} ·{" "}
             {summary.filled ? `其余 ${summary.restSeats} 座填满（*）` : `${summary.restSeats} 个随机 bot`}
           </span>
           <span className={styles.summarySub}>
@@ -279,7 +321,7 @@ export default function Lobby(): JSX.Element {
             <div>
               <h3 className={styles.title}>分配座位</h3>
               <p className="text-muted" style={{ fontSize: 13, margin: 0 }}>
-                从档案库把 Agent 选到座位上；未分配的座位为随机 bot（零 LLM）。同一档案可放多个座位。
+                从档案库把 Agent 选到座位上；未分配的座位为随机 bot（零 LLM）。同一档案可放多个座位。选「我自己」即亲自入座一个座位。
               </p>
             </div>
             <SeatAssignment
@@ -314,7 +356,9 @@ export default function Lobby(): JSX.Element {
             <div>
               <h3 className={styles.title}>创建并开始</h3>
               <p className="text-muted" style={{ fontSize: 13, margin: 0 }}>
-                创建后自动开始，你以上帝视角实时观看。
+                {me === null
+                  ? "创建后自动开始，你以上帝视角实时观看。"
+                  : `你将以 ${me}号 入座，创建后直接进入玩家页；对局结束前看不到上帝视角。`}
               </p>
             </div>
             <div className={styles.review}>
@@ -335,6 +379,28 @@ export default function Lobby(): JSX.Element {
                 <span className={styles.reviewKey}>seed</span>
                 <span>{seed.trim() === "" ? "随机" : seed.trim()}</span>
               </div>
+              {me !== null && (
+                <>
+                  <div className={styles.reviewRow}>
+                    <span className={styles.reviewKey}>我的显示名</span>
+                    <input
+                      className="input"
+                      aria-label="我的显示名"
+                      value={displayName}
+                      placeholder={user?.username ?? "我"}
+                      onChange={(e) => setDisplayName(e.target.value)}
+                    />
+                  </div>
+                  <div className={styles.reviewRow}>
+                    <span className={styles.reviewKey}>发言时限（秒）</span>
+                    <input className="input" aria-label="发言时限" inputMode="numeric" value={speechTimeout} onChange={(e) => setSpeechTimeout(e.target.value)} />
+                  </div>
+                  <div className={styles.reviewRow}>
+                    <span className={styles.reviewKey}>行动时限（秒）</span>
+                    <input className="input" aria-label="行动时限" inputMode="numeric" value={actionTimeout} onChange={(e) => setActionTimeout(e.target.value)} />
+                  </div>
+                </>
+              )}
               <div className={styles.reviewRow}>
                 <span className={styles.reviewKey}>agents</span>
                 <pre className={styles.json}>{JSON.stringify(agentsPayload, null, 2)}</pre>
@@ -346,7 +412,19 @@ export default function Lobby(): JSX.Element {
                 档案（后端会 400）。请回到步骤 2 改用逐座位分配。
               </div>
             )}
-            {createError && <div className={styles.error}>{createError}</div>}
+            {createError && (
+              <div className={styles.error}>
+                {createError}
+                {failedGame !== null && (
+                  <>
+                    {" "}
+                    <button type="button" className="btn btn-ghost" onClick={() => void discardFailedGame()}>
+                      删除这局
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
             <div className={styles.nav}>
               <button type="button" className="btn btn-ghost" onClick={() => setStep(2)}>
                 上一步
@@ -359,7 +437,9 @@ export default function Lobby(): JSX.Element {
               >
                 {creating ? "创建中…" : "创建并开始"}
               </button>
-              <span className={styles.navHint}>POST /games → /start → #/g/{"{id}"}?gm=…</span>
+              <span className={styles.navHint}>
+                {me === null ? "POST /games → /start → #/g/{id}?gm=…" : "POST /games → /join → /start → #/g/{id}?player=…"}
+              </span>
             </div>
           </>
         )}

@@ -6,10 +6,17 @@
 
 import type { AgentProfile, StoredAgent } from "../api/agents";
 
-/** 一行座位的选择；`agentId` 为 null = 随机 bot（有 fill 时该座由 `"*"` 覆盖）。 */
+/** 座位槽里的「我自己（真人）」哨兵值（issue #115）；库里的 agent_id 都是 `a_` 前缀，不会撞。 */
+export const ME = "me";
+
+/** 一行座位的选择；`agentId` 为 null = 随机 bot（有 fill 时该座由 `"*"` 覆盖），为 ME = 我自己。 */
 export interface SeatSlot {
   seat: number;
   agentId: string | null;
+}
+
+export function meSeat(assignment: SeatSlot[]): number | null {
+  return assignment.find((s) => s.agentId === ME)?.seat ?? null;
 }
 
 const PROFILE_KEYS = [
@@ -58,7 +65,7 @@ export function buildAgentsPayload(
   const byId = indexById(library);
   const out: Record<string, AgentProfile> = {};
   for (const slot of assignment) {
-    if (slot.agentId === null) continue;
+    if (slot.agentId === null || slot.agentId === ME) continue;
     const stored = byId.get(slot.agentId);
     if (stored === undefined) continue;
     out[String(slot.seat)] = toProfilePayload(stored.profile);
@@ -90,7 +97,7 @@ export function memoryConflicts(
   const byId = indexById(library);
   const seatOfMemory = new Map<string, number>();
   for (const slot of [...assignment].sort((a, b) => a.seat - b.seat)) {
-    if (slot.agentId === null) continue;
+    if (slot.agentId === null || slot.agentId === ME) continue;
     const memoryId = byId.get(slot.agentId)?.profile.memory_id;
     if (!memoryId) continue;
     if (!seatOfMemory.has(memoryId)) seatOfMemory.set(memoryId, slot.seat);
@@ -111,18 +118,18 @@ export interface AssignmentSummary {
   /** 其余座位数（有 fill 时由 `"*"` 覆盖，否则是随机 bot）。 */
   restSeats: number;
   filled: boolean;
+  /** 「我自己」所在座位；没有真人入座为 null。 */
+  humanSeat: number | null;
 }
 
 export function assignmentSummary(
   assignment: SeatSlot[],
   fill: string | null,
 ): AssignmentSummary {
-  const agentSeats = assignment.filter((s) => s.agentId !== null).length;
-  return {
-    agentSeats,
-    restSeats: assignment.length - agentSeats,
-    filled: fill !== null,
-  };
+  const humanSeat = meSeat(assignment);
+  const agentSeats = assignment.filter((s) => s.agentId !== null && s.agentId !== ME).length;
+  const restSeats = assignment.length - agentSeats - (humanSeat === null ? 0 : 1);
+  return { agentSeats, restSeats, filled: fill !== null, humanSeat };
 }
 
 /** N 个座位的空分配（全随机 bot）。 */

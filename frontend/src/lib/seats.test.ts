@@ -6,6 +6,8 @@ import {
   assignmentSummary,
   buildAgentsPayload,
   emptyAssignment,
+  ME,
+  meSeat,
   memoryConflicts,
   toProfilePayload,
   type SeatSlot,
@@ -139,7 +141,25 @@ describe("assignmentSummary", () => {
       agentSeats: 6,
       restSeats: 6,
       filled: true,
+      humanSeat: null,
     });
     expect(assignmentSummary(MOCKUP_ASSIGNMENT, null).filled).toBe(false);
+  });
+});
+
+describe("「我自己」座位（issue #115）", () => {
+  it("meSeat 找到真人座位；buildAgentsPayload 不把它写进 agents；summary 单独计数", () => {
+    const assignment: SeatSlot[] = [
+      { seat: 0, agentId: "a_owl" },
+      { seat: 1, agentId: ME },
+      { seat: 2, agentId: null },
+    ];
+    expect(meSeat(assignment)).toBe(1);
+    expect(meSeat([{ seat: 0, agentId: null }])).toBeNull();
+    const payload = buildAgentsPayload(assignment, "a_nice", LIBRARY);
+    expect(Object.keys(payload).sort()).toEqual(["*", "0"]);
+    const summary = assignmentSummary(assignment, null);
+    expect(summary).toEqual({ agentSeats: 1, restSeats: 1, filled: false, humanSeat: 1 });
+    expect(memoryConflicts(assignment, LIBRARY).has(ME)).toBe(false);
   });
 });
