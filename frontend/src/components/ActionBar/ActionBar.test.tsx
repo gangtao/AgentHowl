@@ -1,5 +1,5 @@
-import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { act, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PlayerObservation, YourTurn } from "../../api/player";
 import ActionBar from "./ActionBar";
 
@@ -148,5 +148,86 @@ describe("ActionBar", () => {
     expect(screen.getByRole("button", { name: "发送发言" })).toBeDisabled();
     expect(screen.getByText("夜里不能发言")).toBeInTheDocument();
     expect(screen.getByText("行动窗口已关闭")).toBeInTheDocument();
+  });
+
+  it("切换 tab 会清掉其他分组选中的目标", () => {
+    const onSubmit = vi.fn();
+    render(
+      <ActionBar
+        {...base}
+        prompt={prompt(["vote", "sheriff_action"], {
+          phase: "SHERIFF_ELECTION",
+          election_stage: "vote",
+          sheriff_candidates: [0, 1],
+          vote_candidates: [0, 1],
+        })}
+        onSubmit={onSubmit}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "1号" }));
+    fireEvent.click(screen.getByRole("tab", { name: "警长" }));
+    expect(screen.getByRole("button", { name: "投给候选人" })).toBeDisabled();
+  });
+
+  it("一次只展示一个工具分组", () => {
+    render(<ActionBar {...base} prompt={prompt(["speak", "vote"], { phase: "VOTE" })} onSubmit={vi.fn()} />);
+    expect(screen.getByLabelText("发言内容")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "确认投票" })).toBeNull();
+    fireEvent.click(screen.getByRole("tab", { name: "投票" }));
+    expect(screen.queryByLabelText("发言内容")).toBeNull();
+    expect(screen.getByRole("button", { name: "确认投票" })).toBeInTheDocument();
+  });
+
+  it("state_version 变化重置文本、目标与自爆确认", () => {
+    const mk = (v: number) => prompt(["speak", "vote", "self_destruct"], { phase: "VOTE", state_version: v });
+    const { rerender } = render(<ActionBar {...base} prompt={mk(1)} onSubmit={vi.fn()} />);
+    fireEvent.change(screen.getByLabelText("发言内容"), { target: { value: "hello" } });
+    fireEvent.click(screen.getByRole("tab", { name: "投票" }));
+    fireEvent.click(screen.getByRole("button", { name: "1号" }));
+    fireEvent.click(screen.getByRole("tab", { name: "自爆" }));
+    fireEvent.click(screen.getByRole("button", { name: "自爆" }));
+    expect(screen.getByRole("button", { name: "确认自爆" })).toBeInTheDocument();
+    rerender(<ActionBar {...base} prompt={mk(2)} onSubmit={vi.fn()} />);
+    expect(screen.getByLabelText("发言内容")).toHaveValue("");
+    fireEvent.click(screen.getByRole("tab", { name: "投票" }));
+    expect(screen.getByRole("button", { name: "确认投票" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("tab", { name: "自爆" }));
+    expect(screen.queryByRole("button", { name: "确认自爆" })).toBeNull();
+  });
+
+  it("女巫缺少刀口时 save 不可提交", () => {
+    render(
+      <ActionBar
+        {...base}
+        prompt={prompt(["night_action"], {
+          my_role: "WITCH",
+          phase: "NIGHT_WITCH",
+          private: { antidote_available: true, poison_available: true },
+        })}
+        onSubmit={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "救人" }));
+    expect(screen.getByRole("button", { name: "确认行动" })).toBeDisabled();
+  });
+
+  describe("倒计时", () => {
+    afterEach(() => vi.useRealTimers());
+
+    it("每秒更新剩余秒数，卸载后清除 interval", () => {
+      vi.useFakeTimers();
+      let t = 9_000;
+      const { unmount } = render(
+        <ActionBar {...base} now={() => t} prompt={prompt(["speak"])} onSubmit={vi.fn()} />,
+      );
+      expect(screen.getByText("剩余 1000 秒")).toBeInTheDocument();
+      t = 9_990;
+      act(() => {
+        vi.advanceTimersByTime(1000);
+      });
+      expect(screen.getByText("剩余 10 秒")).toBeInTheDocument();
+      unmount();
+      expect(vi.getTimerCount()).toBe(0);
+    });
   });
 });

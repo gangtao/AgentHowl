@@ -121,6 +121,14 @@ export default function ActionBar({
   const [confirmDestruct, setConfirmDestruct] = useState(false);
   const left = useCountdown(prompt?.deadline_ts ?? null, now);
 
+  const selectTab = (t: string): void => {
+    setTab(t);
+    setTarget(null);
+    setAbstain(false);
+    setNight(null);
+    setConfirmDestruct(false);
+  };
+
   // 新回合（state_version 变化）重置全部输入
   const version = prompt?.observation.state_version ?? -1;
   useEffect(() => {
@@ -291,7 +299,12 @@ export default function ActionBar({
             <button
               type="button"
               className="btn btn-primary"
-              disabled={pending || night === null || (needsTarget(night) && target === null)}
+              disabled={
+                pending ||
+                night === null ||
+                (needsTarget(night) && target === null) ||
+                (night === "save" && killed === null)
+              }
               onClick={() => night !== null && submit(nightActionCall(night, chosenTarget))}
             >
               确认行动
@@ -396,7 +409,7 @@ export default function ActionBar({
               role="tab"
               aria-selected={active === t}
               className={`${styles.tab} ${active === t ? styles.tabOn : ""}`}
-              onClick={() => setTab(t)}
+              onClick={() => selectTab(t)}
             >
               {TOOL_ZH[t] ?? t}
             </button>
