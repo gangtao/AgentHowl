@@ -83,10 +83,22 @@ class GameHandle:
         self.warm_task: asyncio.Task[None] | None = None  # 声线预热（issue #103）
         # 座位 → Provider（issue #26）：start() 按 profile.provider 装配，供 agent 端口工厂使用
         self.providers: dict[int, Provider] = {}
+        # 座位 → 入座账号（issue #115）：登录入座记 user_id，host_token 入座记 None；
+        # owner_seat() 据此判定「建局者本人在打」→ 上帝视角封锁
+        self.seat_users: dict[int, str | None] = {}
 
     @property
     def started(self) -> bool:
         return self.runner is not None
+
+    def owner_seat(self) -> int | None:
+        """建局者本人入座的座位（issue #115）；未入座或无主局 → None。"""
+        if self.owner_id is None:
+            return None
+        for seat, uid in self.seat_users.items():
+            if uid == self.owner_id:
+                return seat
+        return None
 
     def profile_for(self, seat: int) -> AgentProfile | None:
         return profile_for(self.agents, seat)
@@ -203,15 +215,29 @@ class GameRegistry:
         return self._store
 
     def join(
-        self, handle: GameHandle, display_name: str, player_type: Literal["HUMAN", "AGENT"]
+        self,
+        handle: GameHandle,
+        display_name: str,
+        player_type: Literal["HUMAN", "AGENT"],
+        *,
+        seat: int | None = None,
+        user_id: str | None = None,
     ) -> int:
-        """经 API 加入的座位（真人或外部 Agent）一律配 HumanPlayerPort —— 同一玩家 API。"""
+        """经 API 加入的座位（真人或外部 Agent）一律配 HumanPlayerPort —— 同一玩家 API。
+
+        seat=None 顺序分配；user_id 非空时同一账号在同一局只能占一个座位（issue #115）。
+        """
         if handle.started:
             raise LobbyError("对局已开始，无法加入")
-        seat = handle.lobby.join(display_name, player_type)
+        if user_id is not None:
+            for taken, uid in handle.seat_users.items():
+                if uid == user_id:
+                    raise LobbyError(f"你已入座 {taken} 号")
+        seat = handle.lobby.join(display_name, player_type, seat=seat)
         port = HumanPlayerPort()
         handle.human_ports[seat] = port
         handle.ports[seat] = port
+        handle.seat_users[seat] = user_id
         return seat
 
     def start(self, handle: GameHandle, fill_with_bots: bool = True) -> None:
