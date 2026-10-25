@@ -68,7 +68,7 @@
 - 有「我自己」时：
   - 显示名输入框，默认当前用户名。
   - 建局 body 的 `config_override` 自动带 `speech_timeout_sec: 120`、`action_timeout_sec: 60`，两个数字在表单里可改；用户已填的 seed 等 override 合并保留。
-  - 点「开始」后前端顺序执行 `createGame` → `joinGame(game_id, {seat, display_name})`（cookie）→ `startGame(game_id, host_token)`，成功后 `location.hash = "#/g/{id}?player=<player_token>"`。不展示 GM 链接卡片；分享链接仍可在玩家页的分享对话框里拿到。
+  - 点「开始」后前端顺序执行 `createGame` → `joinGame(game_id, {seat, display_name})`（cookie）→ `startGame(game_id, host_token)`，成功后 `location.hash = "#/g/{id}?player=<player_token>"`。不展示 GM 链接卡片；玩家页不放分享对话框，真人入座对局的分享链接从 History 页（「观看」/「分享」）获取。
   - join 或 start 失败：展示错误，提供「删除这局」按钮（`DELETE /games/{id}`，已有），不留半成品。
 - 没有「我自己」时行为完全不变（建局 → 开始 → GM 链接卡片）。
 - `api/rest.ts` 新增 `joinGame(gameId, body): Promise<JoinResponse>`（`credentials: same-origin`）。
@@ -113,7 +113,7 @@ interface TurnSlice {
 
 - `NightOverlay`：座位视角下，当前夜间阶段若是本人角色的行动阶段且 `turn.prompt` 非空 → 不遮罩；否则遮罩文案「请闭眼」。GM / SPECTATOR 行为不变。
 - `SeatCircle`：高亮本人座位（「我」标记）。
-- `GamePage` 头部：座位视角显示「我是 N 号 · 角色 X」（角色来自 `turn.prompt.observation.my_role`，没有 prompt 时从已 reduce 的可见事件取；两者都没有则不显示）；不显示 GM 链接入口；分享按钮照旧。
+- `GamePage` 头部：座位视角显示「我是 N 号 · 角色 X」（角色来自 `turn.prompt.observation.my_role`，没有 prompt 时从已 reduce 的可见事件取；两者都没有则不显示）；不显示 GM 链接入口，也不显示分享按钮（分享链接从 History 页的「观看」/「分享」获取）。
 - 死亡后：页面保持座位视角，ActionBar 只在遗言、猎人开枪、警徽流窗口出现。
 
 ## 5. 错误处理与边界
