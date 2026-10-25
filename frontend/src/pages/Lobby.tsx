@@ -125,7 +125,6 @@ export default function Lobby(): JSX.Element {
     if (preset === null || creating) return;
     setCreating(true);
     setCreateError(null);
-    setFailedGame(null);
     let gameId: string | null = null;
     try {
       const body: CreateGameRequest = { preset: preset.name, agents: agentsPayload, voice, narration: voice && narration };
@@ -254,7 +253,7 @@ export default function Lobby(): JSX.Element {
             type="button"
             className="btn btn-primary"
             style={{ marginTop: 6 }}
-            disabled={step !== 3 || preset === null || creating || fillBlocked}
+            disabled={step !== 3 || preset === null || creating || fillBlocked || failedGame !== null}
             onClick={() => void createAndStart()}
           >
             {creating ? "创建中…" : "创建并开始"}
@@ -432,7 +431,7 @@ export default function Lobby(): JSX.Element {
               <button
                 type="button"
                 className="btn btn-primary"
-                disabled={preset === null || creating || fillBlocked}
+                disabled={preset === null || creating || fillBlocked || failedGame !== null}
                 onClick={() => void createAndStart()}
               >
                 {creating ? "创建中…" : "创建并开始"}
