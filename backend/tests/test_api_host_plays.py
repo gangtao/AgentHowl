@@ -141,3 +141,136 @@ class TestDeleteUnstarted:
             # token 已作废
             r = owner.get(f"/api/v1/games/{gid}/state", headers=bearer(created["gm_token"]))
             assert r.status_code == 401
+
+
+class TestGmLock:
+    def _seated_game(self, owner: TestClient) -> tuple[str, dict[str, Any]]:
+        created = _create(owner)
+        gid = created["game_id"]
+        r = owner.post(f"/api/v1/games/{gid}/join", json={"display_name": "我", "seat": 1})
+        assert r.status_code == 200
+        _start(owner, created)
+        return gid, created
+
+    def test_owner_cookie_is_player_and_gm_token_403_until_over(self) -> None:
+        app = _app()
+        with TestClient(app) as owner, TestClient(app) as anon, TestClient(app) as admin:
+            login_as(owner, "alice")
+            login_as(admin, "root", role="admin")
+            gid, created = self._seated_game(owner)
+            # cookie → PLAYER（1 号的观察）
+            st = owner.get(f"/api/v1/games/{gid}/state").json()
+            assert st["viewer"] == 1 and st["my_seat"] == 1 and "players" not in st
+            # GM token 封锁
+            r = owner.get(f"/api/v1/games/{gid}/state", headers=bearer(created["gm_token"]))
+            assert r.status_code == 403
+            assert r.json()["detail"] == "建局者已入座，对局结束前不能查看上帝视角"
+            r = owner.get(f"/api/v1/games/{gid}/events", params={"token": created["gm_token"]})
+            assert r.status_code == 403
+            # 分享照旧观战；admin 照旧 GM
+            assert (
+                anon.get(
+                    f"/api/v1/games/{gid}/state", params={"share": created["share_token"]}
+                ).json()["viewer"]
+                == "SPECTATOR"
+            )
+            assert admin.get(f"/api/v1/games/{gid}/state").json()["viewer"] == "GM"
+            # 终局后恢复
+            _play_to_end_via_cookie(owner, gid, 1)
+            assert owner.get(f"/api/v1/games/{gid}/meta").json()["viewer"] == "GM"
+            assert (
+                owner.get(
+                    f"/api/v1/games/{gid}/replay", headers=bearer(created["gm_token"])
+                ).status_code
+                == 200
+            )
+            assert (
+                owner.get(f"/api/v1/games/{gid}/meta", headers=bearer(created["gm_token"])).json()[
+                    "viewer"
+                ]
+                == "GM"
+            )
+
+    def test_lock_applies_before_start_too(self) -> None:
+        app = _app()
+        with TestClient(app) as owner:
+            login_as(owner, "alice")
+            created = _create(owner)
+            gid = created["game_id"]
+            owner.post(f"/api/v1/games/{gid}/join", json={"display_name": "我", "seat": 0})
+            # 未开局：cookie 解析为 PLAYER 后 /state 仍是 409（尚未开始），GM token 403
+            assert owner.get(f"/api/v1/games/{gid}/state").status_code == 409
+            assert (
+                owner.get(
+                    f"/api/v1/games/{gid}/state", headers=bearer(created["gm_token"])
+                ).status_code
+                == 403
+            )
+
+    def test_admin_owner_seated_is_player(self) -> None:
+        app = _app()
+        with TestClient(app) as root:
+            login_as(root, "root", role="admin")
+            gid, _created = self._seated_game(root)
+            st = root.get(f"/api/v1/games/{gid}/state").json()
+            assert st["viewer"] == 1 and st["my_seat"] == 1
+
+    def test_unseated_owner_and_external_seat_keep_gm(self) -> None:
+        app = _app()
+        with TestClient(app) as owner, TestClient(app) as ext:
+            login_as(owner, "alice")
+            created = _create(owner)
+            gid = created["game_id"]
+            # 外部客户端用 host_token 入座：user_id=None，不触发封锁
+            ext.post(
+                f"/api/v1/games/{gid}/join",
+                json={"display_name": "Ext", "seat": 0},
+                headers=bearer(created["host_token"]),
+            )
+            _start(owner, created)
+            assert owner.get(f"/api/v1/games/{gid}/state").json()["viewer"] == "GM"
+            assert (
+                owner.get(
+                    f"/api/v1/games/{gid}/state", headers=bearer(created["gm_token"])
+                ).status_code
+                == 200
+            )
+
+    def test_ws_cookie_player_can_act_and_gm_token_4403(self) -> None:
+        app = _app()
+        with TestClient(app) as owner:
+            login_as(owner, "alice")
+            gid, created = self._seated_game(owner)
+            from starlette.websockets import WebSocketDisconnect
+
+            try:
+                with owner.websocket_connect(f"/api/v1/ws?token={created['gm_token']}") as ws:
+                    ws.receive_json()
+                    raise AssertionError("GM token 应被 4403 关闭")
+            except WebSocketDisconnect as exc:
+                assert exc.code == 4403
+            _play_to_end_via_cookie(owner, gid, 1)  # cookie 入口能收 your_turn 并提交
+
+    def test_cookie_player_view_equals_player_token_view(self) -> None:
+        app = _app()
+        with TestClient(app) as owner:
+            login_as(owner, "alice")
+            created = _create(owner)
+            gid = created["game_id"]
+            joined = owner.post(
+                f"/api/v1/games/{gid}/join", json={"display_name": "我", "seat": 4}
+            ).json()
+            _start(owner, created)
+            tok = bearer(joined["player_token"])
+            a = owner.get(f"/api/v1/games/{gid}/state").json()
+            b = owner.get(f"/api/v1/games/{gid}/state", headers=tok).json()
+            # 快照可能相差一个 state_version（对局在跑）：只比字段集合与身份字段
+            assert (
+                set(a) == set(b)
+                and a["my_seat"] == b["my_seat"] == 4
+                and a["my_role"] == b["my_role"]
+            )
+            ea = owner.get(f"/api/v1/games/{gid}/events").json()
+            eb = owner.get(f"/api/v1/games/{gid}/events", headers=tok).json()
+            n = min(len(ea), len(eb))
+            assert ea[:n] == eb[:n] and all(e["visibility"] != "GM_ONLY" for e in ea)

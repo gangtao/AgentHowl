@@ -23,7 +23,13 @@ from fastapi import APIRouter, HTTPException, Query, WebSocket, WebSocketDisconn
 
 from app.api.auth import user_from_cookie
 from app.api.deps import TokenInfo
-from app.api.rest import _session_viewer, _share_viewer, _your_turn_payload, viewer_of
+from app.api.rest import (
+    _owner_locked,
+    _session_viewer,
+    _share_viewer,
+    _your_turn_payload,
+    viewer_of,
+)
 from app.api.views import event_json_for_viewer
 from app.engine.events import Event, EventType
 from app.engine.observation import visible_events
@@ -92,6 +98,9 @@ async def ws_endpoint(
     info: TokenInfo | None = None
     if token:
         info = tokens.resolve(token)
+        if info is not None and info.kind == "GM" and _owner_locked(games, info.game_id):
+            await ws.close(code=4403)  # 建局者已入座：上帝视角封锁（issue #115）
+            return
     elif game_id:
         try:
             if share:

@@ -206,6 +206,20 @@ def _finished(games: GameRegistry, game_id: str) -> bool:
     return handle.started and handle.live_state().phase == Phase.GAME_OVER
 
 
+GM_LOCKED_MSG = "建局者已入座，对局结束前不能查看上帝视角"
+
+
+def _owner_locked(games: GameRegistry, game_id: str) -> bool:
+    """建局者已入座且未终局（issue #115）：上帝视角封锁中。无活 handle（纯历史文件）→ False。"""
+    try:
+        handle = games.get(game_id)
+    except LookupError:
+        return False
+    if handle.owner_seat() is None:
+        return False
+    return not (handle.started and handle.live_state().phase == Phase.GAME_OVER)
+
+
 def _require_finished(games: GameRegistry, game_id: str) -> None:
     if not _finished(games, game_id):
         raise HTTPException(status_code=403, detail="对局未结束，上帝视角回放未开放")
@@ -225,11 +239,19 @@ def _share_viewer(games: GameRegistry, secret: bytes, game_id: str, share: str) 
 
 
 def _session_viewer(games: GameRegistry, user: User | None, game_id: str) -> TokenInfo:
-    """登录态：建局者 / admin → GM；其他人 → 404（不泄露存在性）；未登录 → 401。"""
+    """登录态：建局者 / admin → GM；其他人 → 404（不泄露存在性）；未登录 → 401。
+
+    建局者本人已入座且未终局（issue #115）→ 解析成该座位的 PLAYER 视角（admin 身份的建局者也一样：
+    正在打的人不该看到全局）；终局后恢复 GM。
+    """
     if user is None:
         raise HTTPException(status_code=401, detail="请登录或使用分享链接")
-    if not can_access(user, _owner_of(games, game_id)):
+    owner_id = _owner_of(games, game_id)
+    if not can_access(user, owner_id):
         raise HTTPException(status_code=404, detail=f"对局不存在：{game_id}")
+    if user.user_id == owner_id and _owner_locked(games, game_id):
+        seat = games.get(game_id).owner_seat()
+        return TokenInfo(game_id=game_id, seat=seat, kind="PLAYER", user_id=user.user_id)
     return TokenInfo(game_id=game_id, seat=None, kind="GM", user_id=user.user_id)
 
 
@@ -252,6 +274,8 @@ def resolve_viewer(
             raise HTTPException(status_code=401, detail="token 无效")
         if info.game_id != game_id:
             raise HTTPException(status_code=403, detail="token 与对局不匹配")
+        if info.kind == "GM" and _owner_locked(games, game_id):
+            raise HTTPException(status_code=403, detail=GM_LOCKED_MSG)
         return info
     if share:
         return _share_viewer(games, request.app.state.secret, game_id, share)
