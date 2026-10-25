@@ -994,6 +994,7 @@ class GameState(BaseModel):
 - **M2 — API + Agent 接入**：FastAPI REST+WS、认证、超时、ConnectionManager；LLMClient(LiteLLM+instructor)、内置 AgentPlayer、记忆/prompt。**判据**：11 AI + 1 真人（或 12 AI）能跑完整局；工具调用契约稳定。
 - **M3 — 前端上帝视角**：React 对局页 + 实时直播 + 座位/发言流/夜间动画。**判据**：观众能实时观看全 AI 对局。
 - **M4 — 玩家视角 + 真人参与**：信息隔离视角、ActionBar、真人经同一 API 参与。**判据**：真人与 AI 混合对局；隔离测试通过。
+  - 2026-10：Web 玩家视角与真人入座已实现（issue #115 子项目一，spec `docs/superpowers/specs/2026-10-23-human-seat-player-view-design.md`）；阵营组队见子项目二。
 - **M5 — 回放**：ReplayPlayer 时间轴 + 视角切换 + 本地 reduce。**判据**：任意历史局可完整回放、可切视角。
 
 **变更基准（thresholds）**：若单局 LLM 成本超预算 → 优先落地 8.3 的分层路由与 K 值收紧；若并发对局 >50 且出现广播延迟 → 引入 Redis pub/sub 与多进程；若规则争议频发 → 把争议项提升为 `GameConfig` 显式开关而非改引擎。
