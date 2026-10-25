@@ -193,8 +193,11 @@ async def ws_endpoint(
                         "rejected_reason": outcome.rejected_reason,
                     }
                 )
-            except (ToolCallError, NotYourTurnError, TimeoutError) as exc:
-                out_q.put_nowait({"type": "error", "detail": str(exc)})
+            except TimeoutError:
+                # str(TimeoutError()) 为空串：与 REST 同口径给出可读原因，避免前端卡在提交中
+                out_q.put_nowait({"type": "error", "detail": "行动窗口已关闭（可能已超时代打）"})
+            except (ToolCallError, NotYourTurnError) as exc:
+                out_q.put_nowait({"type": "error", "detail": str(exc) or exc.__class__.__name__})
     except WebSocketDisconnect:
         pass
     finally:

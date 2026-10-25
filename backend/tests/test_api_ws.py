@@ -218,8 +218,8 @@ def test_host_token_ws_rejected(client: TestClient) -> None:
 
 
 async def test_second_connection_keeps_your_turn_channel() -> None:
-    """detach_sender 仅当前持有者可解除：旧连接不得摘除新连接的推送通道
-    （issue #30 复审 Important #1）。"""
+    """detach_sender 只摘除调用方自己的通道：旧连接不得摘除新连接的推送通道
+    （issue #30 复审 Important #1；多连接并存语义见 issue #115）。"""
     port = HumanPlayerPort()
     seen_a: list[TurnPrompt] = []
     seen_b: list[TurnPrompt] = []
@@ -231,9 +231,9 @@ async def test_second_connection_keeps_your_turn_channel() -> None:
         seen_b.append(p)
 
     port.attach_sender(a)
-    port.attach_sender(b)  # 模拟第二条连接（重连）接管推送
+    port.attach_sender(b)  # 模拟第二条连接（重连）
     port.detach_sender(a)  # 旧连接（第一条）清理时解除自己持有的 sender
-    assert port._sender is b  # b 未被误摘除
+    assert port._senders == [b]  # b 未被误摘除
 
     from app.cli.bot import RandomBot
     from app.engine.config import build_preset
