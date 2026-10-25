@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { renderHook, cleanup } from "@testing-library/react";
 import { useGameStore } from "../store/game";
 import { useVoice } from "../store/voice";
+import { useTurn } from "../store/turn";
 import { CLOSE_TEXT, useLiveEvents } from "./ws";
 import type { Event, GameMeta } from "../engine/types";
 
@@ -14,6 +15,8 @@ class FakeWebSocket {
   onclose: ((ev: { code: number }) => void) | null = null;
   onerror: (() => void) | null = null;
   closed = false;
+  readyState = 1;
+  sent: string[] = [];
 
   constructor(url: string) {
     this.url = url;
@@ -30,8 +33,8 @@ class FakeWebSocket {
     this.onclose?.({ code });
   }
 
-  send(): void {
-    // 观战/上帝视角只读，本 hook 不发送任何帧
+  send(data: string): void {
+    this.sent.push(data);
   }
 }
 
@@ -54,6 +57,7 @@ beforeEach(() => {
   FakeWebSocket.instances = [];
   useGameStore.getState().reset();
   useGameStore.getState().load(meta, { gameId: "g1", token: "tok", viewer: "SPECTATOR" });
+  useTurn.getState().reset();
   useVoice.setState({ enabled: false, available: false, playing: null, queue: [] });
   vi.useFakeTimers();
   vi.stubGlobal("WebSocket", FakeWebSocket);
@@ -199,5 +203,48 @@ describe("useLiveEvents", () => {
 
     vi.advanceTimersByTime(20000);
     expect(FakeWebSocket.instances).toHaveLength(1); // 未重连
+  });
+});
+
+describe("回合帧（issue #115）", () => {
+  it("your_turn 写入 turn.prompt；action_result ok 清掉；ok=false 保留并记拒因；error 帧记 lastError", () => {
+    renderHook(() => useLiveEvents({ gameId: "g1", auth: { token: "tok" }, enabled: true }));
+    const ws = FakeWebSocket.instances[0] as FakeWebSocket;
+    ws.onopen?.();
+    ws.emit({ type: "your_turn", observation: { my_seat: 0, state_version: 3 }, available_tools: ["vote"], deadline_ts: 99 });
+    expect(useTurn.getState().prompt?.available_tools).toEqual(["vote"]);
+    ws.emit({ type: "action_result", ok: false, event_id: null, state_version: null, rejected_reason: "目标已死亡" });
+    expect(useTurn.getState().prompt).not.toBeNull();
+    expect(useTurn.getState().lastResult?.rejected_reason).toBe("目标已死亡");
+    ws.emit({ type: "action_result", ok: true, event_id: "evt_9", state_version: 4, rejected_reason: null });
+    expect(useTurn.getState().prompt).toBeNull();
+    ws.emit({ type: "error", detail: "行动窗口已关闭" });
+    expect(useTurn.getState().lastError).toBe("行动窗口已关闭");
+  });
+
+  it("send 经 socket 发出 ToolCall 并置 pending；未连接返回 false", () => {
+    const { result } = renderHook(() => useLiveEvents({ gameId: "g1", auth: { token: "tok" }, enabled: true }));
+    const ws = FakeWebSocket.instances[0] as FakeWebSocket;
+    ws.onopen?.();
+    expect(result.current.send({ tool: "vote", arguments: { abstain: true } })).toBe(true);
+    expect(JSON.parse(ws.sent[0] as string)).toEqual({ tool: "vote", arguments: { abstain: true } });
+    expect(useTurn.getState().pending).toBe(true);
+    ws.readyState = 3;
+    expect(result.current.send({ tool: "vote", arguments: { abstain: true } })).toBe(false);
+  });
+
+  it("断线清 pending；重连后再次收到 your_turn 覆盖 prompt", () => {
+    renderHook(() => useLiveEvents({ gameId: "g1", auth: { token: "tok" }, enabled: true }));
+    const ws = FakeWebSocket.instances[0] as FakeWebSocket;
+    ws.onopen?.();
+    ws.emit({ type: "your_turn", observation: { state_version: 1 }, available_tools: ["speak"], deadline_ts: 1 });
+    useTurn.getState().markPending();
+    ws.close(1006);
+    expect(useTurn.getState().pending).toBe(false);
+    vi.advanceTimersByTime(1000);
+    const ws2 = FakeWebSocket.instances[1] as FakeWebSocket;
+    ws2.onopen?.();
+    ws2.emit({ type: "your_turn", observation: { state_version: 2 }, available_tools: ["speak"], deadline_ts: 2 });
+    expect(useTurn.getState().prompt?.deadline_ts).toBe(2);
   });
 });

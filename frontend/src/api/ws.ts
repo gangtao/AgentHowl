@@ -1,7 +1,7 @@
 // WS hook：直播事件订阅（规格 §6，对应 backend/app/api/ws.py）。
 // URL：/api/v1/ws?token=…&from_seq=… | ?game_id=…&share=…&from_seq=… | ?game_id=…&from_seq=…（cookie）；帧：{type:"game_event", seq, event}
 // / {type:"phase_change", to, round} / {type:"game_over", winner} / {type:"error", detail}
-// / {type:"action_result", ...} / {type:"your_turn", ...}（后两者本 hook 不消费，观战/上帝视角只读）
+// / {type:"your_turn", observation, available_tools, deadline_ts} / {type:"action_result", ok, event_id, state_version, rejected_reason}（issue #115：写入 useTurn，供 ActionBar）
 // / {type:"speech_audio", seq, part, url, duration, kind}（配音分段，issue #103；`kind` 为 `speech|narration`（issue #110，缺省按 speech）：转给 useVoice.enqueue，
 // 不进 appendEvents——零信息过滤原则下也不代表任何游戏状态变化；url 会拼上本连接的 ?token=，
 // 因为直播期间 /audio/{seq}/{part} 匿名必 401，而 <audio> 元素发不出 Authorization 头，fix round 1）
@@ -9,12 +9,14 @@
 // 关闭码：4401 token 无效、4403 无权、4404 对局不存在、4409 对局尚未开始——均为终局，不重连；
 // 其余意外关闭（如 1006）且未收到 game_over → 指数退避重连，从 lastSeq+1 补发。
 
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { useGameStore } from "../store/game";
 import { useVoice } from "../store/voice";
+import { useTurn } from "../store/turn";
 import { withAuth } from "./rest";
 import type { GameAuth } from "./rest";
 import type { Event } from "../engine/types";
+import type { ActionResult, PlayerObservation, ToolCall } from "./player";
 
 /** 关闭码 → 中文提示（规格 §6）。 */
 export const CLOSE_TEXT: Record<number, string> = {
@@ -44,12 +46,24 @@ interface WsFrame {
   url?: string;
   duration?: number;
   kind?: "speech" | "narration";
+  observation?: PlayerObservation;
+  available_tools?: string[];
+  deadline_ts?: number;
+  ok?: boolean;
+  event_id?: string | null;
+  state_version?: number | null;
+  rejected_reason?: string | null;
 }
 
 export interface UseLiveEventsArgs {
   gameId: string | null;
   auth: GameAuth;
   enabled: boolean;
+}
+
+export interface LiveEventsHandle {
+  /** 经当前 WS 连接提交工具调用（issue #115）；socket 未打开返回 false，不入队。 */
+  send(call: ToolCall): boolean;
 }
 
 /** 三种形式（issue #114）：对局 token / 分享 token / cookie 会话。 */
@@ -65,7 +79,7 @@ export function wsUrl(fromSeq: number, gameId: string, auth: GameAuth): string {
 
 /** 直播事件订阅：把 WS 帧转成对 useGameStore 的 appendEvents 调用。
  * StrictMode 双挂载安全：socket 存在 ref 里，effect 清理时关闭旧连接。 */
-export function useLiveEvents({ gameId, auth, enabled }: UseLiveEventsArgs): void {
+export function useLiveEvents({ gameId, auth, enabled }: UseLiveEventsArgs): LiveEventsHandle {
   const socketRef = useRef<WebSocket | null>(null);
   const bufferRef = useRef<Event[]>([]);
   const rafRef = useRef<number | null>(null);
@@ -153,6 +167,21 @@ export function useLiveEvents({ gameId, auth, enabled }: UseLiveEventsArgs): voi
           gameOverRef.current = true;
         } else if (frame.type === "error" && frame.detail) {
           useGameStore.getState().setError(frame.detail);
+          useTurn.getState().fail(frame.detail);
+        } else if (frame.type === "your_turn" && frame.observation) {
+          useTurn.getState().setPrompt({
+            observation: frame.observation,
+            available_tools: frame.available_tools ?? [],
+            deadline_ts: frame.deadline_ts ?? 0,
+          });
+        } else if (frame.type === "action_result") {
+          const result: ActionResult = {
+            ok: frame.ok === true,
+            event_id: frame.event_id ?? null,
+            state_version: frame.state_version ?? null,
+            rejected_reason: frame.rejected_reason ?? null,
+          };
+          useTurn.getState().resolve(result);
         } else if (frame.type === "speech_audio" && frame.url !== undefined) {
           // 直播期间该文件端点匿名必 401（fix round 1）：<audio> 发不出 Authorization 头，
           // 这里把本连接的凭据（?token= / ?share=，cookie 模式不拼）拼到 URL 上。
@@ -171,6 +200,7 @@ export function useLiveEvents({ gameId, auth, enabled }: UseLiveEventsArgs): voi
 
       ws.onclose = (ev: CloseEvent) => {
         if (closingForCleanupRef.current) return; // effect 清理主动关闭，不视为断线
+        useTurn.getState().disconnected();
         socketRef.current = null;
         if (TERMINAL_CODES.has(ev.code)) {
           useGameStore.getState().setConnection("error");
@@ -211,7 +241,19 @@ export function useLiveEvents({ gameId, auth, enabled }: UseLiveEventsArgs): voi
       }
       bufferRef.current = [];
       cleanupSocket();
+      useTurn.getState().reset();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gameId, auth.token, auth.share, enabled]);
+
+  const send = useCallback((call: ToolCall): boolean => {
+    const ws = socketRef.current;
+    // 1 === WebSocket.OPEN；不用静态属性，测试里的假 WebSocket 没有它
+    if (ws === null || ws.readyState !== 1) return false;
+    ws.send(JSON.stringify(call));
+    useTurn.getState().markPending();
+    return true;
+  }, []);
+
+  return { send };
 }
