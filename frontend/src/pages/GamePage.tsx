@@ -24,7 +24,7 @@ import type { ViewerHint } from "../api/tokens";
 import { useLiveEvents } from "../api/ws";
 import { replayControls } from "../lib/replayControls";
 import { useVoice } from "../store/voice";
-import { WINNER_ZH, isNight } from "../engine/phases";
+import { ROLE_ZH, WINNER_ZH, isNight } from "../engine/phases";
 import {
   currentSpeaker,
   nightLinks,
@@ -36,7 +36,9 @@ import {
 } from "../engine/select";
 import type { Event, GameMeta, Phase, RoleType } from "../engine/types";
 import { useGameStore } from "../store/game";
+import { useTurn } from "../store/turn";
 import type { Viewer } from "../store/game";
+import ActionBar from "../components/ActionBar/ActionBar";
 import ElectionPanel from "../components/ElectionPanel/ElectionPanel";
 import ErrorState from "../components/ErrorState/ErrorState";
 import type { ErrorKind } from "../components/ErrorState/ErrorState";
@@ -119,7 +121,6 @@ export default function GamePage({ gameId, token, share, viewer }: GamePageProps
   const [resolvedViewer, setResolvedViewer] = useState<Viewer | null>(null);
   // 玩家视角的身份：来自 /state 的 PlayerObservation.my_role（Task 10 的 ActionBar 也会更新它）。
   const [myRole, setMyRole] = useState<RoleType | null>(null);
-  void myRole; // Task 10 的玩家视角 UI 才读取
   const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const events = useGameStore((s) => s.events);
@@ -294,11 +295,21 @@ export default function GamePage({ gameId, token, share, viewer }: GamePageProps
   // 同时要求 head 非空：引导重跑时 store 会被 reset（head=null、mode 回到 "live"），
   // 而 ready 可能还停留在上一次的 true（开发期 Fast Refresh 会保留组件 state），
   // 这一条避免在「已重置但尚未装入」的空窗里连出一个立刻被关掉的 WS。
-  useLiveEvents({
+  const live = useLiveEvents({
     gameId: gameId ?? null,
     auth,
     enabled: ready && mode === "live" && head !== null,
   });
+
+  const turnPrompt = useTurn((s) => s.prompt);
+  const turnPending = useTurn((s) => s.pending);
+  const turnResult = useTurn((s) => s.lastResult);
+  const turnError = useTurn((s) => s.lastError);
+  const isPlayer = typeof resolvedViewer === "number";
+  // 身份以最新 your_turn 为准（/state 只在引导时读一次）
+  useEffect(() => {
+    if (turnPrompt !== null) setMyRole(turnPrompt.observation.my_role);
+  }, [turnPrompt]);
 
   // ---- 派生视图 ----
   // viewState() 内部按 (cursor, events.length) 记忆化，同一状态下多次调用返回同一对象，
@@ -431,12 +442,33 @@ export default function GamePage({ gameId, token, share, viewer }: GamePageProps
             votes={votes}
             nightLines={lines}
             avatars={avatars}
+            me={isPlayer ? resolvedViewer : null}
           />
           {/* 发言者聚光牌占座位环下方的空白区（issue #102 追加） */}
           <SpeakerSpotlight state={view} seat={spotlight} avatars={avatars} />
         </div>
 
         <div className={styles.center}>
+          {isPlayer && (
+            <div className={styles.playerBar}>
+              <span>
+                我是 {resolvedViewer}号{myRole !== null ? ` · ${ROLE_ZH[myRole]}` : ""}
+              </span>
+              {over && (
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => {
+                    const target = `#/g/${gameId ?? ""}`;
+                    if (window.location.hash === target) window.location.reload();
+                    else window.location.hash = target;
+                  }}
+                >
+                  查看全局回放
+                </button>
+              )}
+            </div>
+          )}
           <SpeechFeed
             items={items}
             cursor={cursor}
@@ -444,7 +476,18 @@ export default function GamePage({ gameId, token, share, viewer }: GamePageProps
             speakingSeat={speaking}
             avatars={avatars}
           />
-          <NightOverlay phase={view.phase} viewer={resolvedViewer} />
+          {isPlayer && (
+            <ActionBar
+              prompt={turnPrompt}
+              pending={turnPending}
+              lastResult={turnResult}
+              lastError={turnError}
+              onSubmit={(call) => {
+                if (!live.send(call)) useTurn.getState().fail("连接未就绪，请稍后重试");
+              }}
+            />
+          )}
+          <NightOverlay phase={view.phase} viewer={resolvedViewer} acting={isPlayer && turnPrompt !== null} />
         </div>
 
         <div className={styles.right}>{rightPanel}</div>

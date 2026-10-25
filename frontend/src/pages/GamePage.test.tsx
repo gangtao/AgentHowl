@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import fixture from "../engine/__fixtures__/std_9_kill_side-3.json";
 import type { Event, GameMeta } from "../engine/types";
 import { useGameStore } from "../store/game";
+import { useTurn } from "../store/turn";
 import { useVoice } from "../store/voice";
 import GamePage from "./GamePage";
 
@@ -119,5 +120,53 @@ describe("GamePage 视角以服务端为准（issue #115）", () => {
     await screen.findByText("建局者已入座，对局结束前不能查看上帝视角");
     const link = screen.getByRole("link", { name: /以玩家身份进入/ });
     expect(link.getAttribute("href")).toBe("#/g/g_x");
+  });
+});
+
+describe("GamePage 玩家视角（issue #115）", () => {
+  const playerState = {
+    viewer: 2,
+    game_id: "g_x",
+    state_version: 7,
+    my_seat: 2,
+    my_role: "SEER",
+    my_status: "ALIVE",
+    phase: "DAY_SPEECH",
+    round: 1,
+    seats: [0, 1, 2].map((seat) => ({ seat, alive: true, is_sheriff: false, idiot_revealed: false, display_name: `P${seat}` })),
+    sheriff_seat: null,
+    badge_flow_claims: {},
+    private: {},
+    election_stage: "",
+    sheriff_candidates: [],
+    vote_candidates: [],
+    pk_speech_pending: false,
+    badge_only: false,
+    available_actions: [],
+  };
+
+  it("/state 为 PlayerObservation 时显示身份栏与行动区，收到 your_turn 后出现发言输入", async () => {
+    const fetchMock = vi.fn(async (rawUrl: string) => {
+      const url = rawUrl.split("?")[0] as string;
+      if (url.endsWith("/meta")) return jsonResponse(403, { detail: "对局未结束" });
+      if (url.endsWith("/state")) return jsonResponse(200, playerState);
+      if (url.endsWith("/avatars")) return jsonResponse(200, {});
+      return jsonResponse(200, {});
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("WebSocket", vi.fn(() => ({ close() {} })));
+    render(<GamePage gameId="g_x" token="P" />);
+    await screen.findByText(/我是 2号 · 预言家/);
+    expect(screen.getByText("等待其他玩家…")).toBeInTheDocument();
+    expect(useGameStore.getState().viewer).toBe(2);
+    act(() =>
+      useTurn.getState().setPrompt({
+        observation: { ...playerState, phase: "DAY_SPEECH" } as never,
+        available_tools: ["speak", "get_state"],
+        deadline_ts: Date.now() / 1000 + 60,
+      }),
+    );
+    expect(await screen.findByLabelText("发言内容")).toBeInTheDocument();
+    useTurn.getState().reset();
   });
 });
