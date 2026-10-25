@@ -33,6 +33,16 @@ describe("SeatCircle", () => {
     }
   });
 
+  it("me 座位带「我」标记，其他座位没有；不传 me 则无标记（issue #115）", () => {
+    const { rerender } = render(
+      <SeatCircle state={finalState} speaking={null} votes={{}} nightLines={[]} me={2} />,
+    );
+    expect(screen.getAllByText("我")).toHaveLength(1);
+    expect(screen.getByLabelText(/^2号 /)).toContainElement(screen.getByText("我"));
+    rerender(<SeatCircle state={finalState} speaking={null} votes={{}} nightLines={[]} />);
+    expect(screen.queryByText("我")).toBeNull();
+  });
+
   it("当前发言座位带 data-speaking", () => {
     const speaking = finalState.players[2]!.seat;
     const { container } = render(

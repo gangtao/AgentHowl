@@ -1,6 +1,6 @@
 // 对局页测试：终局对局经 /meta + /replay 装入；覆盖 token / share / cookie（无凭据）三种凭据（issue #114）。
 
-import { act, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import fixture from "../engine/__fixtures__/std_9_kill_side-3.json";
 import type { Event, GameMeta } from "../engine/types";
@@ -33,6 +33,7 @@ function stubFetch(metaRes: () => Response): ReturnType<typeof vi.fn> {
 }
 
 afterEach(() => {
+  useTurn.getState().reset();
   vi.unstubAllGlobals();
   useGameStore.getState().reset();
 });
@@ -167,6 +168,116 @@ describe("GamePage 玩家视角（issue #115）", () => {
       }),
     );
     expect(await screen.findByLabelText("发言内容")).toBeInTheDocument();
-    useTurn.getState().reset();
+  });
+
+  function stubPlayerFetch(state: unknown): void {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (rawUrl: string) => {
+        const url = rawUrl.split("?")[0] as string;
+        if (url.endsWith("/meta")) return jsonResponse(403, { detail: "对局未结束" });
+        if (url.endsWith("/state")) return jsonResponse(200, state);
+        return jsonResponse(200, {});
+      }),
+    );
+  }
+
+  /** 可控 readyState 的假 WebSocket：send 是否成功取决于 open。 */
+  function stubSocket(open: boolean): void {
+    vi.stubGlobal(
+      "WebSocket",
+      vi.fn(() => ({ readyState: open ? 1 : 0, send() {}, close() {} })),
+    );
+  }
+
+  const speakPrompt = {
+    observation: { ...playerState, phase: "DAY_SPEECH" } as never,
+    available_tools: ["speak", "get_state"] as never,
+    deadline_ts: Date.now() / 1000 + 60,
+  };
+
+  async function submitSpeech(): Promise<void> {
+    act(() => useTurn.getState().setPrompt(speakPrompt));
+    fireEvent.change(await screen.findByLabelText("发言内容"), { target: { value: "我是好人" } });
+    fireEvent.click(screen.getByRole("button", { name: "发送发言" }));
+  }
+
+  it("提交时 socket 未就绪：记「连接未就绪」且不进入 pending", async () => {
+    stubPlayerFetch(playerState);
+    stubSocket(false);
+    render(<GamePage gameId="g_x" token="P" />);
+    await screen.findByText(/我是 2号/);
+    await submitSpeech();
+    expect(useTurn.getState().lastError).toMatch(/连接未就绪/);
+    expect(useTurn.getState().pending).toBe(false);
+  });
+
+  it("提交时 socket 已开：进入 pending", async () => {
+    stubPlayerFetch(playerState);
+    stubSocket(true);
+    render(<GamePage gameId="g_x" token="P" />);
+    await screen.findByText(/我是 2号/);
+    await submitSpeech();
+    expect(useTurn.getState().pending).toBe(true);
+    expect(useTurn.getState().lastError).toBeNull();
+  });
+
+  it("夜间：有 your_turn 时不遮罩；无 prompt 时显示「请闭眼」", async () => {
+    stubPlayerFetch(playerState);
+    stubSocket(true);
+    render(<GamePage gameId="g_x" token="P" />);
+    await screen.findByText(/我是 2号/);
+    // 阶段由事件流推进（快照的 phase 不进 store）
+    act(() =>
+      useGameStore.getState().appendEvents([
+        {
+          seq: 1,
+          game_id: "g_x",
+          ts: 1,
+          type: "PHASE_CHANGED",
+          actor_seat: null,
+          payload: { to: "NIGHT_SEER", round: 1 },
+          visibility: "PUBLIC",
+          meta: {},
+        } as unknown as Event,
+      ]),
+    );
+    await screen.findByText("请闭眼，等待其他角色行动");
+    act(() =>
+      useTurn.getState().setPrompt({
+        ...speakPrompt,
+        observation: { ...playerState, phase: "NIGHT_SEER" } as never,
+        available_tools: ["check", "get_state"] as never,
+      }),
+    );
+    expect(screen.queryByText("请闭眼，等待其他角色行动")).toBeNull();
+  });
+
+  it("终局：出现「查看全局回放」，点击跳到全局回放 hash；残留 prompt 不再渲染 ActionBar", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (rawUrl: string) => {
+        const url = rawUrl.split("?")[0] as string;
+        if (url.endsWith("/meta")) return jsonResponse(200, { ...meta, viewer: 2 });
+        if (url.endsWith("/audio")) return jsonResponse(200, {});
+        return jsonResponse(200, events);
+      }),
+    );
+    vi.stubGlobal("WebSocket", vi.fn());
+    window.location.hash = "#/other";
+    act(() => useTurn.getState().setPrompt(speakPrompt));
+    render(<GamePage gameId="g_x" token="P" />);
+    const btn = await screen.findByRole("button", { name: "查看全局回放" });
+    expect(screen.queryByLabelText("发言内容")).toBeNull();
+    fireEvent.click(btn);
+    expect(window.location.hash).toBe("#/g/g_x");
+  });
+
+  it("进行中不显示「查看全局回放」", async () => {
+    stubPlayerFetch(playerState);
+    stubSocket(true);
+    render(<GamePage gameId="g_x" token="P" />);
+    await screen.findByText(/我是 2号/);
+    expect(screen.queryByRole("button", { name: "查看全局回放" })).toBeNull();
   });
 });

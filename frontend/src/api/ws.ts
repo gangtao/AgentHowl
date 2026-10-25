@@ -165,6 +165,8 @@ export function useLiveEvents({ gameId, auth, enabled }: UseLiveEventsArgs): Liv
           scheduleFlush();
         } else if (frame.type === "game_over") {
           gameOverRef.current = true;
+          // 终局后不再有轮次：清掉残留的 your_turn / pending，避免 ActionBar 与遮罩状态过期
+          useTurn.getState().reset();
         } else if (frame.type === "error" && frame.detail) {
           useGameStore.getState().setError(frame.detail);
           useTurn.getState().fail(frame.detail);

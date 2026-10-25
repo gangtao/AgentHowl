@@ -207,6 +207,20 @@ describe("useLiveEvents", () => {
 });
 
 describe("回合帧（issue #115）", () => {
+  it("game_over 清掉残留的 turn.prompt", () => {
+    renderHook(() => useLiveEvents({ gameId: "g1", auth: { token: "tok" }, enabled: true }));
+    const socket = FakeWebSocket.instances[0]!;
+    socket.emit({
+      type: "your_turn",
+      observation: { my_role: "SEER", phase: "DAY_SPEECH" },
+      available_tools: ["speak"],
+      deadline_ts: 9999999999,
+    });
+    expect(useTurn.getState().prompt).not.toBeNull();
+    socket.emit({ type: "game_over", winner: "GOOD" });
+    expect(useTurn.getState().prompt).toBeNull();
+  });
+
   it("your_turn 写入 turn.prompt；action_result ok 清掉；ok=false 保留并记拒因；error 帧记 lastError", () => {
     renderHook(() => useLiveEvents({ gameId: "g1", auth: { token: "tok" }, enabled: true }));
     const ws = FakeWebSocket.instances[0] as FakeWebSocket;

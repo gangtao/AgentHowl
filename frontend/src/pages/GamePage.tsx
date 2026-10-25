@@ -476,7 +476,7 @@ export default function GamePage({ gameId, token, share, viewer }: GamePageProps
             speakingSeat={speaking}
             avatars={avatars}
           />
-          {isPlayer && (
+          {isPlayer && !over && (
             <ActionBar
               prompt={turnPrompt}
               pending={turnPending}
