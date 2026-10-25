@@ -172,6 +172,13 @@ export default function Lobby(): JSX.Element {
       setFailedGame(null);
       setCreateError(null);
     } catch (err) {
+      if (err instanceof ApiError && err.status === 404) {
+        // 对局已不存在（别处删过）：视同删除成功，解锁「创建并开始」
+        setFailedGame(null);
+        setCreateError(null);
+        return;
+      }
+      // 其它错误保留 failedGame，可再点「删除这局」重试
       setCreateError(err instanceof ApiError ? `${err.status} · ${err.detail}` : String(err));
     }
   }

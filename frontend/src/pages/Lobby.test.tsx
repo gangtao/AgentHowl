@@ -54,7 +54,7 @@ const PRESET = {
   description_zh: "标准 9 人局",
 };
 
-function stubLobbyFetch(joinStatus = 200, startStatus = 200): ReturnType<typeof vi.fn> {
+function stubLobbyFetch(joinStatus = 200, startStatus = 200, deleteStatus = 204): ReturnType<typeof vi.fn> {
   const fetchMock = vi.fn(async (rawUrl: string, init?: RequestInit) => {
     const url = rawUrl.split("?")[0] as string;
     const ok = (body: unknown, status = 200): Response =>
@@ -67,7 +67,8 @@ function stubLobbyFetch(joinStatus = 200, startStatus = 200): ReturnType<typeof 
       return joinStatus === 200 ? ok({ player_token: "P", seat: 3, ws_url: "/api/v1/ws?token=P" }) : ok({ detail: "座位 3 已被占用" }, joinStatus);
     if (url.endsWith("/start"))
       return startStatus === 200 ? ok({ ok: true, num_players: 9 }) : ok({ detail: "无法开始" }, startStatus);
-    if (init?.method === "DELETE") return new Response(null, { status: 204 });
+    if (init?.method === "DELETE")
+      return deleteStatus === 204 ? new Response(null, { status: 204 }) : ok({ detail: "删除失败" }, deleteStatus);
     return ok([]);
   });
   vi.stubGlobal("fetch", fetchMock);
@@ -133,6 +134,33 @@ describe("Lobby 我自己入座（issue #115）", () => {
     fireEvent.click(screen.getByRole("button", { name: "删除这局" }));
     await vi.waitFor(() => expect(screen.queryByRole("button", { name: "删除这局" })).toBeNull());
     for (const b of screen.getAllByRole("button", { name: "创建并开始" })) expect(b).toBeEnabled();
+  });
+
+  it("删除返回 404（对局已不存在）：清掉失败对局，「创建并开始」恢复", async () => {
+    stubLobbyFetch(409, 200, 404);
+    useAuth.setState({ status: "authed", user: { username: "alice" } as never });
+    window.location.hash = "#/";
+    render(<Lobby />);
+    await pickMeOnSeat3();
+    fireEvent.click(screen.getAllByRole("button", { name: "创建并开始" })[0] as HTMLElement);
+    await screen.findByText(/409 · 座位 3 已被占用/);
+    fireEvent.click(screen.getByRole("button", { name: "删除这局" }));
+    await vi.waitFor(() => expect(screen.queryByRole("button", { name: "删除这局" })).toBeNull());
+    for (const b of screen.getAllByRole("button", { name: "创建并开始" })) expect(b).toBeEnabled();
+  });
+
+  it("删除返回其它错误：保留失败对局与错误，仍可重试删除", async () => {
+    stubLobbyFetch(409, 200, 500);
+    useAuth.setState({ status: "authed", user: { username: "alice" } as never });
+    window.location.hash = "#/";
+    render(<Lobby />);
+    await pickMeOnSeat3();
+    fireEvent.click(screen.getAllByRole("button", { name: "创建并开始" })[0] as HTMLElement);
+    await screen.findByText(/409 · 座位 3 已被占用/);
+    fireEvent.click(screen.getByRole("button", { name: "删除这局" }));
+    await screen.findByText(/500 · 删除失败/);
+    expect(screen.getByRole("button", { name: "删除这局" })).toBeInTheDocument();
+    for (const b of screen.getAllByRole("button", { name: "创建并开始" })) expect(b).toBeDisabled();
   });
 
   it("start 失败：不跳转，保留可删除的失败对局", async () => {

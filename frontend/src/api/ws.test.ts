@@ -236,6 +236,38 @@ describe("回合帧（issue #115）", () => {
     expect(useTurn.getState().lastError).toBe("行动窗口已关闭");
   });
 
+  it("detail 为空的 error 帧也结束 pending，并给出兜底文案", () => {
+    renderHook(() => useLiveEvents({ gameId: "g1", auth: { token: "tok" }, enabled: true }));
+    const ws = FakeWebSocket.instances[0] as FakeWebSocket;
+    ws.onopen?.();
+    useTurn.getState().markPending();
+    ws.emit({ type: "error", detail: "" });
+    expect(useTurn.getState().pending).toBe(false);
+    expect(useTurn.getState().lastError).toBe("服务端返回了未说明的错误");
+  });
+
+  it("入座视角：行动 error 帧只进 useTurn，不写页面横幅；非座位视角仍写横幅", () => {
+    useGameStore.getState().load(meta, { gameId: "g1", token: "tok", viewer: 2 });
+    renderHook(() => useLiveEvents({ gameId: "g1", auth: { token: "tok" }, enabled: true }));
+    const ws = FakeWebSocket.instances[0] as FakeWebSocket;
+    ws.onopen?.();
+    useTurn.getState().markPending();
+    ws.emit({ type: "error", detail: "当前不在该玩家的行动窗口" });
+    expect(useTurn.getState().lastError).toBe("当前不在该玩家的行动窗口");
+    expect(useGameStore.getState().error).toBeNull();
+    // 终局关闭码仍写横幅
+    ws.close(4404);
+    expect(useGameStore.getState().error).toBe("对局不存在");
+  });
+
+  it("非座位视角的 error 帧仍写页面横幅", () => {
+    renderHook(() => useLiveEvents({ gameId: "g1", auth: { token: "tok" }, enabled: true }));
+    const ws = FakeWebSocket.instances[0] as FakeWebSocket;
+    ws.onopen?.();
+    ws.emit({ type: "error", detail: "该连接无行动权限或座位无端口" });
+    expect(useGameStore.getState().error).toBe("该连接无行动权限或座位无端口");
+  });
+
   it("send 经 socket 发出 ToolCall 并置 pending；未连接返回 false", () => {
     const { result } = renderHook(() => useLiveEvents({ gameId: "g1", auth: { token: "tok" }, enabled: true }));
     const ws = FakeWebSocket.instances[0] as FakeWebSocket;

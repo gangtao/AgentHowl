@@ -167,9 +167,15 @@ export function useLiveEvents({ gameId, auth, enabled }: UseLiveEventsArgs): Liv
           gameOverRef.current = true;
           // 终局后不再有轮次：清掉残留的 your_turn / pending，避免 ActionBar 与遮罩状态过期
           useTurn.getState().reset();
-        } else if (frame.type === "error" && frame.detail) {
-          useGameStore.getState().setError(frame.detail);
-          useTurn.getState().fail(frame.detail);
+        } else if (frame.type === "error") {
+          // 每个 error 帧都要结束 pending（空 detail 也不能让 ActionBar 卡在「提交中…」）
+          const detail = frame.detail || "服务端返回了未说明的错误";
+          useTurn.getState().fail(detail);
+          // 入座视角：error 帧是行动错误（迟到提交 / 参数错），只进 ActionBar，不挂常驻页面横幅；
+          // 非座位视角保留横幅（它们本不该发行动，出现即异常）。终局关闭码仍走 onclose 横幅。
+          if (typeof useGameStore.getState().viewer !== "number") {
+            useGameStore.getState().setError(detail);
+          }
         } else if (frame.type === "your_turn" && frame.observation) {
           useTurn.getState().setPrompt({
             observation: frame.observation,

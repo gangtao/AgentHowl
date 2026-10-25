@@ -117,6 +117,86 @@ describe("ActionBar", () => {
     expect(onSubmit).toHaveBeenLastCalledWith({ tool: "sheriff_action", arguments: { action_type: "tear_badge" } });
   });
 
+  it("sheriff_action：报名阶段非候选人可选「不上」→ withdraw", () => {
+    const onSubmit = vi.fn();
+    render(
+      <ActionBar
+        {...base}
+        prompt={prompt(["sheriff_action"], { phase: "SHERIFF_ELECTION", election_stage: "candidacy" })}
+        onSubmit={onSubmit}
+      />,
+    );
+    expect(screen.getByRole("button", { name: "上警" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "不上" }));
+    expect(onSubmit).toHaveBeenLastCalledWith({ tool: "sheriff_action", arguments: { action_type: "withdraw" } });
+  });
+
+  it("sheriff_action：退水子阶段候选人可选「坚持竞选」→ run_for_sheriff", () => {
+    const onSubmit = vi.fn();
+    render(
+      <ActionBar
+        {...base}
+        prompt={prompt(["sheriff_action"], {
+          phase: "SHERIFF_ELECTION",
+          election_stage: "withdraw",
+          sheriff_candidates: [1, 2],
+        })}
+        onSubmit={onSubmit}
+      />,
+    );
+    expect(screen.getByRole("button", { name: "退水" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "上警" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "坚持竞选" }));
+    expect(onSubmit).toHaveBeenLastCalledWith({
+      tool: "sheriff_action",
+      arguments: { action_type: "run_for_sheriff" },
+    });
+  });
+
+  it("默认分组：PK 发言待讲落在 speak；仅警徽窗口落在 sheriff_action", () => {
+    const { rerender } = render(
+      <ActionBar
+        {...base}
+        prompt={prompt(["vote", "speak"], { phase: "VOTE_PK", pk_speech_pending: true })}
+        onSubmit={vi.fn()}
+      />,
+    );
+    expect(screen.getByLabelText("发言内容")).toBeInTheDocument();
+    rerender(
+      <ActionBar
+        {...base}
+        prompt={prompt(["speak", "sheriff_action"], {
+          phase: "LAST_WORDS",
+          badge_only: true,
+          sheriff_seat: 2,
+          state_version: 2,
+        })}
+        onSubmit={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole("button", { name: "撕警徽" })).toBeInTheDocument();
+    expect(screen.queryByLabelText("发言内容")).toBeNull();
+  });
+
+  it("死亡警长的普通遗言窗口不展示移交 / 撕警徽", () => {
+    render(
+      <ActionBar
+        {...base}
+        prompt={prompt(["speak", "sheriff_action"], {
+          phase: "LAST_WORDS",
+          badge_only: false,
+          sheriff_seat: 2,
+          my_status: "DEAD",
+        })}
+        onSubmit={vi.fn()}
+      />,
+    );
+    expect(screen.getByLabelText("发言内容")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: "警长" }));
+    expect(screen.queryByRole("button", { name: "撕警徽" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "移交警徽" })).toBeNull();
+  });
+
   it("self_destruct 需二次确认", () => {
     const onSubmit = vi.fn();
     render(<ActionBar {...base} prompt={prompt(["speak", "self_destruct"])} onSubmit={onSubmit} />);

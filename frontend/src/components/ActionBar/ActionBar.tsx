@@ -111,7 +111,14 @@ export default function ActionBar({
     [prompt],
   );
   const [tab, setTab] = useState<string | null>(null);
-  const active = tab !== null && tools.includes(tab) ? tab : (tools[0] ?? null);
+  // 默认分组：PK 发言待讲时落在 speak；仅警徽窗口落在 sheriff_action；否则取首个工具
+  const preferred = prompt?.observation.pk_speech_pending
+    ? "speak"
+    : prompt?.observation.badge_only
+      ? "sheriff_action"
+      : null;
+  const fallback = preferred !== null && tools.includes(preferred) ? preferred : (tools[0] ?? null);
+  const active = tab !== null && tools.includes(tab) ? tab : fallback;
   const [text, setText] = useState("");
   const [claim, setClaim] = useState<RoleType | "">("");
   const [badgeFlow, setBadgeFlow] = useState("");
@@ -317,7 +324,8 @@ export default function ActionBar({
     const isCandidate = obs.sheriff_candidates.includes(obs.my_seat);
     const voting =
       (obs.phase === "SHERIFF_ELECTION" && obs.election_stage === "vote") || obs.phase === "SHERIFF_PK";
-    const badgeWindow = obs.badge_only || (isSheriff && obs.phase === "LAST_WORDS");
+    // 只认服务端给出的 badge_only：普通遗言窗口里引擎不接受移交/撕警徽
+    const badgeWindow = obs.badge_only;
     const buttons: JSX.Element[] = [];
     if (badgeWindow) {
       buttons.push(
@@ -341,6 +349,10 @@ export default function ActionBar({
           <button key="run" type="button" className="btn btn-primary" disabled={pending} onClick={() => submit(sheriffCall("run_for_sheriff"))}>
             上警
           </button>,
+          // 报名阶段 withdraw = 不上（引擎记 running=false）
+          <button key="not-run" type="button" className="btn btn-secondary" disabled={pending} onClick={() => submit(sheriffCall("withdraw"))}>
+            不上
+          </button>,
         );
       }
       if (isCandidate) {
@@ -349,6 +361,14 @@ export default function ActionBar({
             退水
           </button>,
         );
+        if (obs.phase === "SHERIFF_ELECTION" && obs.election_stage === "withdraw") {
+          // 退水确认子阶段 run_for_sheriff = 坚持竞选
+          buttons.push(
+            <button key="stay" type="button" className="btn btn-primary" disabled={pending} onClick={() => submit(sheriffCall("run_for_sheriff"))}>
+              坚持竞选
+            </button>,
+          );
+        }
       }
       if (voting && !isCandidate && obs.sheriff_candidates.length > 0) {
         buttons.push(
