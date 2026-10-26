@@ -385,6 +385,9 @@ def test_spectator_live_stream_gets_folded_night_phase_frames(client: TestClient
     assert not any(p.startswith("NIGHT_") for p in phases)
     rounds = [f["round"] for f in frames if f["type"] == "phase_change"]
     assert rounds[0] == 1 and rounds == sorted(rounds)
+    # issue #135：每个夜晚的多个子阶段折叠后只发一条 NIGHT，相邻帧不重复
+    pairs = [(f["to"], f["round"]) for f in frames if f["type"] == "phase_change"]
+    assert all(a != b for a, b in zip(pairs, pairs[1:], strict=False)), pairs
     # 事件本身仍只有 PUBLIC
     assert all(f["event"]["visibility"] == "PUBLIC" for f in frames if f["type"] == "game_event")
 
@@ -417,3 +420,5 @@ def test_spectator_backfill_interleaves_folded_phase_frames(client: TestClient) 
     assert not any(f["to"].startswith("NIGHT_") for f in frames if f["type"] == "phase_change")
     rounds = [f["round"] for f in frames if f["type"] == "phase_change"]
     assert rounds[0] == 1 and rounds == sorted(rounds)
+    pairs = [(f["to"], f["round"]) for f in frames if f["type"] == "phase_change"]
+    assert all(a != b for a, b in zip(pairs, pairs[1:], strict=False)), pairs  # issue #135

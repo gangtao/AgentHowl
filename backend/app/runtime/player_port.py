@@ -46,6 +46,12 @@ class TurnPrompt(BaseModel):
     deadline_ts: float
 
 
+# 提交后等待裁决结果的时长：串行窗口（发言等）结果即时返回；同步窗口（上警 / 投票 / 狼刀提案）
+# 要等全体行动者到齐才裁决，结果可能迟到整个时限——超过这个时长 WS 先回 action_accepted、
+# REST 先回 202 accepted，结果随后经 WS / 状态拉取获得（issue #115 浏览器实测、#134）。
+ACCEPT_WAIT_SEC = 2.0
+
+
 class SubmitOutcome(BaseModel):
     """一次提交的裁决结果（PRD §4.1 统一信封的 runtime 侧形态）。"""
 
