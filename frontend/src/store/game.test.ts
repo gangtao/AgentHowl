@@ -43,14 +43,37 @@ describe("useGameStore", () => {
     expect(after.events.length).toBe(60);
   });
 
-  it("追加 seq 跳号的批次 → gap 被记录且不应用", () => {
-    useGameStore.getState().load(meta);
+  it("GM 视角追加 seq 跳号的批次 → gap 被记录且不应用", () => {
+    useGameStore.getState().load(meta, { viewer: "GM" });
     useGameStore.getState().appendEvents(events.slice(0, 60)); // seq 1..60
     useGameStore.getState().appendEvents(events.slice(70, 80)); // seq 71..80：跳号
     const state = useGameStore.getState();
     expect(state.gap).toEqual({ expected: 61, got: 71 });
     expect(state.events.length).toBe(60); // 未应用
     expect(normalizeState(state.head!)).toEqual(normalizeState(states[59]!));
+  });
+
+  it.each([["SPECTATOR" as const], [0]])(
+    "非 GM 视角（%s）的流被服务端裁剪、seq 跳号是常态 → 不判缺口，照常应用",
+    (viewer) => {
+      useGameStore.getState().load(meta, { viewer });
+      // 观众 / 座位视角收到的是 visible_events 裁剪后的子序列（如 1, 2, 20, …）
+      const visible = events.filter((e) => e.visibility === "PUBLIC").slice(0, 30);
+      expect(visible.some((e, i) => i > 0 && e.seq !== visible[i - 1]!.seq + 1)).toBe(true);
+      useGameStore.getState().appendEvents(visible);
+      const state = useGameStore.getState();
+      expect(state.gap).toBeNull();
+      expect(state.events.map((e) => e.seq)).toEqual(visible.map((e) => e.seq));
+    },
+  );
+
+  it("非 GM 视角仍去重：seq 不大于已有末尾的事件被跳过", () => {
+    useGameStore.getState().load(meta, { viewer: "SPECTATOR" });
+    const visible = events.filter((e) => e.visibility === "PUBLIC").slice(0, 10);
+    useGameStore.getState().appendEvents(visible);
+    const before = useGameStore.getState().events;
+    useGameStore.getState().appendEvents(visible.slice(0, 5));
+    expect(useGameStore.getState().events).toBe(before);
   });
 
   it("setCursor(30) → viewState() 等于 states[29]", () => {

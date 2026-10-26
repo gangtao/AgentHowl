@@ -136,6 +136,8 @@ describe("useLiveEvents", () => {
   });
 
   it("gap 分支清空 rAF 缓冲：残留陈旧事件不会在补发后触发第二次重连", () => {
+    // 缺口判定只对 GM 视角成立（非 GM 的流经服务端裁剪，跳号是常态）
+    useGameStore.getState().load(meta, { gameId: "g1", token: "tok", viewer: "GM" });
     renderHook(() => useLiveEvents({ gameId: "g1", auth: { token: "tok" }, enabled: true }));
     const socket1 = FakeWebSocket.instances[0]!;
 

@@ -13,6 +13,8 @@ export type PlaybackMode = "live" | "replay";
 /** 视角：上帝 / 观众 / 座位号（玩家，issue #115）。 */
 export type Viewer = "GM" | "SPECTATOR" | number;
 
+/** seq 缺口：只在 GM 视角判定——只有 GM 收到的是完整连续流。观众 / 座位视角的流经服务端
+ * visible_events 裁剪，seq 本来就跳号（如 1, 2, 20, …），对它们只要求 seq 单调递增。 */
 export interface Gap {
   expected: number;
   got: number;
@@ -181,10 +183,11 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     const checkpoints = new Map(state.checkpoints);
     let gap: Gap | null = null;
     let appliedAny = false;
+    const strictSeq = state.viewer === "GM"; // 非 GM 视角的流被服务端裁剪过，跳号是常态
 
     for (const e of batch) {
       if (e.seq <= lastSeq) continue; // 已应用过，去重跳过
-      if (e.seq !== lastSeq + 1) {
+      if (strictSeq && e.seq !== lastSeq + 1) {
         gap = { expected: lastSeq + 1, got: e.seq };
         break; // 缺口/乱序：本批到此为止，不静默应用后续
       }
