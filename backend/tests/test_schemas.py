@@ -132,3 +132,31 @@ def test_available_tools_in_campaign_speech() -> None:
         "get_speeches",
     )
     assert "sheriff_action" in available_tools_for(obs("vote"))
+
+
+def test_available_tools_in_vote_pk_speech() -> None:
+    # VOTE_PK 发言期：只提示发言，不提示 vote（引擎同样拒绝，见 test_pk_speech）
+    from app.engine.config import RoleType
+    from app.engine.observation import PlayerObservation
+    from app.schemas.actions import available_tools_for
+
+    def obs(pending: bool) -> PlayerObservation:
+        return PlayerObservation(
+            game_id="g",
+            state_version=1,
+            my_seat=0,
+            my_role=RoleType.VILLAGER,
+            my_status="ALIVE",
+            phase="VOTE_PK",
+            round=2,
+            seats=[{"seat": 0, "alive": True, "is_sheriff": False}],
+            sheriff_seat=None,
+            badge_flow_claims={},
+            private={},
+            available_actions=[0],
+            vote_candidates=[0, 1],
+            pk_speech_pending=pending,
+        )
+
+    assert available_tools_for(obs(True)) == ("speak", "get_game_state", "get_speeches")
+    assert available_tools_for(obs(False)) == ("vote", "speak", "get_game_state", "get_speeches")

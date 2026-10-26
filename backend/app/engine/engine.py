@@ -296,6 +296,10 @@ def _validate(state: GameState, action: Action) -> RejectedReason | None:
     if isinstance(action, DayVote):
         if state.phase not in (Phase.VOTE, Phase.VOTE_PK):
             return RejectedReason.WRONG_PHASE
+        # PK 发言期（issue #47 同类口子）：当前发言者恰在 expected_actors 内，
+        # 不设此守卫则平票候选人的投票会被接受且不推进发言队列，该座位被无限催促。
+        if pk_speaking(state):
+            return RejectedReason.WRONG_PHASE
         return _validate_vote(state, pl, action)
     return RejectedReason.WRONG_PHASE
 

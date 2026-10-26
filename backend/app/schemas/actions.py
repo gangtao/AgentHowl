@@ -103,6 +103,9 @@ def available_tools_for(obs: PlayerObservation) -> tuple[str, ...]:
         return ("night_action", *_READONLY)
     if ph == "DAY_SPEECH":
         return ("speak", "self_destruct", *_READONLY)
+    if ph == "VOTE_PK" and obs.pk_speech_pending:
+        # PK 发言期：平票者依次发言，队列耗尽前引擎不接受任何投票
+        return ("speak", *_READONLY)
     if ph in ("VOTE", "VOTE_PK"):
         return ("vote", "speak", *_READONLY)
     if ph == "SHERIFF_ELECTION" and obs.election_stage == "speech":
