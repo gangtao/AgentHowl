@@ -53,7 +53,6 @@ from app.schemas.games import (
     StartResponse,
 )
 from app.store.event_store import (
-    GameMeta,
     GameNotFoundError,
     InvalidGameIdError,
     StoreError,
@@ -152,7 +151,7 @@ def join_endpoint(
             raise HTTPException(status_code=401, detail="入座需登录，或携带本局 host_token")
         user_id = None
     handle = games.get(game_id)
-    seat = games.join(handle, req.display_name, req.player_type)
+    seat = games.join(handle, req.display_name, req.player_type, seat=req.seat, user_id=user_id)
     token = tokens.issue(TokenInfo(game_id=game_id, seat=seat, kind="PLAYER", user_id=user_id))
     return JoinResponse(player_token=token, seat=seat, ws_url=f"/api/v1/ws?token={token}")
 
@@ -207,6 +206,20 @@ def _finished(games: GameRegistry, game_id: str) -> bool:
     return handle.started and handle.live_state().phase == Phase.GAME_OVER
 
 
+GM_LOCKED_MSG = "建局者已入座，对局结束前不能查看上帝视角"
+
+
+def _owner_locked(games: GameRegistry, game_id: str) -> bool:
+    """建局者已入座且未终局（issue #115）：上帝视角封锁中。无活 handle（纯历史文件）→ False。"""
+    try:
+        handle = games.get(game_id)
+    except LookupError:
+        return False
+    if handle.owner_seat() is None:
+        return False
+    return not (handle.started and handle.live_state().phase == Phase.GAME_OVER)
+
+
 def _require_finished(games: GameRegistry, game_id: str) -> None:
     if not _finished(games, game_id):
         raise HTTPException(status_code=403, detail="对局未结束，上帝视角回放未开放")
@@ -226,11 +239,19 @@ def _share_viewer(games: GameRegistry, secret: bytes, game_id: str, share: str) 
 
 
 def _session_viewer(games: GameRegistry, user: User | None, game_id: str) -> TokenInfo:
-    """登录态：建局者 / admin → GM；其他人 → 404（不泄露存在性）；未登录 → 401。"""
+    """登录态：建局者 / admin → GM；其他人 → 404（不泄露存在性）；未登录 → 401。
+
+    建局者本人已入座且未终局（issue #115）→ 解析成该座位的 PLAYER 视角（admin 身份的建局者也一样：
+    正在打的人不该看到全局）；终局后恢复 GM。
+    """
     if user is None:
         raise HTTPException(status_code=401, detail="请登录或使用分享链接")
-    if not can_access(user, _owner_of(games, game_id)):
+    owner_id = _owner_of(games, game_id)
+    if not can_access(user, owner_id):
         raise HTTPException(status_code=404, detail=f"对局不存在：{game_id}")
+    if user.user_id == owner_id and _owner_locked(games, game_id):
+        seat = games.get(game_id).owner_seat()
+        return TokenInfo(game_id=game_id, seat=seat, kind="PLAYER", user_id=user.user_id)
     return TokenInfo(game_id=game_id, seat=None, kind="GM", user_id=user.user_id)
 
 
@@ -253,6 +274,8 @@ def resolve_viewer(
             raise HTTPException(status_code=401, detail="token 无效")
         if info.game_id != game_id:
             raise HTTPException(status_code=403, detail="token 与对局不匹配")
+        if info.kind == "GM" and _owner_locked(games, game_id):
+            raise HTTPException(status_code=403, detail=GM_LOCKED_MSG)
         return info
     if share:
         return _share_viewer(games, request.app.state.secret, game_id, share)
@@ -300,7 +323,7 @@ def delete_game_endpoint(
     """删除历史对局（issue #100）：删事件文件 + 摘 handle + 作废该局 token。
 
     仅建局者 / admin 可删；他人与不存在一律 404（issue #114）。
-    有 handle 且 task 未结束（含未开局）→ 409；已终局 / 崩溃 / 仅存文件的中断局都可删。
+    已开局且 task 未结束 → 409；未开局可删；已终局 / 崩溃 / 仅存文件的中断局都可删。
     不触碰 agent 跨局记忆（experience）——那是档案的数据，不随对局走。
     """
     if not can_access(user, _owner_of(games, game_id)):
@@ -309,8 +332,13 @@ def delete_game_endpoint(
         handle: GameHandle | None = games.get(game_id)
     except LookupError:
         handle = None
-    if handle is not None and not (handle.task is not None and handle.task.done()):
-        raise HTTPException(status_code=409, detail="对局进行中（或尚未开局），不能删除")
+    # 未开局（issue #115：Lobby 三步编排中途失败的半成品）可删；已开局且 task 未结束 → 409
+    if (
+        handle is not None
+        and handle.started
+        and not (handle.task is not None and handle.task.done())
+    ):
+        raise HTTPException(status_code=409, detail="对局进行中，不能删除")
     try:
         games.store.delete_game(game_id)
     except (GameNotFoundError, InvalidGameIdError):
@@ -339,14 +367,20 @@ def state_endpoint(
     info: TokenInfo = Depends(resolve_viewer),
     games: GameRegistry = Depends(get_games),
 ) -> dict[str, Any]:
+    """按视角返回快照；顶层 `viewer` 告诉前端本次被解析成了哪种视角（issue #115）。"""
     handle = _handle_for(games, game_id)
     _reject_host(info)
     live = handle.live_state()  # 未开局 → LobbyError(409)
     if info.kind == "PLAYER":
         assert info.seat is not None
-        return build_observation(live, info.seat).model_dump(mode="json")
+        obs = build_observation(live, info.seat).model_dump(mode="json")
+        # 展示名是公开信息（观众视图也有），玩家页需要它渲染座位环；不动引擎的 observation
+        names = {p.seat: p.display_name for p in live.players}
+        obs["seats"] = [{**s, "display_name": names[int(s["seat"])]} for s in obs["seats"]]
+        obs["viewer"] = info.seat
+        return obs
     if info.kind == "GM":
-        return live.model_dump(mode="json")
+        return {**live.model_dump(mode="json"), "viewer": "GM"}
     return SpectatorView(
         game_id=game_id,
         phase=str(live.phase),
@@ -459,15 +493,16 @@ def replay_endpoint(
 @router.get("/{game_id}/meta")
 def meta_endpoint(
     game_id: str,
-    _info: TokenInfo = Depends(resolve_viewer),
+    info: TokenInfo = Depends(resolve_viewer),
     games: GameRegistry = Depends(get_games),
-) -> GameMeta:
-    """对局头记录（配置 / 名单 / 各座位实际生效的 Agent 档案，issue #64）。
+) -> dict[str, Any]:
+    """对局头记录（配置 / 名单 / 各座位实际生效的 Agent 档案，issue #64）+ `viewer`（issue #115）。
 
     与 /replay 同一门槛：终局后才开放——档案含模型与技能等 GM 层信息，不经 observation 暴露。
     """
     _require_finished(games, game_id)
-    return games.store.load_meta(game_id)
+    meta = games.store.load_meta(game_id)
+    return {**meta.model_dump(mode="json"), "viewer": viewer_of(info)}
 
 
 @router.get("/{game_id}/avatars")

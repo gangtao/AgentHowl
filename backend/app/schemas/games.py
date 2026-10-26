@@ -35,6 +35,7 @@ class CreateGameResponse(BaseModel):
 class JoinRequest(BaseModel):
     display_name: str
     player_type: Literal["HUMAN", "AGENT"] = "HUMAN"
+    seat: int | None = None  # 指定座位（issue #115）；None = 顺序分配
 
 
 class JoinResponse(BaseModel):
@@ -59,6 +60,7 @@ class SpectatorView(BaseModel):
     seats: list[dict[str, Any]]
     sheriff_seat: int | None
     winner: str | None
+    viewer: Literal["SPECTATOR"] = "SPECTATOR"  # 本次请求解析出的视角（issue #115）
 
 
 class SpeechItem(BaseModel):

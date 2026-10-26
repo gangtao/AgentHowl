@@ -69,7 +69,7 @@ export default function App(): JSX.Element {
   if (hash.route === "game") {
     return (
       <GamePage
-        key={`${hash.gameId ?? ""}:${hash.viewer ?? ""}:${hash.share ?? ""}`}
+        key={`${hash.gameId ?? ""}:${hash.token ?? ""}:${hash.viewer ?? ""}:${hash.share ?? ""}`}
         gameId={hash.gameId}
         token={hash.token}
         viewer={hash.viewer}

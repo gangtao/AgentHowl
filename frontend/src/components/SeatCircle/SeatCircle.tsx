@@ -19,6 +19,8 @@ export interface SeatCircleProps {
   nightLines: NightLink[];
   /** 座位 → 头像 id（issue #102，缺省 {}）。 */
   avatars?: Record<number, string>;
+  /** 本人座位（玩家视角，issue #115）；非玩家传 null / 不传。 */
+  me?: number | null;
 }
 
 interface SeatPos {
@@ -45,6 +47,7 @@ export default function SeatCircle({
   votes,
   nightLines,
   avatars = {},
+  me = null,
 }: SeatCircleProps): JSX.Element {
   const players = [...state.players].sort((a, b) => a.seat - b.seat);
   const pos = positions(players.map((p) => p.seat));
@@ -150,6 +153,7 @@ export default function SeatCircle({
                 {!p.alive && <span className={styles.dead}>✕</span>}
                 {n !== undefined && n > 0 && <span className={styles.votes}>{n}</span>}
               </div>
+              {me === p.seat && <span className={styles.me}>我</span>}
               <span className={styles.name}>
                 {p.seat}号 {p.display_name}
               </span>

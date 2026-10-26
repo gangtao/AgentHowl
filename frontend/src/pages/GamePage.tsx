@@ -17,12 +17,14 @@ import {
   getMeta,
   getReplay,
   getState,
+  viewerFrom,
 } from "../api/rest";
 import type { AudioPartInfo, GameAuth } from "../api/rest";
+import type { ViewerHint } from "../api/tokens";
 import { useLiveEvents } from "../api/ws";
 import { replayControls } from "../lib/replayControls";
 import { useVoice } from "../store/voice";
-import { WINNER_ZH, isNight } from "../engine/phases";
+import { ROLE_ZH, WINNER_ZH, isNight } from "../engine/phases";
 import {
   currentSpeaker,
   nightLinks,
@@ -32,9 +34,11 @@ import {
   speechItems,
   voteTally,
 } from "../engine/select";
-import type { Event, GameMeta, Phase } from "../engine/types";
+import type { Event, GameMeta, Phase, RoleType } from "../engine/types";
 import { useGameStore } from "../store/game";
+import { useTurn } from "../store/turn";
 import type { Viewer } from "../store/game";
+import ActionBar from "../components/ActionBar/ActionBar";
 import ElectionPanel from "../components/ElectionPanel/ElectionPanel";
 import ErrorState from "../components/ErrorState/ErrorState";
 import type { ErrorKind } from "../components/ErrorState/ErrorState";
@@ -53,7 +57,7 @@ import styles from "./GamePage.module.css";
 export interface GamePageProps {
   gameId?: string;
   token?: string;
-  viewer?: Viewer;
+  viewer?: ViewerHint;
   /** 分享链接 token（`?share=`，issue #114）：匿名观众（SPECTATOR）。 */
   share?: string;
 }
@@ -113,6 +117,10 @@ export default function GamePage({ gameId, token, share, viewer }: GamePageProps
   // 的 gate 闭包，没有真正打断旧 playSeq（fix round 2 的 Minor 项）。ref 让 effect 的依赖
   // 只剩 [mode, gameId, token]，manifest 更新不触发重装，gate 闭包始终读到最新清单。
   const manifestRef = useRef<Record<string, AudioPartInfo[]>>(manifest);
+  // 视角由服务端决定（issue #115）：/state、/meta 的 viewer 字段；URL 里的 ?gm= / ?share= 只是提示。
+  const [resolvedViewer, setResolvedViewer] = useState<Viewer | null>(null);
+  // 玩家视角的身份：来自 /state 的 PlayerObservation.my_role（Task 10 的 ActionBar 也会更新它）。
+  const [myRole, setMyRole] = useState<RoleType | null>(null);
   const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const events = useGameStore((s) => s.events);
@@ -126,7 +134,7 @@ export default function GamePage({ gameId, token, share, viewer }: GamePageProps
 
   // ---- 引导：/meta →（403）/state ----
   useEffect(() => {
-    if (!gameId || !viewer) {
+    if (!gameId) {
       setErrorKind("auth");
       return;
     }
@@ -162,7 +170,9 @@ export default function GamePage({ gameId, token, share, viewer }: GamePageProps
         const replayEvents = await getReplay(gameId, auth);
         if (cancelled) return;
         const store = useGameStore.getState();
-        store.load(meta, { gameId, token: token ?? "", viewer, mode: "replay" });
+        const v: Viewer = viewerFrom(meta as unknown as Record<string, unknown>) ?? viewer ?? "SPECTATOR";
+        setResolvedViewer(v);
+        store.load(meta, { gameId, token: token ?? "", viewer: v, mode: "replay" });
         store.appendEvents(replayEvents);
         setErrorKind(null);
         setReady(true);
@@ -194,7 +204,12 @@ export default function GamePage({ gameId, token, share, viewer }: GamePageProps
         const snapshot = await getState(gameId, auth);
         if (cancelled) return;
         const meta = metaFromState(gameId, snapshot);
-        useGameStore.getState().load(meta, { gameId, token: token ?? "", viewer, mode: "live" });
+        const v: Viewer = viewerFrom(snapshot) ?? viewer ?? "SPECTATOR";
+        setResolvedViewer(v);
+        if (typeof v === "number" && typeof snapshot.my_role === "string") {
+          setMyRole(snapshot.my_role as RoleType);
+        }
+        useGameStore.getState().load(meta, { gameId, token: token ?? "", viewer: v, mode: "live" });
         setErrorKind(null);
         setDetail(null);
         setReady(true);
@@ -218,6 +233,12 @@ export default function GamePage({ gameId, token, share, viewer }: GamePageProps
         if (cancelled) return;
         if (fail(err)) return;
         const status = err instanceof ApiError ? err.status : 0;
+        if (status === 403) {
+          // 建局者已入座：GM 链接被服务端封锁（issue #115）
+          setErrorKind("locked");
+          setDetail(err instanceof ApiError ? err.detail : null);
+          return;
+        }
         if (status === 409) {
           setErrorKind("4409");
           setAttempt(tries);
@@ -242,6 +263,8 @@ export default function GamePage({ gameId, token, share, viewer }: GamePageProps
       }
       useGameStore.getState().reset();
       setReady(false);
+      setResolvedViewer(null);
+      setMyRole(null);
       setManifest({});
       // 同上：直播卸载也要停播 + 清 available（fix round 3）。
       useVoice.getState().clear(true);
@@ -272,11 +295,22 @@ export default function GamePage({ gameId, token, share, viewer }: GamePageProps
   // 同时要求 head 非空：引导重跑时 store 会被 reset（head=null、mode 回到 "live"），
   // 而 ready 可能还停留在上一次的 true（开发期 Fast Refresh 会保留组件 state），
   // 这一条避免在「已重置但尚未装入」的空窗里连出一个立刻被关掉的 WS。
-  useLiveEvents({
+  const live = useLiveEvents({
     gameId: gameId ?? null,
     auth,
     enabled: ready && mode === "live" && head !== null,
   });
+
+  const turnPrompt = useTurn((s) => s.prompt);
+  const turnPending = useTurn((s) => s.pending);
+  const turnAccepted = useTurn((s) => s.accepted);
+  const turnResult = useTurn((s) => s.lastResult);
+  const turnError = useTurn((s) => s.lastError);
+  const isPlayer = typeof resolvedViewer === "number";
+  // 身份以最新 your_turn 为准（/state 只在引导时读一次）
+  useEffect(() => {
+    if (turnPrompt !== null) setMyRole(turnPrompt.observation.my_role);
+  }, [turnPrompt]);
 
   // ---- 派生视图 ----
   // viewState() 内部按 (cursor, events.length) 记忆化，同一状态下多次调用返回同一对象，
@@ -334,9 +368,14 @@ export default function GamePage({ gameId, token, share, viewer }: GamePageProps
   );
 
   if (errorKind !== null) {
-    return <ErrorState kind={errorKind} attempt={attempt} detail={detail} />;
+    return <ErrorState
+        kind={errorKind}
+        attempt={attempt}
+        detail={detail}
+        playerHref={gameId ? `#/g/${gameId}` : undefined}
+      />;
   }
-  if (!ready || view === null || viewer === undefined) {
+  if (!ready || view === null || resolvedViewer === null) {
     return (
       <div className={styles.loading} role="status">
         正在载入对局…
@@ -355,7 +394,7 @@ export default function GamePage({ gameId, token, share, viewer }: GamePageProps
       : null;
 
   const rightPanel = isNight(view.phase) ? (
-    <NightSummary rows={nightRows} round={view.round} viewer={viewer} />
+    <NightSummary rows={nightRows} round={view.round} viewer={resolvedViewer} />
   ) : view.phase === "SHERIFF_ELECTION" || view.phase === "SHERIFF_PK" ? (
     <ElectionPanel state={view} events={visibleEvents} />
   ) : view.phase === "VOTE" || view.phase === "VOTE_PK" || view.phase === "EXILE" ? (
@@ -373,7 +412,7 @@ export default function GamePage({ gameId, token, share, viewer }: GamePageProps
       <PhaseBar
         state={view}
         mode={mode}
-        viewer={viewer}
+        viewer={resolvedViewer}
         connection={connection}
         lastSeq={atSeq}
         totalSeq={totalSeq}
@@ -404,12 +443,33 @@ export default function GamePage({ gameId, token, share, viewer }: GamePageProps
             votes={votes}
             nightLines={lines}
             avatars={avatars}
+            me={isPlayer ? resolvedViewer : null}
           />
           {/* 发言者聚光牌占座位环下方的空白区（issue #102 追加） */}
           <SpeakerSpotlight state={view} seat={spotlight} avatars={avatars} />
         </div>
 
         <div className={styles.center}>
+          {isPlayer && (
+            <div className={styles.playerBar}>
+              <span>
+                我是 {resolvedViewer}号{myRole !== null ? ` · ${ROLE_ZH[myRole]}` : ""}
+              </span>
+              {over && (
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => {
+                    const target = `#/g/${gameId ?? ""}`;
+                    if (window.location.hash === target) window.location.reload();
+                    else window.location.hash = target;
+                  }}
+                >
+                  查看全局回放
+                </button>
+              )}
+            </div>
+          )}
           <SpeechFeed
             items={items}
             cursor={cursor}
@@ -417,7 +477,19 @@ export default function GamePage({ gameId, token, share, viewer }: GamePageProps
             speakingSeat={speaking}
             avatars={avatars}
           />
-          <NightOverlay phase={view.phase} viewer={viewer} />
+          {isPlayer && !over && (
+            <ActionBar
+              prompt={turnPrompt}
+              pending={turnPending}
+              accepted={turnAccepted}
+              lastResult={turnResult}
+              lastError={turnError}
+              onSubmit={(call) => {
+                if (!live.send(call)) useTurn.getState().fail("连接未就绪，请稍后重试");
+              }}
+            />
+          )}
+          <NightOverlay phase={view.phase} viewer={resolvedViewer} acting={isPlayer && turnPrompt !== null} />
         </div>
 
         <div className={styles.right}>{rightPanel}</div>

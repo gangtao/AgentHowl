@@ -52,16 +52,18 @@ def test_acceptance_human_can_take_any_seat(client: TestClient, seat_to_take: in
     """判据 2：真人可经同一玩家 API 顶替任意座位（此处以先后加入取不同座）。"""
     created = client.post("/api/v1/games", json={"config_override": {"seed": 7}}).json()
     gid = created["game_id"]
+    # issue #115：建局者本人入座会封锁 GM 视角，这里用外部客户端入座
+    ext = TestClient(client.app)  # 无 cookie：join 不绑定账号（user_id=None）
     # 先以外部 Agent 身份占满目标座位之前的座（同栈同 API），收集各座 token
     all_ports: dict[int, str] = {}
     for i in range(seat_to_take):
-        resp = client.post(
+        resp = ext.post(
             f"/api/v1/games/{gid}/join",
             json={"display_name": f"Ext{i}", "player_type": "AGENT"},
             headers=_auth(created["host_token"]),
         ).json()
         all_ports[resp["seat"]] = resp["player_token"]
-    joined = client.post(
+    joined = ext.post(
         f"/api/v1/games/{gid}/join",
         json={"display_name": "Human"},
         headers=_auth(created["host_token"]),

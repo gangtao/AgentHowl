@@ -274,3 +274,15 @@
     font-size: 10px;
   }
 }
+
+.me {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  font-size: 10px;
+  line-height: 1;
+  padding: 2px 5px;
+  border-radius: 999px;
+  background: var(--color-primary);
+  color: var(--color-on-primary, #fff);
+}

@@ -85,7 +85,7 @@ class HumanPlayerPort:
     """
 
     def __init__(self) -> None:
-        self._sender: Callable[[TurnPrompt], Awaitable[None]] | None = None
+        self._senders: list[Callable[[TurnPrompt], Awaitable[None]]] = []
         self._prompt: TurnPrompt | None = None
         self._pending: asyncio.Future[Action] | None = None
         self._outcome: asyncio.Future[SubmitOutcome] | None = None
@@ -96,22 +96,23 @@ class HumanPlayerPort:
         return self._prompt
 
     def attach_sender(self, sender: Callable[[TurnPrompt], Awaitable[None]]) -> None:
-        self._sender = sender
+        """登记一条推送通道；同座位多连接（如同账号多标签页）都收到 prompt，先提交者生效。"""
+        if not any(s is sender for s in self._senders):
+            self._senders.append(sender)
 
     def detach_sender(self, sender: Callable[[TurnPrompt], Awaitable[None]]) -> None:
-        """仅当前持有者可解除，防旧连接摘除新连接的推送通道。"""
-        if self._sender is sender:
-            self._sender = None
+        """只摘除调用方自己的通道，不影响同座位其它连接。"""
+        self._senders = [s for s in self._senders if s is not sender]
 
     async def act(self, observation: PlayerObservation, deadline_ts: float) -> Action:
         self._prompt = TurnPrompt(observation=observation, deadline_ts=deadline_ts)
         self._pending = asyncio.get_running_loop().create_future()
         self._armed.set()
-        if self._sender is not None:
+        for sender in list(self._senders):
             try:
-                await self._sender(self._prompt)
+                await sender(self._prompt)
             except Exception:
-                self._sender = None  # 坏连接自摘除；玩家可经 REST 轮询发现窗口
+                self.detach_sender(sender)  # 坏连接自摘除；不影响其它连接，玩家亦可经 REST 轮询
         try:
             try:
                 return await self._pending

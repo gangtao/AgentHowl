@@ -5,7 +5,7 @@
 
 import { useMemo, useState } from "react";
 import type { StoredAgent } from "../../api/agents";
-import { memoryConflicts, type SeatSlot } from "../../lib/seats";
+import { ME, memoryConflicts, type SeatSlot } from "../../lib/seats";
 import AgentCard from "../AgentCard/AgentCard";
 import styles from "./SeatAssignment.module.css";
 
@@ -33,6 +33,7 @@ export default function SeatAssignment({
 }: SeatAssignmentProps): JSX.Element {
   const [query, setQuery] = useState("");
   const conflicts = useMemo(() => memoryConflicts(assignment, library), [assignment, library]);
+  const meTaken = assignment.some((s) => s.agentId === ME);
   const byId = useMemo(() => new Map(library.map((a) => [a.agent_id, a])), [library]);
 
   const filtered = library.filter((a) => {
@@ -118,6 +119,9 @@ export default function SeatAssignment({
                     onChange={(e) => onAssign(slot.seat, e.target.value || null)}
                   >
                     <option value="">{fill === null ? "随机 bot" : "填满（*）"}</option>
+                    <option value={ME} disabled={meTaken && slot.agentId !== ME}>
+                      我自己（真人）{meTaken && slot.agentId !== ME ? "（已在其他座位）" : ""}
+                    </option>
                     {library.map((a) => {
                       const takenAt = conflicts.get(a.agent_id);
                       const disabled = takenAt !== undefined && takenAt !== slot.seat;
@@ -144,6 +148,7 @@ export default function SeatAssignment({
             随机 bot 不写入
           </span>
           <span>同一档案可放多个座位；配置了 memory_id 的档案只能占一个座位。</span>
+          <span>「我自己」只能占一个座位；建局后你以该座位入座并直接进入玩家页。</span>
         </div>
       </div>
     </div>

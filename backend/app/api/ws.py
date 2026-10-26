@@ -23,43 +23,85 @@ from fastapi import APIRouter, HTTPException, Query, WebSocket, WebSocketDisconn
 
 from app.api.auth import user_from_cookie
 from app.api.deps import TokenInfo
-from app.api.rest import _session_viewer, _share_viewer, _your_turn_payload, viewer_of
+from app.api.rest import (
+    _owner_locked,
+    _session_viewer,
+    _share_viewer,
+    _your_turn_payload,
+    viewer_of,
+)
 from app.api.views import event_json_for_viewer
 from app.engine.events import Event, EventType
 from app.engine.observation import visible_events
-from app.runtime.player_port import HumanPlayerPort, NotYourTurnError, TurnPrompt
+from app.runtime.connection import public_phase
+from app.runtime.player_port import (
+    HumanPlayerPort,
+    NotYourTurnError,
+    SubmitOutcome,
+    TurnPrompt,
+)
 from app.runtime.registry import GameRegistry
 from app.schemas.actions import ToolCall, ToolCallError, parse_tool_call
 
 router = APIRouter()
 
 
+# 提交后等待裁决结果的时长：串行窗口（发言等）结果即时返回；同步窗口（上警 / 投票 / 狼刀提案）
+# 要等全体行动者到齐才裁决，结果可能迟到整个时限——超过这个时长先回 action_accepted
+# （issue #115 浏览器实测）
+ACCEPT_WAIT_SEC = 2.0
+
+
 def _build_event_frames(
-    events: list[Event], round_for: Callable[[Event], int], viewer: Any
+    events: list[Event],
+    round_for: Callable[[Event], int],
+    viewer: Any,
+    *,
+    visible_seqs: set[int] | None = None,
 ) -> list[dict[str, Any]]:
-    """game_event + 由可见 PHASE_CHANGED/GAME_OVER 派生的附加帧（纯构建，不做 IO）。
+    """game_event + 由 PHASE_CHANGED/GAME_OVER 派生的附加帧（纯构建，不做 IO）。
 
     round_for 由调用方决定语义：补发路径传历史 seq→round 映射的查表函数，
     实时路径传返回当前 live round 的函数。
     viewer 用于 meta 字段过滤（issue #60）：非 GM 视角只保留公开 meta。
+
+    phase_change 帧（issue #128）：GM 从可见事件派生、阶段名原样；非 GM 视角的夜间 PHASE_CHANGED
+    是 GM_ONLY，故非 GM 的补发路径传**全量**历史加 `visible_seqs`——事件只对可见的发 game_event，
+    phase_change 则对每条 PHASE_CHANGED 都发、阶段名经 public_phase 折叠。非 GM 实时路径
+    （visible_seqs=None）这里不派生 phase_change，由 ConnectionManager 的阶段订阅统一供给，
+    避免重复。
     """
+    gm = viewer == "GM"
     frames: list[dict[str, Any]] = []
     for e in events:
-        event_json = event_json_for_viewer(e, viewer)
-        frames.append({"type": "game_event", "seq": e.seq, "event": event_json})
-        if e.type == EventType.PHASE_CHANGED:
+        shown = visible_seqs is None or e.seq in visible_seqs
+        if shown:
+            event_json = event_json_for_viewer(e, viewer)
+            frames.append({"type": "game_event", "seq": e.seq, "event": event_json})
+        if e.type == EventType.PHASE_CHANGED and (gm or visible_seqs is not None):
+            to = e.payload.to  # type: ignore[attr-defined]
             frames.append(
                 {
                     "type": "phase_change",
-                    "to": str(e.payload.to),  # type: ignore[attr-defined]
+                    "to": str(to) if gm else public_phase(to),
                     "round": round_for(e),
                 }
             )
-        if e.type == EventType.GAME_OVER:
+        if shown and e.type == EventType.GAME_OVER:
             frames.append(
                 {"type": "game_over", "winner": e.payload.winner}  # type: ignore[attr-defined]
             )
     return frames
+
+
+def _action_result_frame(outcome: SubmitOutcome) -> dict[str, Any]:
+    return {
+        "type": "action_result",
+        "ok": outcome.ok,
+        "event_id": outcome.event_id,
+        "state_version": outcome.state_version,
+        "rejected_reason": outcome.rejected_reason,
+    }
 
 
 def _seq_round_map(gm_events: list[Event]) -> dict[int, int]:
@@ -92,6 +134,9 @@ async def ws_endpoint(
     info: TokenInfo | None = None
     if token:
         info = tokens.resolve(token)
+        if info is not None and info.kind == "GM" and _owner_locked(games, info.game_id):
+            await ws.close(code=4403)  # 建局者已入座：上帝视角封锁（issue #115）
+            return
     elif game_id:
         try:
             if share:
@@ -129,15 +174,31 @@ async def ws_endpoint(
     async def on_frame(frame: dict[str, Any]) -> None:
         out_q.put_nowait(frame)  # speech_audio / speech_audio_end：已按本连接视角过滤（issue #110）
 
+    async def on_phases(phases: list[tuple[str, int]]) -> None:
+        """非 GM 视角的阶段帧（issue #128）：夜间阶段对它们不可见，由此通道补上。"""
+        for to, rnd in phases:
+            out_q.put_nowait({"type": "phase_change", "to": to, "round": rnd})
+
     # ---- 关键同步块：先订阅、后读历史、再把历史帧入队，中间不 await ----
     # 单线程事件循环上，此顺序保证 subscribe 之后提交的事件只经 on_events 到达，
     # 之前的只存在于 history 里；不丢不重（issue #30 复审 Critical #1）。
     handle.connections.subscribe(viewer, on_events)
     handle.connections.subscribe_frames(viewer, on_frame)
+    if viewer != "GM":
+        handle.connections.subscribe_phases(on_phases)
     history = games.store.load_events(info.game_id, from_seq=from_seq)
     round_map = _seq_round_map(games.store.load_events(info.game_id))
     backfill = visible_events(handle.live_state(), history, viewer)
-    for frame in _build_event_frames(backfill, lambda e: round_map.get(e.seq, 0), viewer):
+    if viewer == "GM":
+        frames = _build_event_frames(backfill, lambda e: round_map.get(e.seq, 0), viewer)
+    else:
+        frames = _build_event_frames(
+            history,
+            lambda e: round_map.get(e.seq, 0),
+            viewer,
+            visible_seqs={e.seq for e in backfill},
+        )
+    for frame in frames:
         out_q.put_nowait(frame)
     # ---- 同步块结束 ----
 
@@ -165,6 +226,12 @@ async def ws_endpoint(
             if port.current_prompt is not None:
                 await send_prompt(port.current_prompt)
 
+    # 迟到的裁决结果投递任务（同步窗口）：连接关闭时一并取消
+    late_results: set[asyncio.Task[None]] = set()
+
+    async def deliver_late(fut: asyncio.Future[SubmitOutcome]) -> None:
+        out_q.put_nowait(_action_result_frame(await fut))
+
     try:
         while True:
             raw = await ws.receive_json()
@@ -174,24 +241,34 @@ async def ws_endpoint(
                     out_q.put_nowait({"type": "error", "detail": "该连接无行动权限或座位无端口"})
                     continue
                 action = parse_tool_call(call, actor_seat=info.seat)
-                outcome = await port.submit_and_wait(action, timeout=10.0)
-                out_q.put_nowait(
-                    {
-                        "type": "action_result",
-                        "ok": outcome.ok,
-                        "event_id": outcome.event_id,
-                        "state_version": outcome.state_version,
-                        "rejected_reason": outcome.rejected_reason,
-                    }
-                )
-            except (ToolCallError, NotYourTurnError, TimeoutError) as exc:
-                out_q.put_nowait({"type": "error", "detail": str(exc)})
+                fut = port.submit(action)
+                try:
+                    outcome = await asyncio.wait_for(asyncio.shield(fut), timeout=ACCEPT_WAIT_SEC)
+                except TimeoutError:
+                    # 同步窗口（上警 / 投票 / 狼刀提案）要等全体行动者到齐才裁决，结果可能迟到
+                    # 整个时限（真机局里其他座位是 LLM）。提交已被端口接收（否则 submit 抛
+                    # NotYourTurn），
+                    # 先告知已受理，结果到了再补 action_result；连接期间 act() 必然以裁决或
+                    # WINDOW_CLOSED 结束该 future，不会悬空。
+                    out_q.put_nowait(
+                        {"type": "action_accepted", "detail": "已提交，等待其他玩家行动后裁决"}
+                    )
+                    task = asyncio.create_task(deliver_late(fut))
+                    late_results.add(task)
+                    task.add_done_callback(late_results.discard)
+                    continue
+                out_q.put_nowait(_action_result_frame(outcome))
+            except (ToolCallError, NotYourTurnError) as exc:
+                out_q.put_nowait({"type": "error", "detail": str(exc) or exc.__class__.__name__})
     except WebSocketDisconnect:
         pass
     finally:
         # 先做不可跳过的清理，再回收 sender 任务（其死因与 teardown 无关，一律吞掉）
         handle.connections.unsubscribe(viewer, on_events)
         handle.connections.unsubscribe_frames(viewer, on_frame)
+        handle.connections.unsubscribe_phases(on_phases)
+        for task in late_results:
+            task.cancel()
         if port is not None and sender_cb is not None:
             port.detach_sender(sender_cb)
         sender_task.cancel()

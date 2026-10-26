@@ -86,6 +86,9 @@ export default function PhaseBar({
       <span className={`seg ${styles.seg}`}>
         <span className={`seg-opt ${viewer === "GM" ? styles.segOn : ""}`}>上帝</span>
         <span className={`seg-opt ${viewer === "SPECTATOR" ? styles.segOn : ""}`}>观众</span>
+        <span className={`seg-opt ${typeof viewer === "number" ? styles.segOn : ""}`}>
+          {typeof viewer === "number" ? `玩家 ${viewer}号` : "玩家"}
+        </span>
       </span>
     </header>
   );

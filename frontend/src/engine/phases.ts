@@ -11,6 +11,7 @@ export const PHASE_ZH: Record<Phase, string> = {
   NIGHT_WITCH: "夜晚 · 女巫行动",
   NIGHT_SEER: "夜晚 · 预言家行动",
   NIGHT_HUNTER_CONFIRM: "夜晚 · 猎人确认",
+  NIGHT: "夜晚",
   WIN_CHECK: "胜负判定",
   SHERIFF_ELECTION: "白天 · 警长竞选",
   SHERIFF_PK: "白天 · 警长 PK",
@@ -82,6 +83,7 @@ const NIGHT_PHASES: ReadonlySet<Phase> = new Set([
   "NIGHT_WITCH",
   "NIGHT_SEER",
   "NIGHT_HUNTER_CONFIRM",
+  "NIGHT",
 ]);
 
 export function isNight(phase: Phase): boolean {

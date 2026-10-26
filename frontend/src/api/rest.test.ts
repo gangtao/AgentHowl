@@ -7,7 +7,7 @@ import {
   getGameAvatars,
   getMeta,
   getReplay,
-  getTtsStatus, designVoice, voiceAnchorUrl, req, setUnauthorizedHandler } from "./rest";
+  getTtsStatus, designVoice, voiceAnchorUrl, req, setUnauthorizedHandler, joinGame, viewerFrom } from "./rest";
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -195,5 +195,32 @@ describe("401 回调（issue #114）", () => {
     expect(audioUrl("g_1", 3, 0, { share: "S" })).toBe("/api/v1/games/g_1/audio/3/0?share=S");
     expect(audioUrl("g_1", 3, 0, { token: "T" })).toBe("/api/v1/games/g_1/audio/3/0?token=T");
     expect(audioUrl("g_1", 3, 0)).toBe("/api/v1/games/g_1/audio/3/0");
+  });
+});
+
+describe("viewerFrom / joinGame（issue #115）", () => {
+  it("viewerFrom 只认 GM / SPECTATOR / 座位号", () => {
+    expect(viewerFrom({ viewer: "GM" })).toBe("GM");
+    expect(viewerFrom({ viewer: "SPECTATOR" })).toBe("SPECTATOR");
+    expect(viewerFrom({ viewer: 3 })).toBe(3);
+    expect(viewerFrom({ viewer: "3" })).toBeNull();
+    expect(viewerFrom({})).toBeNull();
+  });
+
+  it("joinGame 走 cookie（same-origin）并带 seat", async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(JSON.stringify({ player_token: "P", seat: 2, ws_url: "/api/v1/ws?token=P" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const res = await joinGame("g1", { display_name: "我", seat: 2 });
+    expect(res.seat).toBe(2);
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe("/api/v1/games/g1/join");
+    expect(init.credentials).toBe("same-origin");
+    expect(JSON.parse(init.body as string)).toEqual({ display_name: "我", seat: 2 });
+    vi.unstubAllGlobals();
   });
 });

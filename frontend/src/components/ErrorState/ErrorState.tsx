@@ -2,7 +2,7 @@
 
 import styles from "./ErrorState.module.css";
 
-export type ErrorKind = "4404" | "4409" | "auth" | "reconnecting" | "error";
+export type ErrorKind = "4404" | "4409" | "auth" | "reconnecting" | "error" | "locked";
 
 export interface ErrorStateProps {
   kind: ErrorKind;
@@ -10,9 +10,11 @@ export interface ErrorStateProps {
   attempt?: number;
   /** 后端返回的 detail 原文（有则展示）。 */
   detail?: string | null;
+  /** locked 态的「以玩家身份进入」链接。 */
+  playerHref?: string;
 }
 
-export default function ErrorState({ kind, attempt, detail }: ErrorStateProps): JSX.Element {
+export default function ErrorState({ kind, attempt, detail, playerHref }: ErrorStateProps): JSX.Element {
   if (kind === "4409") {
     return (
       <div className={styles.root} role="status">
@@ -55,6 +57,23 @@ export default function ErrorState({ kind, attempt, detail }: ErrorStateProps): 
             连接已断开，正在补发事件{attempt ? `（第 ${attempt} 次）` : ""}。指数退避 1s → 8s。
           </span>
           {detail && <span className={styles.detail}>{detail}</span>}
+        </div>
+      </div>
+    );
+  }
+  if (kind === "locked") {
+    return (
+      <div className={styles.root} role="alert">
+        <div className={styles.box}>
+          <span className={styles.code}>403</span>
+          <span className={styles.title}>上帝视角已封锁</span>
+          <span className={styles.desc}>你已入座这局，对局结束前不能查看全局；终局后自动恢复。</span>
+          {detail && <span className={styles.detail}>{detail}</span>}
+          {playerHref && (
+            <a className={`btn btn-primary ${styles.back}`} href={playerHref}>
+              以玩家身份进入
+            </a>
+          )}
         </div>
       </div>
     );

@@ -506,3 +506,31 @@ def test_create_without_seed_draws_random_seed_into_config() -> None:
     assert len(seeds) > 1  # 5 次 31 位随机抽签全同的概率可忽略
     explicit = reg.create(cfg.model_copy(update={"seed": 7}), allow_spectators=True)
     assert explicit.config.seed == 7  # 显式 seed 原样保留
+
+
+async def test_join_by_seat_binds_user_and_owner_seat() -> None:
+    reg = _registry()
+    cfg = build_preset("std_9_kill_side").model_copy(update={"seed": 7})
+    handle = reg.create(cfg, allow_spectators=False, owner_id="u_owner")
+    assert handle.owner_seat() is None
+    assert reg.join(handle, "Alice", "HUMAN", seat=3, user_id="u_owner") == 3
+    assert handle.seat_users == {3: "u_owner"}
+    assert handle.owner_seat() == 3
+    assert 3 in handle.human_ports and 3 in handle.ports
+    with pytest.raises(LobbyError, match="你已入座 3 号"):
+        reg.join(handle, "Alice again", "HUMAN", user_id="u_owner")
+    with pytest.raises(LobbyError, match="座位 3 已被占用"):
+        reg.join(handle, "Bob", "HUMAN", seat=3, user_id="u_bob")
+    # 外部客户端（user_id=None）不受「同账号一座」约束，顺序分配
+    assert reg.join(handle, "Ext", "AGENT") == 0
+    assert reg.join(handle, "Ext2", "AGENT") == 1
+    assert handle.seat_users[0] is None and handle.seat_users[1] is None
+    assert handle.owner_seat() == 3
+
+
+async def test_owner_seat_none_for_ownerless_game() -> None:
+    reg = _registry()
+    cfg = build_preset("std_9_kill_side").model_copy(update={"seed": 7})
+    handle = reg.create(cfg, allow_spectators=False)
+    reg.join(handle, "Alice", "HUMAN", seat=0, user_id="u_x")
+    assert handle.owner_seat() is None  # 无主局永不封锁

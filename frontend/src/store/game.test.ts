@@ -43,14 +43,61 @@ describe("useGameStore", () => {
     expect(after.events.length).toBe(60);
   });
 
-  it("追加 seq 跳号的批次 → gap 被记录且不应用", () => {
-    useGameStore.getState().load(meta);
+  it("GM 视角追加 seq 跳号的批次 → gap 被记录且不应用", () => {
+    useGameStore.getState().load(meta, { viewer: "GM" });
     useGameStore.getState().appendEvents(events.slice(0, 60)); // seq 1..60
     useGameStore.getState().appendEvents(events.slice(70, 80)); // seq 71..80：跳号
     const state = useGameStore.getState();
     expect(state.gap).toEqual({ expected: 61, got: 71 });
     expect(state.events.length).toBe(60); // 未应用
     expect(normalizeState(state.head!)).toEqual(normalizeState(states[59]!));
+  });
+
+  it.each([["SPECTATOR" as const], [0]])(
+    "非 GM 视角（%s）的流被服务端裁剪、seq 跳号是常态 → 不判缺口，照常应用",
+    (viewer) => {
+      useGameStore.getState().load(meta, { viewer });
+      // 观众 / 座位视角收到的是 visible_events 裁剪后的子序列（如 1, 2, 20, …）
+      const visible = events.filter((e) => e.visibility === "PUBLIC").slice(0, 30);
+      expect(visible.some((e, i) => i > 0 && e.seq !== visible[i - 1]!.seq + 1)).toBe(true);
+      useGameStore.getState().appendEvents(visible);
+      const state = useGameStore.getState();
+      expect(state.gap).toBeNull();
+      expect(state.events.map((e) => e.seq)).toEqual(visible.map((e) => e.seq));
+    },
+  );
+
+  it("applyPhase：非 GM 视角写入阶段与轮次（夜晚折叠为 NIGHT），GM 视角忽略", () => {
+    useGameStore.getState().load(meta, { viewer: "SPECTATOR" });
+    useGameStore.getState().applyPhase("NIGHT", 2);
+    expect(useGameStore.getState().viewState()?.phase).toBe("NIGHT");
+    expect(useGameStore.getState().viewState()?.round).toBe(2);
+    // 之后的事件在此基础上继续 reduce：公开的 PHASE_CHANGED 仍会覆盖
+    const visible = events.filter((e) => e.visibility === "PUBLIC").slice(0, 30);
+    useGameStore.getState().appendEvents(visible);
+    expect(useGameStore.getState().viewState()?.phase).not.toBe("NIGHT");
+    useGameStore.getState().load(meta, { viewer: "GM" });
+    useGameStore.getState().applyPhase("NIGHT", 2);
+    expect(useGameStore.getState().viewState()?.phase).not.toBe("NIGHT");
+  });
+
+  it("applyPhase：终局后忽略迟到的 phase_change（GAME_OVER 事件与夜晚帧同批到达）", () => {
+    useGameStore.getState().load(meta, { viewer: "SPECTATOR" });
+    useGameStore.getState().appendEvents(events.filter((e) => e.visibility === "PUBLIC"));
+    const head = useGameStore.getState().head!;
+    expect(head.winner).not.toBeNull();
+    useGameStore.getState().applyPhase("NIGHT", head.round + 1);
+    expect(useGameStore.getState().viewState()?.phase).toBe(head.phase);
+    expect(useGameStore.getState().viewState()?.round).toBe(head.round);
+  });
+
+  it("非 GM 视角仍去重：seq 不大于已有末尾的事件被跳过", () => {
+    useGameStore.getState().load(meta, { viewer: "SPECTATOR" });
+    const visible = events.filter((e) => e.visibility === "PUBLIC").slice(0, 10);
+    useGameStore.getState().appendEvents(visible);
+    const before = useGameStore.getState().events;
+    useGameStore.getState().appendEvents(visible.slice(0, 5));
+    expect(useGameStore.getState().events).toBe(before);
   });
 
   it("setCursor(30) → viewState() 等于 states[29]", () => {

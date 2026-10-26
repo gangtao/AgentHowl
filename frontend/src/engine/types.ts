@@ -20,7 +20,10 @@ export type Phase =
   | "EXILE"
   | "HUNTER_SHOOT"
   | "IDIOT_FLIP"
-  | "GAME_OVER";
+  | "GAME_OVER"
+  /** 非 GM 视角的公开夜晚阶段（issue #128）：服务端把 NIGHT_* 折叠后经 phase_change 帧下发，
+   * 只由 store.applyPhase 写入，事件流里没有这个值。 */
+  | "NIGHT";
 
 export type ElectionStage =
   "" | "candidacy" | "speech" | "withdraw" | "vote" | "direction" | "announce";

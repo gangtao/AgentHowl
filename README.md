@@ -282,6 +282,7 @@ curl -s -c cookies.txt -b cookies.txt -X POST $BASE/games -H 'Content-Type: appl
 # gm_token：上帝视角只读全量（issue #26），只在本响应出现一次；只给受信任方，别当观战链接发
 
 # 2) （可选）真人加入任意空座，拿 player_token 与 ws_url（需登录 cookie，或外部 Agent 客户端带 host_token）
+#    body 可带 "seat": N 指定座位（issue #115）
 curl -s -X POST $BASE/games/$GID/join -H "Authorization: Bearer $HOST_TOKEN" -H 'Content-Type: application/json' \
   -d '{"display_name":"Alice","player_type":"HUMAN"}'
 # → {player_token, seat, ws_url}
@@ -371,6 +372,14 @@ issue #114：账号体系 + 按用户隔离。设计见 `docs/superpowers/specs/
 4. 固定 `AGENTHOWL_SECRET_KEY` 并持久化 `backend/data`（含 `users.db`、`secret.key`）。
 5. Provider 密钥目前仍是明文 0600 落盘（加密落盘见后续 issue）。
 6. 普通用户的 Agent 必须绑定自己的 Provider（BYOK），服务端 `.env` 里的 `OPENAI_API_KEY` 等环境密钥只有管理员的档案会用到。
+
+### 自己入座 / Play a seat yourself（issue #115）
+
+- Lobby 第 2 步把任一座位选成「我自己（真人）」，第 3 步可改显示名与时限（默认发言 120 秒、行动 60 秒），点「创建并开始」后直接进入玩家页 `#/g/{id}?player=…`。
+- 玩家页只显示你这个座位可见的信息；轮到你时底部行动区按阶段给出发言 / 投票 / 夜间技能 / 警长行动 / 自爆。
+- **上帝视角封锁**：建局者入座后，到对局结束前 `?gm=` 链接返回 403、裸 `#/g/{id}` 自动变成玩家页；分享链接仍是观众视角；终局后自动恢复，可看全局回放。
+- 分享链接：玩家页不提供分享按钮，真人入座对局的分享链接请到 History 页的「观看」/「分享」获取。
+- API：`POST /games/{id}/join` 支持 `seat` 指定座位；`GET /state` `GET /meta` 响应带 `viewer`（`GM` / `SPECTATOR` / 座位号）。
 
 ## M2 验收矩阵（PRD §9）
 

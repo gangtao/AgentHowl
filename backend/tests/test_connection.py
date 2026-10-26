@@ -167,3 +167,74 @@ async def test_frame_filtered_by_viewer() -> None:
     await cm.broadcast_frame({"seq": 2}, _evt(2, Visibility.WOLVES))
     await cm.broadcast_frame({"seq": 3}, _evt(3, Visibility.PUBLIC))
     assert got == {"GM": [1, 2, 3], "SPECTATOR": [3], "wolf": [2, 3], "villager": [3]}
+
+
+def _night_evt(seq: int, to: Phase, vis: Visibility) -> Event:
+    return Event(
+        seq=seq,
+        game_id="g",
+        ts=float(seq),
+        type=EventType.PHASE_CHANGED,
+        actor_seat=None,
+        payload=PhaseChangedPayload(to=to),
+        visibility=vis,
+    )
+
+
+def test_public_phase_folds_night_subphases() -> None:
+    from app.runtime.connection import public_phase
+
+    assert public_phase(Phase.NIGHT_WEREWOLF) == "NIGHT"
+    assert public_phase(Phase.NIGHT_SEER) == "NIGHT"
+    assert public_phase(Phase.NIGHT_HUNTER_CONFIRM) == "NIGHT"
+    assert public_phase(Phase.VOTE) == "VOTE"
+    assert public_phase(Phase.SHERIFF_ELECTION) == "SHERIFF_ELECTION"
+
+
+@pytest.mark.asyncio
+async def test_phase_subscribers_get_folded_phases_without_events() -> None:
+    """issue #128：夜间 PHASE_CHANGED 为 GM_ONLY，观众事件订阅收不到，
+    阶段订阅仍要收到折叠后的阶段名。"""
+    cm = ConnectionManager(_state)
+    seen_events: list[list[Event]] = []
+    seen_phases: list[list[tuple[str, int]]] = []
+
+    async def spectator(evs: list[Event]) -> None:
+        seen_events.append(evs)
+
+    async def phases(ps: list[tuple[str, int]]) -> None:
+        seen_phases.append(ps)
+
+    cm.subscribe("SPECTATOR", spectator)
+    cm.subscribe_phases(phases)
+    await cm.broadcast(
+        [
+            _night_evt(1, Phase.NIGHT_WEREWOLF, Visibility.GM_ONLY),
+            _night_evt(2, Phase.NIGHT_SEER, Visibility.GM_ONLY),
+            _night_evt(3, Phase.VOTE, Visibility.PUBLIC),
+        ]
+    )
+    assert [e.seq for evs in seen_events for e in evs] == [3]  # 事件订阅仍只见 PUBLIC
+    assert seen_phases == [[("NIGHT", 1), ("NIGHT", 1), ("VOTE", 1)]]
+    # 批次里没有 PHASE_CHANGED：阶段订阅不被调用
+    seen_phases.clear()
+    await cm.broadcast([_evt(4, Visibility.PUBLIC)])  # _evt 也是 PHASE_CHANGED(VOTE)
+    assert seen_phases == [[("VOTE", 1)]]
+    cm.unsubscribe_phases(phases)
+    await cm.broadcast([_evt(5, Visibility.PUBLIC)])
+    assert seen_phases == [[("VOTE", 1)]]
+
+
+@pytest.mark.asyncio
+async def test_raising_phase_subscriber_is_evicted() -> None:
+    cm = ConnectionManager(_state)
+    calls: list[int] = []
+
+    async def bad(_ps: list[tuple[str, int]]) -> None:
+        calls.append(1)
+        raise RuntimeError("boom")
+
+    cm.subscribe_phases(bad)
+    await cm.broadcast([_evt(1, Visibility.PUBLIC)])
+    await cm.broadcast([_evt(2, Visibility.PUBLIC)])
+    assert calls == [1]

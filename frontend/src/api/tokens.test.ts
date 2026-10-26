@@ -8,10 +8,15 @@ describe("parseHash", () => {
     ["", { route: "lobby" }],
     ["#/agents", { route: "agents" }],
     ["#/providers", { route: "providers" }],
+    ["#/g/abc", { route: "game", gameId: "abc" }],
     ["#/g/abc?gm=T", { route: "game", gameId: "abc", token: "T", viewer: "GM" }],
     ["#/g/abc?share=S", { route: "game", gameId: "abc", share: "S", viewer: "SPECTATOR" }],
     // gm 与 share 同时出现：gm 优先（上帝视角权限更高，不能被 share 参数降级）。
     ["#/g/abc?gm=T&share=U", { route: "game", gameId: "abc", token: "T", viewer: "GM" }],
+    ["#/g/abc?player=P", { route: "game", gameId: "abc", token: "P" }],
+    // gm 优先于 player（不信任 URL 的组合）；player 优先于 share
+    ["#/g/abc?player=P&share=U", { route: "game", gameId: "abc", token: "P" }],
+    ["#/g/abc?gm=T&player=P", { route: "game", gameId: "abc", token: "T", viewer: "GM" }],
     // 无法识别的路径：归为 lobby（不识别的路由没有对应页面，退回起点）。
     ["#/unknown/path", { route: "lobby" }],
   ];
@@ -38,8 +43,8 @@ describe("parseHash", () => {
       share: "S",
       viewer: "SPECTATOR",
     });
-    // 裸路由：靠登录态走 GM 视角
-    expect(parseHash("#/g/g_1")).toEqual({ route: "game", gameId: "g_1", viewer: "GM" });
+    // 裸路由：靠登录态，视角由服务端决定（无提示）
+    expect(parseHash("#/g/g_1")).toEqual({ route: "game", gameId: "g_1" });
     // gm 优先于 share
     expect(parseHash("#/g/g_1?gm=T&share=S")).toEqual({
       route: "game",
@@ -48,7 +53,7 @@ describe("parseHash", () => {
       viewer: "GM",
     });
     // 旧参数不再识别
-    expect(parseHash("#/g/g_1?spec=T")).toEqual({ route: "game", gameId: "g_1", viewer: "GM" });
-    expect(parseHash("#/g/g_1?replay=1")).toEqual({ route: "game", gameId: "g_1", viewer: "GM" });
+    expect(parseHash("#/g/g_1?spec=T")).toEqual({ route: "game", gameId: "g_1" });
+    expect(parseHash("#/g/g_1?replay=1")).toEqual({ route: "game", gameId: "g_1" });
   });
 });

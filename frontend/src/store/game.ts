@@ -3,15 +3,18 @@
 
 import { create } from "zustand";
 import { initialState, reduce, reduceAll } from "../engine/reduce";
-import type { Event, GameMeta, GameState } from "../engine/types";
+import type { Event, GameMeta, GameState, Phase } from "../engine/types";
 
 /** 每隔多少条事件存一份检查点，供 viewState() 从最近检查点重放而非从头重放。 */
 export const CHECKPOINT_EVERY = 50;
 
 export type ConnectionState = "idle" | "connecting" | "open" | "closed" | "error";
 export type PlaybackMode = "live" | "replay";
-export type Viewer = "GM" | "SPECTATOR";
+/** 视角：上帝 / 观众 / 座位号（玩家，issue #115）。 */
+export type Viewer = "GM" | "SPECTATOR" | number;
 
+/** seq 缺口：只在 GM 视角判定——只有 GM 收到的是完整连续流。观众 / 座位视角的流经服务端
+ * visible_events 裁剪，seq 本来就跳号（如 1, 2, 20, …），对它们只要求 seq 单调递增。 */
 export interface Gap {
   expected: number;
   got: number;
@@ -53,6 +56,9 @@ interface GameStoreState {
   setCursor(seq: number | null): void;
   setMode(mode: PlaybackMode): void;
   viewState(): GameState | null;
+  /** 服务端 phase_change 帧（issue #128）：非 GM 视角看不到夜间 PHASE_CHANGED / ROUND_STARTED
+   * （GM_ONLY），阶段与轮次由这条帧补上；GM 的全量事件流自带，忽略。零过滤：值原样来自服务端。 */
+  applyPhase(to: string, round: number): void;
   play(): void;
   pause(): void;
   setSpeed(speed: number): void;
@@ -180,10 +186,11 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     const checkpoints = new Map(state.checkpoints);
     let gap: Gap | null = null;
     let appliedAny = false;
+    const strictSeq = state.viewer === "GM"; // 非 GM 视角的流被服务端裁剪过，跳号是常态
 
     for (const e of batch) {
       if (e.seq <= lastSeq) continue; // 已应用过，去重跳过
-      if (e.seq !== lastSeq + 1) {
+      if (strictSeq && e.seq !== lastSeq + 1) {
         gap = { expected: lastSeq + 1, got: e.seq };
         break; // 缺口/乱序：本批到此为止，不静默应用后续
       }
@@ -217,6 +224,17 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
   setMode(mode) {
     if (get().mode === mode) return;
     set({ mode });
+  },
+
+  applyPhase(to, round) {
+    const state = get();
+    if (state.viewer === "GM" || state.head === null) return;
+    // 终局是终态：GAME_OVER 事件与同批 PHASE_CHANGED 派生的夜晚帧分走两条订阅，
+    // 夜晚帧可能晚于 GAME_OVER 到达，不能把已结束的对局改回「夜晚进行中」。
+    if (state.head.phase === "GAME_OVER" || state.head.winner !== null) return;
+    if (state.head.phase === to && state.head.round === round) return;
+    viewCache = null;
+    set({ head: { ...state.head, phase: to as Phase, round } });
   },
 
   viewState() {
