@@ -81,6 +81,16 @@ describe("useGameStore", () => {
     expect(useGameStore.getState().viewState()?.phase).not.toBe("NIGHT");
   });
 
+  it("applyPhase：终局后忽略迟到的 phase_change（GAME_OVER 事件与夜晚帧同批到达）", () => {
+    useGameStore.getState().load(meta, { viewer: "SPECTATOR" });
+    useGameStore.getState().appendEvents(events.filter((e) => e.visibility === "PUBLIC"));
+    const head = useGameStore.getState().head!;
+    expect(head.winner).not.toBeNull();
+    useGameStore.getState().applyPhase("NIGHT", head.round + 1);
+    expect(useGameStore.getState().viewState()?.phase).toBe(head.phase);
+    expect(useGameStore.getState().viewState()?.round).toBe(head.round);
+  });
+
   it("非 GM 视角仍去重：seq 不大于已有末尾的事件被跳过", () => {
     useGameStore.getState().load(meta, { viewer: "SPECTATOR" });
     const visible = events.filter((e) => e.visibility === "PUBLIC").slice(0, 10);

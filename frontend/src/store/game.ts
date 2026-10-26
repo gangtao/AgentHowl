@@ -229,6 +229,9 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
   applyPhase(to, round) {
     const state = get();
     if (state.viewer === "GM" || state.head === null) return;
+    // 终局是终态：GAME_OVER 事件与同批 PHASE_CHANGED 派生的夜晚帧分走两条订阅，
+    // 夜晚帧可能晚于 GAME_OVER 到达，不能把已结束的对局改回「夜晚进行中」。
+    if (state.head.phase === "GAME_OVER" || state.head.winner !== null) return;
     if (state.head.phase === to && state.head.round === round) return;
     viewCache = null;
     set({ head: { ...state.head, phase: to as Phase, round } });
