@@ -189,3 +189,22 @@ def test_pk_speaker_cannot_vote_during_pk_speech() -> None:
     )
     assert res.rejection == RejectedReason.WRONG_PHASE
     assert res.state.sheriff_votes == {}
+
+
+def test_vote_pk_speaker_cannot_vote_during_pk_speech() -> None:
+    # VOTE_PK 发言期：当前发言者（平票候选人）投票曾被接受且不推进发言队列，
+    # 导致该座位被无限重复催促、整桌卡死（真人入座端到端复现）。
+    from app.engine.actions import RejectedReason
+
+    st = _state(
+        6,
+        players=_players(6, wolves=(1,)),
+        vote_candidates=(1, 2),
+        speech_order=(1, 2),
+        speech_idx=0,
+    )
+    assert expected_actors(st) == {1}
+    res = step(st, DayVote(actor_seat=1, target_seat=2))
+    assert res.rejection == RejectedReason.WRONG_PHASE
+    assert res.state.votes == {}
+    assert res.state.speech_idx == 0
