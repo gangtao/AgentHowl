@@ -36,6 +36,26 @@ describe("useTurn", () => {
     expect(useTurn.getState().lastResult?.ok).toBe(true);
   });
 
+  it("action_result 晚于下一条 your_turn 到达：只清它所回应的那条 prompt，不清新 prompt（e2e 实测竞态）", () => {
+    // 服务端 out_q 里 your_turn（新窗口）可能排在上一动作的 action_result 之前：
+    // 投票 → 引擎立刻开遗言窗口（your_turn sv=199）→ 投票的 action_result(sv=187) 才入队。
+    useTurn.getState().setPrompt(prompt(186));
+    useTurn.getState().markPending();
+    useTurn.getState().setPrompt(prompt(199));
+    useTurn.getState().resolve({ ok: true, event_id: "evt_187", state_version: 187, rejected_reason: null });
+    const s = useTurn.getState();
+    expect(s.prompt?.observation.state_version).toBe(199); // 新窗口必须还在
+    expect(s.pending).toBe(false);
+    expect(s.lastResult?.ok).toBe(true);
+  });
+
+  it("正常顺序：action_result 回应当前 prompt → 清 prompt", () => {
+    useTurn.getState().setPrompt(prompt(186));
+    useTurn.getState().markPending();
+    useTurn.getState().resolve({ ok: true, event_id: "evt_187", state_version: 187, rejected_reason: null });
+    expect(useTurn.getState().prompt).toBeNull();
+  });
+
   it("fail / disconnected 只清 pending，不动 prompt", () => {
     useTurn.getState().setPrompt(prompt(1));
     useTurn.getState().markPending();

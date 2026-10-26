@@ -229,9 +229,11 @@ describe("回合帧（issue #115）", () => {
     ws.onopen?.();
     ws.emit({ type: "your_turn", observation: { my_seat: 0, state_version: 3 }, available_tools: ["vote"], deadline_ts: 99 });
     expect(useTurn.getState().prompt?.available_tools).toEqual(["vote"]);
+    useTurn.getState().markPending(); // 已提交（send() 内部会标记）
     ws.emit({ type: "action_result", ok: false, event_id: null, state_version: null, rejected_reason: "目标已死亡" });
     expect(useTurn.getState().prompt).not.toBeNull();
     expect(useTurn.getState().lastResult?.rejected_reason).toBe("目标已死亡");
+    useTurn.getState().markPending();
     ws.emit({ type: "action_result", ok: true, event_id: "evt_9", state_version: 4, rejected_reason: null });
     expect(useTurn.getState().prompt).toBeNull();
     ws.emit({ type: "error", detail: "行动窗口已关闭" });
