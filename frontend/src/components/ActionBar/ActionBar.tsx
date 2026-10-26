@@ -23,6 +23,8 @@ import styles from "./ActionBar.module.css";
 export interface ActionBarProps {
   prompt: YourTurn | null;
   pending: boolean;
+  /** 已受理、等裁决（同步窗口）：只显示等待文案。 */
+  accepted?: boolean;
   lastResult: ActionResult | null;
   lastError: string | null;
   onSubmit(call: ToolCall): void;
@@ -101,6 +103,7 @@ function privateNumber(obs: PlayerObservation, key: string): number | null {
 export default function ActionBar({
   prompt,
   pending,
+  accepted = false,
   lastResult,
   lastError,
   onSubmit,
@@ -153,6 +156,13 @@ export default function ActionBar({
     return (
       <div className={styles.idle} role="status">
         等待其他玩家…
+      </div>
+    );
+  }
+  if (accepted) {
+    return (
+      <div className={styles.idle} role="status">
+        已提交，等待其他玩家行动后裁决…
       </div>
     );
   }

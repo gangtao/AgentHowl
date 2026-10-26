@@ -349,3 +349,71 @@ def test_ws_share_and_cookie_entries() -> None:
         ):
             ws.receive_json()
         assert exc3.value.code == 4401
+
+
+_PUBLIC_PHASES = {
+    "NIGHT",
+    "SHERIFF_ELECTION",
+    "SHERIFF_PK",
+    "DEATH_ANNOUNCE",
+    "LAST_WORDS",
+    "DAY_SPEECH",
+    "VOTE",
+    "VOTE_PK",
+    "EXILE",
+    "HUNTER_SHOOT",
+    "IDIOT_FLIP",
+    "GAME_OVER",
+    "WIN_CHECK",
+}
+
+
+def test_spectator_live_stream_gets_folded_night_phase_frames(client: TestClient) -> None:
+    """issue #128：观众实时流收到夜晚（折叠为 NIGHT）的 phase_change，但绝不含 NIGHT_* 子阶段名。"""
+    gid, created = _start_ai_game(client, seed=42)
+    frames: list[dict[str, Any]] = []
+    with client.websocket_connect(f"/api/v1/ws?game_id={gid}&share={created['share_token']}") as ws:
+        while True:
+            frame = ws.receive_json()
+            frames.append(frame)
+            if frame["type"] == "game_over":
+                break
+    phases = [f["to"] for f in frames if f["type"] == "phase_change"]
+    assert "NIGHT" in phases
+    assert phases[0] == "NIGHT"  # 首夜先于一切白天阶段
+    assert all(p in _PUBLIC_PHASES for p in phases), phases
+    assert not any(p.startswith("NIGHT_") for p in phases)
+    rounds = [f["round"] for f in frames if f["type"] == "phase_change"]
+    assert rounds[0] == 1 and rounds == sorted(rounds)
+    # 事件本身仍只有 PUBLIC
+    assert all(f["event"]["visibility"] == "PUBLIC" for f in frames if f["type"] == "game_event")
+
+
+def test_spectator_backfill_interleaves_folded_phase_frames(client: TestClient) -> None:
+    """终局后从 0 补发：phase_change（含 NIGHT）与 game_event 按 seq 顺序交错、round 为历史值。"""
+    gid, created = _start_ai_game(client, seed=7)
+    handle = client.app.state.games.get(gid)  # type: ignore[attr-defined]
+    deadline = time.time() + 30
+    while not handle.task.done() and time.time() < deadline:
+        time.sleep(0.05)
+    frames: list[dict[str, Any]] = []
+    with client.websocket_connect(
+        f"/api/v1/ws?game_id={gid}&share={created['share_token']}&from_seq=0"
+    ) as ws:
+        while True:
+            frame = ws.receive_json()
+            frames.append(frame)
+            if frame["type"] == "game_over":
+                break
+    kinds = [f["type"] for f in frames]
+    first_phase = kinds.index("phase_change")
+    first_day_event = next(
+        i
+        for i, f in enumerate(frames)
+        if f["type"] == "game_event" and f["event"]["type"] not in ("GAME_CREATED", "GAME_STARTED")
+    )
+    assert frames[first_phase]["to"] == "NIGHT"
+    assert first_phase < first_day_event  # 首夜的 phase_change 在白天事件之前
+    assert not any(f["to"].startswith("NIGHT_") for f in frames if f["type"] == "phase_change")
+    rounds = [f["round"] for f in frames if f["type"] == "phase_change"]
+    assert rounds[0] == 1 and rounds == sorted(rounds)

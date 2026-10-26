@@ -303,6 +303,7 @@ export default function GamePage({ gameId, token, share, viewer }: GamePageProps
 
   const turnPrompt = useTurn((s) => s.prompt);
   const turnPending = useTurn((s) => s.pending);
+  const turnAccepted = useTurn((s) => s.accepted);
   const turnResult = useTurn((s) => s.lastResult);
   const turnError = useTurn((s) => s.lastError);
   const isPlayer = typeof resolvedViewer === "number";
@@ -480,6 +481,7 @@ export default function GamePage({ gameId, token, share, viewer }: GamePageProps
             <ActionBar
               prompt={turnPrompt}
               pending={turnPending}
+              accepted={turnAccepted}
               lastResult={turnResult}
               lastError={turnError}
               onSubmit={(call) => {

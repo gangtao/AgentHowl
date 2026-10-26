@@ -3,7 +3,7 @@
 
 import { create } from "zustand";
 import { initialState, reduce, reduceAll } from "../engine/reduce";
-import type { Event, GameMeta, GameState } from "../engine/types";
+import type { Event, GameMeta, GameState, Phase } from "../engine/types";
 
 /** 每隔多少条事件存一份检查点，供 viewState() 从最近检查点重放而非从头重放。 */
 export const CHECKPOINT_EVERY = 50;
@@ -56,6 +56,9 @@ interface GameStoreState {
   setCursor(seq: number | null): void;
   setMode(mode: PlaybackMode): void;
   viewState(): GameState | null;
+  /** 服务端 phase_change 帧（issue #128）：非 GM 视角看不到夜间 PHASE_CHANGED / ROUND_STARTED
+   * （GM_ONLY），阶段与轮次由这条帧补上；GM 的全量事件流自带，忽略。零过滤：值原样来自服务端。 */
+  applyPhase(to: string, round: number): void;
   play(): void;
   pause(): void;
   setSpeed(speed: number): void;
@@ -221,6 +224,14 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
   setMode(mode) {
     if (get().mode === mode) return;
     set({ mode });
+  },
+
+  applyPhase(to, round) {
+    const state = get();
+    if (state.viewer === "GM" || state.head === null) return;
+    if (state.head.phase === to && state.head.round === round) return;
+    viewCache = null;
+    set({ head: { ...state.head, phase: to as Phase, round } });
   },
 
   viewState() {

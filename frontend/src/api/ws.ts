@@ -1,6 +1,9 @@
 // WS hook：直播事件订阅（规格 §6，对应 backend/app/api/ws.py）。
 // URL：/api/v1/ws?token=…&from_seq=… | ?game_id=…&share=…&from_seq=… | ?game_id=…&from_seq=…（cookie）；帧：{type:"game_event", seq, event}
-// / {type:"phase_change", to, round} / {type:"game_over", winner} / {type:"error", detail}
+// / {type:"phase_change", to, round}（issue #128：非 GM 视角的阶段 / 轮次权威来源，夜间折叠为 NIGHT；
+// 与 game_event 同进一个缓冲、按到达顺序应用，否则先于缓冲中事件应用会被其 PHASE_CHANGED 覆盖回白天）
+// / {type:"game_over", winner} / {type:"error", detail}
+// / {type:"action_accepted", detail}（同步窗口：已受理、等全体到齐再裁决，action_result 稍后补到）
 // / {type:"your_turn", observation, available_tools, deadline_ts} / {type:"action_result", ok, event_id, state_version, rejected_reason}（issue #115：写入 useTurn，供 ActionBar）
 // / {type:"speech_audio", seq, part, url, duration, kind}（配音分段，issue #103；`kind` 为 `speech|narration`（issue #110，缺省按 speech）：转给 useVoice.enqueue，
 // 不进 appendEvents——零信息过滤原则下也不代表任何游戏状态变化；url 会拼上本连接的 ?token=，
@@ -79,9 +82,11 @@ export function wsUrl(fromSeq: number, gameId: string, auth: GameAuth): string {
 
 /** 直播事件订阅：把 WS 帧转成对 useGameStore 的 appendEvents 调用。
  * StrictMode 双挂载安全：socket 存在 ref 里，effect 清理时关闭旧连接。 */
+type Buffered = { kind: "event"; event: Event } | { kind: "phase"; to: string; round: number };
+
 export function useLiveEvents({ gameId, auth, enabled }: UseLiveEventsArgs): LiveEventsHandle {
   const socketRef = useRef<WebSocket | null>(null);
-  const bufferRef = useRef<Event[]>([]);
+  const bufferRef = useRef<Buffered[]>([]);
   const rafRef = useRef<number | null>(null);
   const lastSeqRef = useRef<number>(0);
   const attemptRef = useRef<number>(0);
@@ -99,22 +104,37 @@ export function useLiveEvents({ gameId, auth, enabled }: UseLiveEventsArgs): Liv
     const existing = useGameStore.getState().events;
     lastSeqRef.current = existing.length > 0 ? (existing[existing.length - 1] as Event).seq : 0;
 
+    /** 把一段事件刷入 store；命中缺口返回 true（调用方停止本轮）。 */
+    const applyEvents = (events: Event[]): boolean => {
+      if (events.length === 0) return false;
+      useGameStore.getState().appendEvents(events);
+      const gap = useGameStore.getState().gap;
+      if (gap === null) return false;
+      // store 记录了缺口：清掉本地已知的 lastSeq，从缺口起点重新拉取补发。
+      // 同时清空剩余缓冲——残留的都是断线前的陈旧事件，留着会在补发帧之前被下一次
+      // flush 消费，重新触发同一个缺口，白白多打几轮重连（review Minor-1）。
+      useGameStore.getState().clearGap();
+      bufferRef.current = [];
+      lastSeqRef.current = gap.expected - 1;
+      reconnect();
+      return true;
+    };
+
     const flush = (): void => {
       rafRef.current = null;
       if (bufferRef.current.length === 0) return;
       const batch = bufferRef.current.splice(0, MAX_BATCH);
-      useGameStore.getState().appendEvents(batch);
-      const gap = useGameStore.getState().gap;
-      if (gap !== null) {
-        // store 记录了缺口：清掉本地已知的 lastSeq，从缺口起点重新拉取补发。
-        // 同时清空剩余缓冲——残留的都是断线前的陈旧事件，留着会在补发帧之前被下一次
-        // flush 消费，重新触发同一个缺口，白白多打几轮重连（review Minor-1）。
-        useGameStore.getState().clearGap();
-        bufferRef.current = [];
-        lastSeqRef.current = gap.expected - 1;
-        reconnect();
-        return;
+      let acc: Event[] = [];
+      for (const item of batch) {
+        if (item.kind === "event") {
+          acc.push(item.event);
+          continue;
+        }
+        if (applyEvents(acc)) return;
+        acc = [];
+        useGameStore.getState().applyPhase(item.to, item.round);
       }
+      if (applyEvents(acc)) return;
       if (bufferRef.current.length > 0) {
         scheduleFlush();
       }
@@ -161,8 +181,13 @@ export function useLiveEvents({ gameId, auth, enabled }: UseLiveEventsArgs): Liv
         }
         if (frame.type === "game_event" && frame.event) {
           lastSeqRef.current = frame.event.seq;
-          bufferRef.current.push(frame.event);
+          bufferRef.current.push({ kind: "event", event: frame.event });
           scheduleFlush();
+        } else if (frame.type === "phase_change" && typeof frame.to === "string") {
+          bufferRef.current.push({ kind: "phase", to: frame.to, round: frame.round ?? 0 });
+          scheduleFlush();
+        } else if (frame.type === "action_accepted") {
+          useTurn.getState().accept();
         } else if (frame.type === "game_over") {
           gameOverRef.current = true;
           // 终局后不再有轮次：清掉残留的 your_turn / pending，避免 ActionBar 与遮罩状态过期
@@ -202,7 +227,6 @@ export function useLiveEvents({ gameId, auth, enabled }: UseLiveEventsArgs): Liv
             kind: frame.kind ?? "speech",
           });
         }
-        // phase_change：仅用于轻提示，状态一律来自 reduce，这里不处理。
         // speech_audio_end：仅服务端自用的分段计数标记，本 hook 忽略。
       };
 

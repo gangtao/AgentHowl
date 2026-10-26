@@ -240,6 +240,40 @@ describe("回合帧（issue #115）", () => {
     expect(useTurn.getState().lastError).toBe("行动窗口已关闭");
   });
 
+  it("action_accepted 帧 → turn.accept()（pending 清、accepted 置位、prompt 保留）", () => {
+    renderHook(() => useLiveEvents({ gameId: "g1", auth: { token: "tok" }, enabled: true }));
+    const ws = FakeWebSocket.instances[0] as FakeWebSocket;
+    ws.onopen?.();
+    ws.emit({ type: "your_turn", observation: { my_seat: 0, state_version: 3 }, available_tools: ["vote"], deadline_ts: 99 });
+    useTurn.getState().markPending();
+    ws.emit({ type: "action_accepted", detail: "已提交" });
+    expect(useTurn.getState().pending).toBe(false);
+    expect(useTurn.getState().accepted).toBe(true);
+    expect(useTurn.getState().prompt).not.toBeNull();
+  });
+
+  it("phase_change 帧与 game_event 同缓冲按序应用：先到的事件不会覆盖后到的阶段（issue #128）", () => {
+    // 非 GM 视角：夜间阶段只能来自 phase_change 帧
+    useGameStore.getState().load(meta, { gameId: "g1", token: "tok", viewer: 2 });
+    renderHook(() => useLiveEvents({ gameId: "g1", auth: { token: "tok" }, enabled: true }));
+    const ws = FakeWebSocket.instances[0] as FakeWebSocket;
+    ws.onopen?.();
+    const phaseEvent = (seq: number, to: string): Event =>
+      ({ ...makeEvent(seq), type: "PHASE_CHANGED", actor_seat: null, payload: { to } }) as unknown as Event;
+    // 同一帧批次：PUBLIC 的 PHASE_CHANGED(VOTE) 在前，折叠的 NIGHT phase_change 在后
+    ws.emit({ type: "game_event", seq: 1, event: phaseEvent(1, "VOTE") });
+    ws.emit({ type: "phase_change", to: "NIGHT", round: 2 });
+    vi.advanceTimersByTime(16);
+    expect(useGameStore.getState().viewState()?.phase).toBe("NIGHT");
+    expect(useGameStore.getState().viewState()?.round).toBe(2);
+    // 反过来：阶段帧在前、事件在后 → 事件里的 PHASE_CHANGED 生效
+    ws.emit({ type: "phase_change", to: "NIGHT", round: 3 });
+    ws.emit({ type: "game_event", seq: 5, event: phaseEvent(5, "DAY_SPEECH") });
+    vi.advanceTimersByTime(16);
+    expect(useGameStore.getState().viewState()?.phase).toBe("DAY_SPEECH");
+    expect(useGameStore.getState().viewState()?.round).toBe(3);
+  });
+
   it("detail 为空的 error 帧也结束 pending，并给出兜底文案", () => {
     renderHook(() => useLiveEvents({ gameId: "g1", auth: { token: "tok" }, enabled: true }));
     const ws = FakeWebSocket.instances[0] as FakeWebSocket;

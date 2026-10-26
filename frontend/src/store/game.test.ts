@@ -67,6 +67,20 @@ describe("useGameStore", () => {
     },
   );
 
+  it("applyPhase：非 GM 视角写入阶段与轮次（夜晚折叠为 NIGHT），GM 视角忽略", () => {
+    useGameStore.getState().load(meta, { viewer: "SPECTATOR" });
+    useGameStore.getState().applyPhase("NIGHT", 2);
+    expect(useGameStore.getState().viewState()?.phase).toBe("NIGHT");
+    expect(useGameStore.getState().viewState()?.round).toBe(2);
+    // 之后的事件在此基础上继续 reduce：公开的 PHASE_CHANGED 仍会覆盖
+    const visible = events.filter((e) => e.visibility === "PUBLIC").slice(0, 30);
+    useGameStore.getState().appendEvents(visible);
+    expect(useGameStore.getState().viewState()?.phase).not.toBe("NIGHT");
+    useGameStore.getState().load(meta, { viewer: "GM" });
+    useGameStore.getState().applyPhase("NIGHT", 2);
+    expect(useGameStore.getState().viewState()?.phase).not.toBe("NIGHT");
+  });
+
   it("非 GM 视角仍去重：seq 不大于已有末尾的事件被跳过", () => {
     useGameStore.getState().load(meta, { viewer: "SPECTATOR" });
     const visible = events.filter((e) => e.visibility === "PUBLIC").slice(0, 10);

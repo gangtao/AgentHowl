@@ -12,12 +12,15 @@ interface TurnState {
   pending: boolean;
   /** 发送时所针对的 prompt 的 state_version；action_result 只清这一版 prompt。 */
   submittedVersion: number | null;
+  /** 服务端已受理但尚未裁决（同步窗口要等全体行动者到齐）：隐藏表单，等 action_result。 */
+  accepted: boolean;
   lastResult: ActionResult | null;
   /** WS error 帧（NotYourTurn / ToolCallError / 超时）。 */
   lastError: string | null;
 
   setPrompt(prompt: YourTurn): void;
   markPending(): void;
+  accept(): void;
   resolve(result: ActionResult): void;
   fail(detail: string): void;
   disconnected(): void;
@@ -28,11 +31,15 @@ export const useTurn = create<TurnState>((set) => ({
   prompt: null,
   pending: false,
   submittedVersion: null,
+  accepted: false,
   lastResult: null,
   lastError: null,
 
   setPrompt(prompt) {
-    set({ prompt, pending: false, lastResult: null, lastError: null });
+    set({ prompt, pending: false, accepted: false, lastResult: null, lastError: null });
+  },
+  accept() {
+    set({ pending: false, accepted: true });
   },
   markPending() {
     set((s) => ({
@@ -47,6 +54,7 @@ export const useTurn = create<TurnState>((set) => ({
       const answered = s.prompt !== null && s.prompt.observation.state_version === s.submittedVersion;
       return {
         pending: false,
+        accepted: false,
         lastResult: result,
         submittedVersion: null,
         prompt: result.ok && answered ? null : s.prompt,
@@ -54,12 +62,19 @@ export const useTurn = create<TurnState>((set) => ({
     });
   },
   fail(detail) {
-    set({ pending: false, lastError: detail });
+    set({ pending: false, accepted: false, lastError: detail });
   },
   disconnected() {
     set({ pending: false });
   },
   reset() {
-    set({ prompt: null, pending: false, submittedVersion: null, lastResult: null, lastError: null });
+    set({
+      prompt: null,
+      pending: false,
+      submittedVersion: null,
+      accepted: false,
+      lastResult: null,
+      lastError: null,
+    });
   },
 }));

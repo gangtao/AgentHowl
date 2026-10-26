@@ -32,7 +32,9 @@ def _start(client: TestClient, created: dict[str, Any]) -> None:
     assert r.status_code == 200, r.text
 
 
-def _play_to_end_via_cookie(client: TestClient, gid: str, seat: int, timeout: float = 30.0) -> None:
+def _play_to_end_via_cookie(
+    client: TestClient, gid: str, seat: int, timeout: float = 30.0
+) -> tuple[int, int]:
     """建局者用 cookie 连 WS 当玩家把整局打完（白盒选合法行动）。
 
     同时断言 cookie WS 流的信息隔离：入座者只拿到 PLAYER 视角事件，
@@ -41,6 +43,9 @@ def _play_to_end_via_cookie(client: TestClient, gid: str, seat: int, timeout: fl
     handle = client.app.state.games.get(gid)  # type: ignore[attr-defined]
     deadline = time.time() + timeout
     game_events = 0
+    accepted = 0
+    results = 0
+    phase_frames: list[str] = []
     with client.websocket_connect(f"/api/v1/ws?game_id={gid}") as ws:
         while time.time() < deadline:
             frame = ws.receive_json()
@@ -51,6 +56,14 @@ def _play_to_end_via_cookie(client: TestClient, gid: str, seat: int, timeout: fl
                 assert event["type"] != "ROLES_ASSIGNED", event
                 assert "assignments" not in (event.get("payload") or {}), event
                 assert "players" not in frame, frame
+            if frame["type"] == "phase_change":
+                # issue #128：座位视角也收到夜晚 phase_change，但只折叠为 NIGHT
+                assert not frame["to"].startswith("NIGHT_"), frame
+                phase_frames.append(frame["to"])
+            if frame["type"] == "action_accepted":
+                accepted += 1
+            if frame["type"] == "action_result":
+                results += 1
             if frame["type"] == "game_over":
                 break
             if frame["type"] == "your_turn":
@@ -62,6 +75,12 @@ def _play_to_end_via_cookie(client: TestClient, gid: str, seat: int, timeout: fl
         time.sleep(0.05)
     assert handle.task is not None and handle.task.done()
     assert game_events > 0
+    assert "NIGHT" in phase_frames
+    # action_accepted 只是前置提示，不替代结果：每次受理之后都有 action_result 补上。
+    # 唯一例外是最后一次提交——它触发终局时 game_over 帧先入队、结果随后，本循环已在
+    # game_over 处退出，故允许恰好少一条。
+    assert results > 0 and results >= accepted - 1
+    return accepted, results
 
 
 class TestJoinBySeat:
@@ -346,3 +365,25 @@ class TestMultiConnectionSameSeat:
             while not (handle.task is not None and handle.task.done()) and time.time() < deadline:
                 time.sleep(0.05)
             assert handle.task is not None and handle.task.done()
+
+
+class TestActionAccepted:
+    def test_slow_adjudication_sends_accepted_then_result(self, monkeypatch: Any) -> None:
+        """issue #115 实测：同步窗口的裁决结果可能迟到整个时限；WS 先回 action_accepted，
+        结果到了再补。
+
+        把等待阈值压到 0，让每次提交都走"先受理、后补结果"路径，断言结果一条不少。
+        """
+        from app.api import ws as ws_mod
+
+        monkeypatch.setattr(ws_mod, "ACCEPT_WAIT_SEC", 0.0)
+        with TestClient(_app()) as client:
+            login_as(client, "host")
+            created = _create(client)
+            gid = created["game_id"]
+            r = client.post(f"/api/v1/games/{gid}/join", json={"display_name": "我", "seat": 0})
+            assert r.status_code == 200, r.text
+            _start(client, created)
+            accepted, results = _play_to_end_via_cookie(client, gid, seat=0)
+        assert accepted > 0
+        assert results in (accepted, accepted - 1)

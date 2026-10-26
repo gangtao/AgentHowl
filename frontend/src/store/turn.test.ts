@@ -56,6 +56,23 @@ describe("useTurn", () => {
     expect(useTurn.getState().prompt).toBeNull();
   });
 
+  it("accept：已受理 → pending 清、accepted 置位、prompt 保留；action_result 到达后 accepted 清", () => {
+    useTurn.getState().setPrompt(prompt(10));
+    useTurn.getState().markPending();
+    useTurn.getState().accept();
+    expect(useTurn.getState().pending).toBe(false);
+    expect(useTurn.getState().accepted).toBe(true);
+    expect(useTurn.getState().prompt?.observation.state_version).toBe(10);
+    useTurn.getState().resolve({ ok: true, event_id: "evt_11", state_version: 11, rejected_reason: null });
+    expect(useTurn.getState().accepted).toBe(false);
+    expect(useTurn.getState().prompt).toBeNull();
+    // 新窗口的 your_turn 也清 accepted
+    useTurn.getState().setPrompt(prompt(20));
+    useTurn.getState().accept();
+    useTurn.getState().setPrompt(prompt(21));
+    expect(useTurn.getState().accepted).toBe(false);
+  });
+
   it("fail / disconnected 只清 pending，不动 prompt", () => {
     useTurn.getState().setPrompt(prompt(1));
     useTurn.getState().markPending();
