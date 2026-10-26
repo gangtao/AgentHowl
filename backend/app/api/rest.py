@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from typing import Any
@@ -29,7 +30,7 @@ from app.engine.observation import build_observation, visible_events
 from app.engine.phases import Phase
 from app.runtime.agent_library import AgentLibraryStore
 from app.runtime.history import GameSummary, is_finished, list_history
-from app.runtime.player_port import NotYourTurnError, TurnPrompt
+from app.runtime.player_port import ACCEPT_WAIT_SEC, TurnPrompt
 from app.runtime.registry import GameHandle, GameRegistry
 from app.runtime.secret import share_token, verify_share_token
 from app.runtime.speech_audio import SpeechAudioSink
@@ -628,6 +629,7 @@ async def tts_status_endpoint(request: Request, _: User = Depends(require_user))
 async def actions_endpoint(
     game_id: str,
     call: ToolCall,
+    response: Response,
     info: TokenInfo = Depends(require_token),
     games: GameRegistry = Depends(get_games),
 ) -> ActionResponse:
@@ -638,10 +640,16 @@ async def actions_endpoint(
     if port is None:
         raise HTTPException(status_code=403, detail="该座位非外接玩家")
     action = parse_tool_call(call, actor_seat=info.seat)
+    prompt = port.current_prompt
+    submitted_version = prompt.observation.state_version if prompt is not None else 0
+    fut = port.submit(action)
     try:
-        outcome = await port.submit_and_wait(action, timeout=10.0)
+        outcome = await asyncio.wait_for(asyncio.shield(fut), timeout=ACCEPT_WAIT_SEC)
     except TimeoutError:
-        raise NotYourTurnError("行动窗口已关闭（可能已超时代打）") from None
+        # 同步窗口（issue #134）：裁决要等全体到齐，先回 202 受理；结果随后经 WS
+        # action_result 或 GET /state 获得。fut 仍由 runner 回填，无人等待亦无妨。
+        response.status_code = 202
+        return ActionResponse(ok=True, state_version=submitted_version, accepted=True)
     return ActionResponse(
         ok=outcome.ok,
         event_id=outcome.event_id,

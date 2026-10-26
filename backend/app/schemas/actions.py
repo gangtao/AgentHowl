@@ -40,6 +40,9 @@ class ActionResponse(BaseModel):
     event_id: str | None = None
     state_version: int
     rejected_reason: str | None = None
+    # issue #134：同步窗口裁决迟到时 REST 返回 202 + accepted:true（event_id 为空，
+    # state_version 为提交时的观察版本），结果随后经 WS action_result / GET /state 获得
+    accepted: bool = False
 
 
 def _opt_int(v: str | int | None) -> int | None:

@@ -273,3 +273,46 @@ def _drain(client: TestClient, gid: str, tok: str, seat: int, timeout: float = 3
         action = RandomBot.choose_action(handle.runner.state, seat)
         client.post(f"/api/v1/games/{gid}/actions", json=_to_tool_call(action), headers=_auth(tok))
     assert handle.task is not None and handle.task.done()
+
+
+class TestActionsAccepted:
+    def test_slow_adjudication_returns_202_accepted(
+        self, client: TestClient, monkeypatch: Any
+    ) -> None:
+        """issue #134：同步窗口裁决可能迟到整个时限；REST 与 WS 一样超过 ACCEPT_WAIT_SEC
+        先回 202 + accepted:true，而不是 409「行动窗口已关闭」。阈值压到 0 让每次提交都走该路径。
+        """
+        from app.api import rest as rest_mod
+
+        monkeypatch.setattr(rest_mod, "ACCEPT_WAIT_SEC", 0.0)
+        created = client.post("/api/v1/games", json={"config_override": {"seed": 42}}).json()
+        gid = created["game_id"]
+        joined = client.post(
+            f"/api/v1/games/{gid}/join",
+            json={"display_name": "Alice"},
+            headers=_auth(created["host_token"]),
+        ).json()
+        tok, seat = joined["player_token"], joined["seat"]
+        client.post(f"/api/v1/games/{gid}/start", json={}, headers=_auth(created["host_token"]))
+        handle = client.app.state.games.get(gid)  # type: ignore[attr-defined]
+        statuses: list[int] = []
+        while not (handle.task is not None and handle.task.done()):
+            r = client.get(f"/api/v1/games/{gid}/my-turn?wait=5", headers=_auth(tok))
+            if r.status_code == 204:
+                continue
+            sv = r.json()["observation"]["state_version"]
+            action = RandomBot.choose_action(handle.runner.state, seat)
+            resp = client.post(
+                f"/api/v1/games/{gid}/actions", json=_to_tool_call(action), headers=_auth(tok)
+            )
+            statuses.append(resp.status_code)
+            body = resp.json()
+            assert body["ok"], body
+            if resp.status_code == 202:
+                assert body["accepted"] is True
+                assert body["event_id"] is None and body["rejected_reason"] is None
+                assert body["state_version"] == sv
+            else:
+                assert body["accepted"] is False
+        assert 202 in statuses, statuses
+        assert handle.task.result().winner is not None

@@ -696,7 +696,14 @@ Authorization: Bearer tok_p7
 { "tool": "night_action", "arguments": { "action_type": "check", "target_seat": 3 } }
 --- 200 ---
 { "ok": true, "event_id": "evt_00088", "state_version": 88, "rejected_reason": null }
+--- 202（同步窗口裁决迟到，issue #134）---
+{ "ok": true, "event_id": null, "state_version": 88, "rejected_reason": null, "accepted": true }
 ```
+
+同步窗口（上警报名 / 退水 / 警下投票 / 放逐投票 / 狼刀提案）要等全体行动者到齐才裁决，结果可能
+迟到整个时限：提交后超过 `ACCEPT_WAIT_SEC`（2s）未裁决，REST 返回 **202** + `accepted:true`
+（`state_version` 为提交时的观察版本），WS 则先发 `action_accepted` 帧、裁决后再补
+`action_result`。REST 调用方随后经 WS `action_result` 或 `GET /state` 获知结果，**不要**重复提交。
 
 ### 5.3 WebSocket 协议
 

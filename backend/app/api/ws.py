@@ -35,6 +35,7 @@ from app.engine.events import Event, EventType
 from app.engine.observation import visible_events
 from app.runtime.connection import public_phase
 from app.runtime.player_port import (
+    ACCEPT_WAIT_SEC,
     HumanPlayerPort,
     NotYourTurnError,
     SubmitOutcome,
@@ -46,10 +47,9 @@ from app.schemas.actions import ToolCall, ToolCallError, parse_tool_call
 router = APIRouter()
 
 
-# 提交后等待裁决结果的时长：串行窗口（发言等）结果即时返回；同步窗口（上警 / 投票 / 狼刀提案）
-# 要等全体行动者到齐才裁决，结果可能迟到整个时限——超过这个时长先回 action_accepted
-# （issue #115 浏览器实测）
-ACCEPT_WAIT_SEC = 2.0
+# ACCEPT_WAIT_SEC 定义在 app.runtime.player_port（REST / WS 共用）；这里保留模块级名字
+# 以便测试 monkeypatch。
+__all__ = ["ACCEPT_WAIT_SEC", "router"]
 
 
 def _build_event_frames(
@@ -174,10 +174,21 @@ async def ws_endpoint(
     async def on_frame(frame: dict[str, Any]) -> None:
         out_q.put_nowait(frame)  # speech_audio / speech_audio_end：已按本连接视角过滤（issue #110）
 
+    # 非 GM 视角的阶段帧去重（issue #135）：每个夜间子阶段的 PHASE_CHANGED 折叠后都是
+    # ("NIGHT", round)，补发与实时两条路径共用同一个「上一条」记录，相邻重复只发一次。
+    last_phase: tuple[str, int] | None = None
+
+    def put_phase(to: str, rnd: int) -> None:
+        nonlocal last_phase
+        if viewer != "GM" and last_phase == (to, rnd):
+            return
+        last_phase = (to, rnd)
+        out_q.put_nowait({"type": "phase_change", "to": to, "round": rnd})
+
     async def on_phases(phases: list[tuple[str, int]]) -> None:
         """非 GM 视角的阶段帧（issue #128）：夜间阶段对它们不可见，由此通道补上。"""
         for to, rnd in phases:
-            out_q.put_nowait({"type": "phase_change", "to": to, "round": rnd})
+            put_phase(to, rnd)
 
     # ---- 关键同步块：先订阅、后读历史、再把历史帧入队，中间不 await ----
     # 单线程事件循环上，此顺序保证 subscribe 之后提交的事件只经 on_events 到达，
@@ -199,7 +210,10 @@ async def ws_endpoint(
             visible_seqs={e.seq for e in backfill},
         )
     for frame in frames:
-        out_q.put_nowait(frame)
+        if frame["type"] == "phase_change":
+            put_phase(frame["to"], frame["round"])
+        else:
+            out_q.put_nowait(frame)
     # ---- 同步块结束 ----
 
     async def sender_loop() -> None:

@@ -295,6 +295,8 @@ curl -s -X POST $BASE/games/$GID/start -H "Authorization: Bearer $HOST_TOKEN" \
 curl -s "$BASE/games/$GID/my-turn?wait=5" -H "Authorization: Bearer $PLAYER_TOKEN"
 
 # 5) 提交工具调用（§4.1 契约；actor_seat 一律取自 token，不接受 body 指定）
+#    同步窗口（上警 / 投票 / 狼刀提案）裁决要等全体到齐，超过 2s 返回 202 + accepted:true，
+#    结果随后从 WS action_result 或 GET /state 获取，不要重复提交
 curl -s -X POST $BASE/games/$GID/actions -H "Authorization: Bearer $PLAYER_TOKEN" \
   -H 'Content-Type: application/json' -d '{"tool":"vote","arguments":{"target_seat":2}}'
 
@@ -311,7 +313,7 @@ WebSocket（按视角推送过滤后事件流；断线可凭同 token + `from_se
 GET /api/v1/ws?token=<token>[&from_seq=<n>]          # player_token / gm_token（HOST token 无读流权限）
 GET /api/v1/ws?game_id=<id>&share=<share_token>       # 匿名观战
 GET /api/v1/ws?game_id=<id>                           # 登录 cookie（创建者 / admin 为 GM 视角）
-# server→client 帧：game_event / your_turn / phase_change / game_over / action_result / error
+# server→client 帧：game_event / your_turn / phase_change / game_over / action_accepted / action_result / error
 # client→server 帧：与 POST /actions 等价（同 schema 同信封）
 ```
 
