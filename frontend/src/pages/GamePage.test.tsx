@@ -1,6 +1,6 @@
 // 对局页测试：终局对局经 /meta + /replay 装入；覆盖 token / share / cookie（无凭据）三种凭据（issue #114）。
 
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import fixture from "../engine/__fixtures__/std_9_kill_side-3.json";
 import type { Event, GameMeta } from "../engine/types";
@@ -297,5 +297,65 @@ describe("metaFromState 公开规则（issue #80）", () => {
     const meta = metaFromState("g_x", { seats: [{ seat: 0, display_name: "P0" }] });
     expect(meta.config.sheriff.vote_weight).toBe(1.5);
     expect(meta.config.num_players).toBe(1);
+  });
+});
+
+describe("GamePage 直播收尾（issue #81）", () => {
+  const spectatorState = {
+    viewer: "SPECTATOR",
+    game_id: "g_x",
+    phase: "NIGHT_WEREWOLF",
+    round: 1,
+    seats: meta.roster.map((r) => ({ ...r, alive: true, is_sheriff: false, idiot_revealed: false })),
+    sheriff_seat: null,
+    winner: null,
+  };
+
+  it("直播 head 到 GAME_OVER 后自动装入完整回放，游标停在终局", async () => {
+    let finished = false;
+    const fetchMock = vi.fn(async (rawUrl: string) => {
+      const url = rawUrl.split("?")[0] as string;
+      if (url.endsWith("/meta")) {
+        return finished
+          ? jsonResponse(200, { ...meta, viewer: "SPECTATOR" })
+          : jsonResponse(403, { detail: "对局未结束" });
+      }
+      if (url.endsWith("/state")) return jsonResponse(200, spectatorState);
+      if (url.endsWith("/replay")) return jsonResponse(200, events);
+      return jsonResponse(200, {});
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("WebSocket", vi.fn(() => ({ close() {} })));
+    render(<GamePage gameId="g_x" share="S" viewer="SPECTATOR" />);
+    await waitFor(() => expect(screen.queryByText("正在载入对局…")).toBeNull());
+    expect(useGameStore.getState().mode).toBe("live");
+    const replayCalls = (): number =>
+      fetchMock.mock.calls.filter((c) => (c[0] as string).includes("/replay")).length;
+    expect(replayCalls()).toBe(0);
+    // 直播推到终局（WS 已桩掉，直接灌 store）；此时服务端 /meta 已开放
+    finished = true;
+    act(() => useGameStore.getState().appendEvents(events));
+    await waitFor(() => expect(useGameStore.getState().mode).toBe("replay"));
+    const st = useGameStore.getState();
+    expect(st.events).toHaveLength(events.length);
+    expect(st.cursor).toBe((events[events.length - 1] as Event).seq);
+    expect(replayCalls()).toBe(1);
+    expect(screen.getByText(new RegExp(`回放显示到 seq ${(events[events.length - 1] as Event).seq}`))).toBeInTheDocument();
+  });
+
+  it("未开局轮询只重试 /state，不再每轮打 /meta 吃 403", async () => {
+    const fetchMock = vi.fn(async (rawUrl: string) => {
+      const url = rawUrl.split("?")[0] as string;
+      if (url.endsWith("/meta")) return jsonResponse(403, { detail: "对局未结束" });
+      if (url.endsWith("/state")) return jsonResponse(409, { detail: "尚未开局" });
+      return jsonResponse(200, {});
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<GamePage gameId="g_x" token="t" viewer="GM" />);
+    const paths = (): string[] => fetchMock.mock.calls.map((c) => (c[0] as string).split("?")[0] as string);
+    await waitFor(() => expect(paths().filter((p) => p.endsWith("/state")).length).toBeGreaterThanOrEqual(2), {
+      timeout: 4000,
+    });
+    expect(paths().filter((p) => p.endsWith("/meta"))).toHaveLength(1);
   });
 });

@@ -7,7 +7,9 @@
 //      404 ⇒ 对局不存在（4404）；401 ⇒ 凭据无效/未登录（auth 错误态）；403 ⇒ 对局进行中或未开局，转第 2 步。
 //   2. GET /state —— 直播期唯一能拿到名单/配置的端点。
 //      200 ⇒ 由快照补出 GameMeta（GM 拿完整 state，观众拿 SpectatorView）并订阅 WS 直播。
-//      409 ⇒ 尚未开局：显示「等待开局」，每 2 秒重试整个引导流程。
+//      409 ⇒ 尚未开局：显示「等待开局」，每 2 秒只重试 /state（issue #81：不再每轮都打 /meta 吃 403）。
+//   3. 直播收尾（issue #81）：head 到 GAME_OVER 后 /meta 开放，GM / 观众视角自动改走第 1 步
+//      装入完整回放（含角色翻牌），游标停在终局；真人玩家保留「查看全局回放」按钮。
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -100,6 +102,7 @@ export default function GamePage({ gameId, token, share, viewer }: GamePageProps
   // 玩家视角的身份：来自 /state 的 PlayerObservation.my_role（Task 10 的 ActionBar 也会更新它）。
   const [myRole, setMyRole] = useState<RoleType | null>(null);
   const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const switchedRef = useRef(false);
 
   const events = useGameStore((s) => s.events);
   const head = useGameStore((s) => s.head);
@@ -140,41 +143,47 @@ export default function GamePage({ gameId, token, share, viewer }: GamePageProps
       return false;
     };
 
-    const run = async (): Promise<void> => {
+    switchedRef.current = false;
+
+    const run = async (stateOnly = false): Promise<void> => {
       tries += 1;
-      // 1) 终局对局：/meta 开放 → 一次性装入回放
-      try {
-        const meta = await getMeta(gameId, auth);
-        const replayEvents = await getReplay(gameId, auth);
-        if (cancelled) return;
-        const store = useGameStore.getState();
-        const v: Viewer = viewerFrom(meta as unknown as Record<string, unknown>) ?? viewer ?? "SPECTATOR";
-        setResolvedViewer(v);
-        store.load(meta, { gameId, token: token ?? "", viewer: v, mode: "replay" });
-        store.appendEvents(replayEvents);
-        setErrorKind(null);
-        setReady(true);
-        getGameAvatars(gameId, auth)
-          .then((m) => {
-            if (!cancelled) setAvatars(Object.fromEntries(Object.entries(m).map(([k, v]) => [Number(k), v])));
-          })
-          .catch(() => {
-            /* 头像拿不到只是没图：不阻断对局页 */
-          });
-        getAudioManifest(gameId, auth)
-          .then((m) => {
-            if (cancelled) return;
-            setManifest(m);
-            if (Object.keys(m).length > 0) useVoice.getState().markAvailable();
-          })
-          .catch(() => {
-            /* 清单拿不到就是没有配音：不阻断对局页 */
-          });
-        return;
-      } catch (err) {
-        if (cancelled) return;
-        if (fail(err)) return;
-        // 403：对局进行中或尚未开局 —— 继续走 /state
+      // 1) 终局对局：/meta 开放 → 一次性装入回放。
+      //    未开局轮询（4409）期间跳过：对局不可能在未开局时就结束，省掉每轮一次 403（issue #81）。
+      if (!stateOnly) {
+        try {
+          const meta = await getMeta(gameId, auth);
+          const replayEvents = await getReplay(gameId, auth);
+          if (cancelled) return;
+          const store = useGameStore.getState();
+          const v: Viewer =
+            viewerFrom(meta as unknown as Record<string, unknown>) ?? viewer ?? "SPECTATOR";
+          setResolvedViewer(v);
+          store.load(meta, { gameId, token: token ?? "", viewer: v, mode: "replay" });
+          store.appendEvents(replayEvents);
+          setErrorKind(null);
+          setReady(true);
+          getGameAvatars(gameId, auth)
+            .then((m) => {
+              if (!cancelled) setAvatars(Object.fromEntries(Object.entries(m).map(([k, v]) => [Number(k), v])));
+            })
+            .catch(() => {
+              /* 头像拿不到只是没图：不阻断对局页 */
+            });
+          getAudioManifest(gameId, auth)
+            .then((m) => {
+              if (cancelled) return;
+              setManifest(m);
+              if (Object.keys(m).length > 0) useVoice.getState().markAvailable();
+            })
+            .catch(() => {
+              /* 清单拿不到就是没有配音：不阻断对局页 */
+            });
+          return;
+        } catch (err) {
+          if (cancelled) return;
+          if (fail(err)) return;
+          // 403：对局进行中或尚未开局 —— 继续走 /state
+        }
       }
 
       // 2) 直播 / 未开局
@@ -222,7 +231,7 @@ export default function GamePage({ gameId, token, share, viewer }: GamePageProps
           setAttempt(tries);
           setDetail(null);
           pollRef.current = setTimeout(() => {
-            void run();
+            void run(true);
           }, POLL_MS);
           return;
         }
@@ -252,6 +261,42 @@ export default function GamePage({ gameId, token, share, viewer }: GamePageProps
   useEffect(() => {
     manifestRef.current = manifest;
   }, [manifest]);
+
+  // ---- 直播收尾（issue #81）：直播 head 到 GAME_OVER 后 /meta 开放，GM / 观众自动切到回放模式，
+  // 装入终局后才开放的完整流（含角色翻牌），游标停在最后一条而不是回到开头。
+  // 真人玩家不自动切：玩家栏有「查看全局回放」按钮，且切换会丢掉身份栏的上下文。
+  const liveFinished =
+    ready &&
+    mode === "live" &&
+    head !== null &&
+    (head.phase === "GAME_OVER" || head.winner !== null) &&
+    typeof resolvedViewer !== "number";
+  useEffect(() => {
+    if (!gameId || !liveFinished || switchedRef.current) return;
+    switchedRef.current = true;
+    let cancelled = false;
+    const handoff = async (): Promise<void> => {
+      try {
+        const meta = await getMeta(gameId, auth);
+        const replayEvents = await getReplay(gameId, auth);
+        if (cancelled) return;
+        const store = useGameStore.getState();
+        const v: Viewer =
+          viewerFrom(meta as unknown as Record<string, unknown>) ?? resolvedViewer ?? "SPECTATOR";
+        setResolvedViewer(v);
+        store.load(meta, { gameId, token: token ?? "", viewer: v, mode: "replay" });
+        store.appendEvents(replayEvents);
+        const last = replayEvents.length > 0 ? (replayEvents[replayEvents.length - 1] as Event).seq : 0;
+        store.setCursor(last);
+      } catch {
+        /* /meta 仍未开放或网络失败：保持直播画面（已有终局横幅），不打扰用户 */
+      }
+    };
+    void handoff();
+    return () => {
+      cancelled = true;
+    };
+  }, [gameId, auth, token, liveFinished, resolvedViewer]);
 
   // ---- 回放门控（issue #103）：mode==="replay" 时，游标推进到某个 seq 若清单里有这句的配音，
   // 就顺序播完它的全部分段再放行时钟继续（store/game.ts 的 makeTick 消费 replayGate）。
