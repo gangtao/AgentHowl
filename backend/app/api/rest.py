@@ -642,7 +642,7 @@ async def actions_endpoint(
     action = parse_tool_call(call, actor_seat=info.seat)
     prompt = port.current_prompt
     submitted_version = prompt.observation.state_version if prompt is not None else 0
-    fut = port.submit(action)
+    fut = port.submit(action, state_version=call.state_version)
     try:
         outcome = await asyncio.wait_for(asyncio.shield(fut), timeout=ACCEPT_WAIT_SEC)
     except TimeoutError:

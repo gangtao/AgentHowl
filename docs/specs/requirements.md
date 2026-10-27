@@ -729,16 +729,26 @@ Authorization: Bearer tok_p7
 
 { "type": "game_over", "winner": "WEREWOLF" }
 
+{ "type": "action_accepted", "detail": "已提交，等待其他玩家行动后裁决" }
+
 { "type": "action_result", "ok": true, "event_id": null,
   "state_version": 88, "rejected_reason": null }
 
-{ "type": "error", "detail": "该连接无行动权限或座位无端口" }
+{ "type": "window_closed", "state_version": 88 }
+
+{ "type": "error", "code": "NOT_YOUR_TURN", "detail": "当前不在该玩家的行动窗口" }
 
 { "type": "speech_audio", "seq": 57, "part": 0,
   "url": "/api/v1/games/g_a1b2c3/audio/57/0", "duration": 2.3 }
 
 { "type": "speech_audio_end", "seq": 57, "parts": 3 }
 ```
+`window_closed`（issue #125）：该座位的行动窗口已结束（被同座位另一条连接提交，或超时代打），
+`state_version` 为该窗口 `your_turn` 的观察版本；未提交该窗口的连接据此清掉残留 prompt。
+`error.code` ∈ `NOT_YOUR_TURN`（未开窗 / 窗口已被占）、`STALE_PROMPT`（信封 `state_version`
+与当前窗口不符）、`TOOL_CALL`（工具名 / 参数错，窗口仍开着可重试）。客户端 → 服务器信封可带
+`state_version`（推荐带上）：迟到的提交不会被当作下一窗口的行动。
+
 `your_turn` 无顶层 `phase` 字段——阶段在 `observation.phase` 里；`phase_change` 不带 `from`
 （只有 `to`/`round`）；`game_over` 不带 `roles_reveal`（终局身份揭示走 `/replay`/`/meta`，
 上帝视角本就全程可见身份）；`game_event.event` 是 `Event` 的完整 `model_dump`（`seq`/

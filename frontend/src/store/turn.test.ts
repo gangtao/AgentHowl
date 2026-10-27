@@ -84,4 +84,28 @@ describe("useTurn", () => {
     useTurn.getState().disconnected();
     expect(useTurn.getState().pending).toBe(false);
   });
+
+  it("windowClosed：未提交该窗口 → 清 prompt 并提示；已提交该窗口或版本不符 → 不动（issue #125）", () => {
+    useTurn.getState().setPrompt(prompt(3));
+    useTurn.getState().windowClosed(2);
+    expect(useTurn.getState().prompt?.observation.state_version).toBe(3);
+    useTurn.getState().windowClosed(3);
+    expect(useTurn.getState().prompt).toBeNull();
+    expect(useTurn.getState().lastError).toContain("本窗口已结束");
+    useTurn.getState().setPrompt(prompt(4));
+    useTurn.getState().markPending();
+    useTurn.getState().windowClosed(4);
+    expect(useTurn.getState().prompt?.observation.state_version).toBe(4);
+  });
+
+  it("fail(detail, closesWindow=true) 连 prompt 一起清；默认只清 pending", () => {
+    useTurn.getState().setPrompt(prompt(1));
+    useTurn.getState().markPending();
+    useTurn.getState().fail("参数错");
+    expect(useTurn.getState().prompt).not.toBeNull();
+    useTurn.getState().markPending();
+    useTurn.getState().fail("当前不在该玩家的行动窗口", true);
+    expect(useTurn.getState().prompt).toBeNull();
+    expect(useTurn.getState().pending).toBe(false);
+  });
 });

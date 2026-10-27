@@ -56,6 +56,7 @@ interface WsFrame {
   event_id?: string | null;
   state_version?: number | null;
   rejected_reason?: string | null;
+  code?: string;
 }
 
 export interface UseLiveEventsArgs {
@@ -188,6 +189,8 @@ export function useLiveEvents({ gameId, auth, enabled }: UseLiveEventsArgs): Liv
           scheduleFlush();
         } else if (frame.type === "action_accepted") {
           useTurn.getState().accept();
+        } else if (frame.type === "window_closed" && typeof frame.state_version === "number") {
+          useTurn.getState().windowClosed(frame.state_version);
         } else if (frame.type === "game_over") {
           gameOverRef.current = true;
           // 终局后不再有轮次：清掉残留的 your_turn / pending，避免 ActionBar 与遮罩状态过期
@@ -195,7 +198,9 @@ export function useLiveEvents({ gameId, auth, enabled }: UseLiveEventsArgs): Liv
         } else if (frame.type === "error") {
           // 每个 error 帧都要结束 pending（空 detail 也不能让 ActionBar 卡在「提交中…」）
           const detail = frame.detail || "服务端返回了未说明的错误";
-          useTurn.getState().fail(detail);
+          // NOT_YOUR_TURN / STALE_PROMPT：该窗口对本连接已结束（issue #125），prompt 一起清
+          const closes = frame.code === "NOT_YOUR_TURN" || frame.code === "STALE_PROMPT";
+          useTurn.getState().fail(detail, closes);
           // 入座视角：error 帧是行动错误（迟到提交 / 参数错），只进 ActionBar，不挂常驻页面横幅；
           // 非座位视角保留横幅（它们本不该发行动，出现即异常）。终局关闭码仍走 onclose 横幅。
           if (typeof useGameStore.getState().viewer !== "number") {
@@ -282,7 +287,9 @@ export function useLiveEvents({ gameId, auth, enabled }: UseLiveEventsArgs): Liv
     const ws = socketRef.current;
     // 1 === WebSocket.OPEN；不用静态属性，测试里的假 WebSocket 没有它
     if (ws === null || ws.readyState !== 1) return false;
-    ws.send(JSON.stringify(call));
+    // 信封带上所针对的观察版本（issue #125）：迟到提交由服务端按 state_version 拒绝
+    const sv = useTurn.getState().prompt?.observation.state_version;
+    ws.send(JSON.stringify(sv === undefined ? call : { ...call, state_version: sv }));
     useTurn.getState().markPending();
     return true;
   }, []);

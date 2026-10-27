@@ -344,14 +344,28 @@ class TestMultiConnectionSameSeat:
                 tab2.send_json(call)  # 同一窗口的迟到提交
                 r1 = until(tab1, "action_result", "error")
                 assert r1["type"] == "action_result" and r1["ok"] is True, r1
-                r2 = until(tab2, "action_result", "error")
-                assert r2["type"] == "error" or r2["ok"] is False, r2  # 不得二次行动
+                # issue #125：失败方收到 window_closed 与 code=NOT_YOUR_TURN 的 error（顺序不定）
+                seen: dict[str, dict[str, Any]] = {}
+                while len(seen) < 2:
+                    f = until(tab2, "action_result", "error", "window_closed")
+                    seen[f["type"]] = f
+                r2 = seen["error"]
+                assert r2["code"] == "NOT_YOUR_TURN", r2  # 不得二次行动
+                assert seen["window_closed"]["state_version"] == p2["observation"]["state_version"]
                 # 关掉标签页 1：标签页 2 仍收到下一个窗口的 your_turn
                 tab1_stack.close()
                 nxt = until(tab2, "your_turn", "game_over")
                 assert nxt["type"] == "your_turn", nxt
                 assert nxt["observation"]["state_version"] > p2["observation"]["state_version"]
-                tab2.send_json(_to_tool_call(RandomBot.choose_action(handle.runner.state, seat)))
+                # issue #125：带旧 state_version 的迟到信封被拒（STALE_PROMPT），窗口仍开着
+                stale = _to_tool_call(RandomBot.choose_action(handle.runner.state, seat))
+                stale["state_version"] = p2["observation"]["state_version"]
+                tab2.send_json(stale)
+                err = until(tab2, "action_result", "error")
+                assert err["type"] == "error" and err["code"] == "STALE_PROMPT", err
+                fresh = _to_tool_call(RandomBot.choose_action(handle.runner.state, seat))
+                fresh["state_version"] = nxt["observation"]["state_version"]
+                tab2.send_json(fresh)
                 # 打完整局（仅剩标签页 2）
                 deadline = time.time() + 30
                 while time.time() < deadline:

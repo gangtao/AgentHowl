@@ -43,6 +43,8 @@ export interface PlayerObservation {
 export interface ToolCall {
   tool: string;
   arguments: Record<string, unknown>;
+  /** 提交所针对的 your_turn 观察版本（issue #125）；send() 自动补上，服务端不符即 STALE_PROMPT。 */
+  state_version?: number;
 }
 
 export interface YourTurn {

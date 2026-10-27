@@ -27,6 +27,8 @@ from app.engine.observation import PlayerObservation
 class ToolCall(BaseModel):
     tool: str
     arguments: dict[str, Any] = Field(default_factory=dict)
+    # issue #125：可选；带上时必须等于 your_turn 观察的 state_version，不符即 STALE_PROMPT
+    state_version: int | None = None
 
 
 class ToolCallError(ValueError):
