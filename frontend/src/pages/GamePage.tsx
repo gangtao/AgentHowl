@@ -34,7 +34,7 @@ import {
   speechItems,
   voteTally,
 } from "../engine/select";
-import type { Event, GameMeta, Phase, RoleType } from "../engine/types";
+import type { Event, Phase, RoleType } from "../engine/types";
 import { useGameStore } from "../store/game";
 import { useTurn } from "../store/turn";
 import type { Viewer } from "../store/game";
@@ -53,6 +53,7 @@ import SpeechFeed from "../components/SpeechFeed/SpeechFeed";
 import VoiceToggle from "../components/VoiceToggle/VoiceToggle";
 import VotePanel from "../components/VotePanel/VotePanel";
 import styles from "./GamePage.module.css";
+import { metaFromState } from "./metaFromState";
 
 export interface GamePageProps {
   gameId?: string;
@@ -72,29 +73,6 @@ const SPEAKING_PHASES: ReadonlySet<Phase> = new Set([
   "SHERIFF_ELECTION",
   "SHERIFF_PK",
 ]);
-
-interface SeatRow {
-  seat: number;
-  display_name: string;
-}
-
-/** 由 /state 快照补出 GameMeta（见文件头注释）。 */
-function metaFromState(gameId: string, raw: Record<string, unknown>): GameMeta {
-  const players = raw.players as SeatRow[] | undefined;
-  const seats = raw.seats as SeatRow[] | undefined;
-  const roster = (players ?? seats ?? []).map((p) => ({
-    seat: p.seat,
-    display_name: p.display_name,
-  }));
-  const config = (raw.config as GameMeta["config"] | undefined) ?? {
-    // 观众视角拿不到 config（服务端没发）：用名单人数兜底，只用于渲染，不参与裁决。
-    num_players: roster.length,
-    sheriff: { enabled: true, vote_weight: 1.5 },
-    roles: [],
-    win_condition: "",
-  };
-  return { game_id: gameId, config, roster, agents: {} };
-}
 
 export default function GamePage({ gameId, token, share, viewer }: GamePageProps): JSX.Element {
   const auth = useMemo<GameAuth>(() => {

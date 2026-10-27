@@ -316,3 +316,31 @@ class TestActionsAccepted:
                 assert body["accepted"] is False
         assert 202 in statuses, statuses
         assert handle.task.result().winner is not None
+
+
+def test_state_carries_public_sheriff_config(client: TestClient) -> None:
+    """issue #80：观众 / 玩家视角的 /state 带公开规则 config.sheriff，前端计票不再猜 1.5。"""
+    created = client.post(
+        "/api/v1/games",
+        json={
+            "preset": "std_9_kill_side",
+            "config_override": {"seed": 5, "sheriff": {"vote_weight": 2.0}},
+        },
+    ).json()
+    gid = created["game_id"]
+    r = client.post(f"/api/v1/games/{gid}/start", json={}, headers=_auth(created["host_token"]))
+    assert r.status_code == 200
+    spec = client.get(f"/api/v1/games/{gid}/state", params={"share": created["share_token"]})
+    assert spec.status_code == 200
+    cfg = spec.json()["config"]
+    assert cfg["sheriff"]["vote_weight"] == 2.0 and cfg["num_players"] == 9
+    assert "roles" not in cfg  # 只给公开子集
+    from app.api.deps import TokenInfo
+
+    tokens = client.app.state.tokens  # type: ignore[attr-defined]
+    tok = tokens.issue(TokenInfo(game_id=gid, seat=0, kind="PLAYER"))
+    me = client.get(f"/api/v1/games/{gid}/state", headers=_auth(tok))
+    assert me.status_code == 200
+    assert me.json()["config"]["sheriff"]["vote_weight"] == 2.0
+    assert me.json()["viewer"] == 0
+    _wait_done(client, gid)

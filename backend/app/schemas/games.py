@@ -62,6 +62,8 @@ class SpectatorView(BaseModel):
     seats: list[dict[str, Any]]
     sheriff_seat: int | None
     winner: str | None
+    # 公开规则（issue #80）：前端计票展示需要 sheriff.vote_weight 等本局配置，不再猜默认值
+    config: dict[str, Any] = {}
     viewer: Literal["SPECTATOR"] = "SPECTATOR"  # 本次请求解析出的视角（issue #115）
 
 

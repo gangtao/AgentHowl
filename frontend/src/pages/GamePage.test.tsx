@@ -8,6 +8,7 @@ import { useGameStore } from "../store/game";
 import { useTurn } from "../store/turn";
 import { useVoice } from "../store/voice";
 import GamePage from "./GamePage";
+import { metaFromState } from "./metaFromState";
 
 const meta = fixture.meta as unknown as GameMeta;
 const events = fixture.events as unknown as Event[];
@@ -279,5 +280,22 @@ describe("GamePage 玩家视角（issue #115）", () => {
     render(<GamePage gameId="g_x" token="P" />);
     await screen.findByText(/我是 2号/);
     expect(screen.queryByRole("button", { name: "查看全局回放" })).toBeNull();
+  });
+});
+
+describe("metaFromState 公开规则（issue #80）", () => {
+  it("观众 / 玩家快照带 config.sheriff 时以服务端票权为准，缺的字段用名单兜底", () => {
+    const seats = [0, 1, 2].map((seat) => ({ seat, display_name: `P${seat}` }));
+    const meta = metaFromState("g_x", { seats, config: { num_players: 3, sheriff: { enabled: true, vote_weight: 2 } } });
+    expect(meta.config.sheriff.vote_weight).toBe(2);
+    expect(meta.config.num_players).toBe(3);
+    expect(meta.config.roles).toEqual([]);
+    expect(meta.roster).toHaveLength(3);
+  });
+
+  it("旧服务端不带 config 时仍回退 1.5", () => {
+    const meta = metaFromState("g_x", { seats: [{ seat: 0, display_name: "P0" }] });
+    expect(meta.config.sheriff.vote_weight).toBe(1.5);
+    expect(meta.config.num_players).toBe(1);
   });
 });
