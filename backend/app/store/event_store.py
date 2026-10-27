@@ -8,7 +8,9 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
+import time
 from pathlib import Path
 from typing import Protocol
 
@@ -19,6 +21,8 @@ from app.engine.config import Faction, GameConfig, RoleType
 from app.engine.events import EVENT_PAYLOAD_TYPES, Event, EventType, reduce_all
 from app.engine.phases import Phase
 from app.engine.state import GameState, Player
+
+logger = logging.getLogger(__name__)
 
 
 class StoreError(Exception):
@@ -214,7 +218,12 @@ class JsonFileEventStore:
         _check_game_id(meta.game_id)
         path = self._path(meta.game_id)
         if path.exists():
-            raise GameExistsError(f"对局已存在：{meta.game_id}")
+            # issue #35：0 字节文件是旧版本把「meta 行即残」截断后留下的卡死态，
+            # 既装载不了也从未写入过事件，视为不存在，允许重建
+            if path.stat().st_size == 0:
+                path.unlink()
+            else:
+                raise GameExistsError(f"对局已存在：{meta.game_id}")
         self._write_line(path, {"kind": "meta", "data": meta.model_dump(mode="json")})
         self._cache[meta.game_id] = (meta, [])
 
@@ -292,9 +301,17 @@ class JsonFileEventStore:
 
     def _read_records(self, path: Path) -> list[dict[str, object]]:
         """逐行解析信封。唯一豁免：未换行的残尾字节（崩溃中断的 append）
-        视为未完成写入，忽略并当场截断（开箱修复）；其余缺陷一律 fail-loud。"""
+        视为未完成写入，忽略并当场截断（开箱修复）；其余缺陷一律 fail-loud。
+
+        issue #35：若一行完整记录都没有（崩溃落在 create_game 写 meta 行中途，或旧版本
+        已截成 0 字节），截断只会留下永久卡死的 0 字节文件——不可装载、不可重建、仍在列表里。
+        这种文件转存 .corrupt 侧文件留证（0 字节直接删除），对局按不存在处理，game_id 可重建。
+        """
         records: list[dict[str, object]] = []
         raw = path.read_bytes()
+        if b"\n" not in raw:
+            self._quarantine(path, raw)
+            raise GameNotFoundError(f"对局不存在：{path.stem}（文件无完整记录，已清理）")
         good_len = 0
         for i, line in enumerate(raw.split(b"\n")[:-1]):
             try:
@@ -312,3 +329,20 @@ class JsonFileEventStore:
             except OSError as exc:
                 raise StoreError(f"{path.name}：残尾修复失败（无法写入）：{exc}") from exc
         return records
+
+    @staticmethod
+    def _quarantine(path: Path, raw: bytes) -> None:
+        """全残尾 / 空文件移出对局目录的 *.jsonl 命名空间：非空内容改名为 .corrupt 侧文件
+        （已存在则加时间戳），空文件直接删除。失败归一为 StoreError。"""
+        try:
+            if not raw:
+                path.unlink()
+                logger.warning("事件库：%s 为 0 字节（旧版残尾截断遗留），已删除", path.name)
+                return
+            side = path.with_name(f"{path.name}.corrupt")
+            if side.exists():
+                side = path.with_name(f"{path.name}.corrupt.{int(time.time() * 1000)}")
+            path.rename(side)
+            logger.warning("事件库：%s 无完整记录（崩溃残尾），已转存 %s", path.name, side.name)
+        except OSError as exc:
+            raise StoreError(f"{path.name}：残尾文件清理失败：{exc}") from exc
