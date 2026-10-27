@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import os
+from collections.abc import Iterator
 from typing import Any
 
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -17,6 +20,20 @@ from app.runtime.users import InMemoryUserStore, User, hash_password, new_user_i
 from app.store.event_store import InMemoryEventStore
 
 TEST_PASSWORD = "password1"
+
+
+@pytest.fixture(autouse=True)
+def _isolate_agenthowl_env(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    """issue #124：litellm 在 import 时 load_dotenv()，从 .venv 向上找到仓库根的 .env（docker
+    compose 用），把 AGENTHOWL_ADMIN_* / TTS_URL 等塞进 os.environ。全量跑时一旦有测试模块
+    惰性加载了 litellm，之后每个 make_app() 都会按 .env 引导出一个管理员，test_api_admin
+    的用户列表 / 单管理员断言随之失败；单跑该文件不触发，故只在全量时失败。
+    每个测试开始前清掉 AGENTHOWL_*（冒烟开关 AGENTHOWL_SMOKE_MODEL 除外），
+    需要环境引导的测试自己 setenv。"""
+    for key in list(os.environ):
+        if key.startswith("AGENTHOWL_") and "SMOKE" not in key:
+            monkeypatch.delenv(key, raising=False)
+    yield
 
 
 def make_app(**kwargs: Any) -> FastAPI:
