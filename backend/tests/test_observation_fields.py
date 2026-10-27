@@ -134,3 +134,30 @@ def test_sheriff_options_follow_engine_validation() -> None:
         resume_token="badge_only:day_speech",
     )
     assert build_observation(st, 2).sheriff_options == ["pass_badge", "tear_badge"]
+
+
+def test_badge_window_is_not_pk_speech_pending() -> None:
+    """issue #141：警徽处置窗口 speech_order=(警长,) 不是「待发言」，
+    pk_speech_pending 必须为 False，否则前端默认落在发言页签、发言被 WRONG_PHASE 拒绝。"""
+    from app.schemas.actions import available_tools_for
+
+    st = _st(
+        phase=Phase.LAST_WORDS,
+        sheriff_seat=2,
+        players=_six(sheriff=2, dead=(2,)),
+        speech_order=(2,),
+        speech_idx=0,
+        resume_token="badge_only:after_day",
+    )
+    obs = build_observation(st, 2)
+    assert obs.badge_only is True
+    assert obs.pk_speech_pending is False
+    # 窗口内引擎只接受 pass_badge / tear_badge，工具列表不得再给 speak
+    tools = available_tools_for(obs)
+    assert "sheriff_action" in tools
+    assert "speak" not in tools
+    # 普通遗言窗口不受影响：仍可发言
+    st2 = st.model_copy(update={"resume_token": "day_speech"})
+    obs2 = build_observation(st2, 2)
+    assert obs2.badge_only is False and obs2.pk_speech_pending is True
+    assert available_tools_for(obs2)[0] == "speak"
