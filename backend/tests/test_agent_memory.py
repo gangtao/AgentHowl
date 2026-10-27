@@ -256,3 +256,45 @@ def test_campaign_speeches_score_2_and_outrank_candidacy_noise() -> None:
     ctx = mem.build_context()
     assert "我是警上发言" in ctx and "PK发言" in ctx
     assert "白天发言" not in ctx  # 1 分普通发言被 2 分竞选发言挤掉
+
+
+def test_ingest_degrades_on_render_failure(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """issue #42：单条事件渲染抛错不能让 on_events 抛出（否则 ConnectionManager 摘除订阅、
+    该座位记忆自此断流），降级成占位条目。"""
+    import app.agent.memory as memory_mod
+
+    real_render = memory_mod._render
+
+    def flaky(e):  # type: ignore[no-untyped-def]
+        if e.type == EventType.DEATH_ANNOUNCED:
+            raise RuntimeError("boom")
+        return real_render(e)
+
+    monkeypatch.setattr(memory_mod, "_render", flaky)
+    mem = AgentMemory(seat=0)
+    mem.ingest(
+        [
+            _ev(1, EventType.ROUND_STARTED, RoundStartedPayload(round=1)),
+            _ev(2, EventType.DEATH_ANNOUNCED, DeathAnnouncedPayload(seats=(5,))),
+            _spoke(3, 2, "照常"),
+        ]
+    )
+    assert [e.seq for e in mem.entries] == [1, 2, 3]
+    assert "记录失败" in mem.entries[1].text
+    assert "照常" in mem.build_context()
+
+
+async def test_reflect_max_rounds_limits_work() -> None:
+    mem = AgentMemory(seat=0)
+    for r in (1, 2, 3):
+        mem.ingest([_ev(r, EventType.ROUND_STARTED, RoundStartedPayload(round=r))])
+    calls: list[str] = []
+
+    def script(rm, system, user):  # type: ignore[no-untyped-def]
+        calls.append(user)
+        return ReflectionResult(summary="s", qa=[])
+
+    await mem.reflect(ScriptedLLMClient(script), "m", max_rounds=1)
+    assert len(calls) == 1 and mem.rounds_needing_reflection() == [2]
+    await mem.reflect(ScriptedLLMClient(script), "m")
+    assert len(calls) == 2 and mem.rounds_needing_reflection() == []

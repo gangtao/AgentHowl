@@ -161,3 +161,13 @@ def test_badge_window_is_not_pk_speech_pending() -> None:
     obs2 = build_observation(st2, 2)
     assert obs2.badge_only is False and obs2.pk_speech_pending is True
     assert available_tools_for(obs2)[0] == "speak"
+
+
+def test_guard_observation_carries_guard_rules() -> None:
+    """issue #42：守卫观测私有段带 can_guard_self / can_repeat_guard，供候选裁剪。"""
+    config = build_preset("std_12_yn_hunter_guard").model_copy(update={"seed": 1})
+    state = create_game(config, "g_guard").state
+    guard = next(p.seat for p in state.players if p.role.value == "GUARD")
+    priv = build_observation(state, guard).private
+    assert priv["can_guard_self"] is config.guard.can_guard_self
+    assert priv["can_repeat_guard"] is config.guard.can_guard_same_target_consecutively

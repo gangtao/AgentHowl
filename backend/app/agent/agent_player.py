@@ -184,16 +184,31 @@ class AgentPlayerPort:
             self._last_speak = None
             return action
 
-        # 惰性反思：只在时间宽裕时补做，失败由 memory 内部降级
+        # 惰性反思：只在时间宽裕时补做，失败由 memory 内部降级。
+        # issue #42：每次 act 至多反思一轮，且只给它「超出决策底线」的那段时间——
+        # 之前一次循环全部待反思轮且无单次预算，慢反思会吃掉决策窗口，该回合落默认行动
         if (
             remaining > self._cfg.reflection_min_remaining_s
             and self.memory.rounds_needing_reflection()
         ):
-            await self.memory.reflect(
-                self._client,
-                self._cfg.reflection_model or self._cfg.model,
-                self._cfg.temperature,
-            )
+            slice_s = remaining - self._cfg.reflection_min_remaining_s
+            try:
+                await asyncio.wait_for(
+                    self.memory.reflect(
+                        self._client,
+                        self._cfg.reflection_model or self._cfg.model,
+                        self._cfg.temperature,
+                        max_rounds=1,
+                    ),
+                    timeout=slice_s,
+                )
+            except TimeoutError:
+                logger.warning(
+                    "seat=%d phase=%s 反思超过预算 %.1fs，本回合跳过（该轮不再重试）",
+                    self._seat,
+                    observation.phase,
+                    slice_s,
+                )
 
         selected = select_skills(self._skills, observation.my_role, observation.phase)
         skills_text, used = assemble_skills(selected, self._cfg.skill_budget_chars)

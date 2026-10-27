@@ -159,13 +159,27 @@ class AgentMemory:
             if e.type == EventType.ROUND_STARTED and isinstance(e.payload, RoundStartedPayload):
                 self._current_round = e.payload.round
             self._campaigning = _campaigning_after(e, self._campaigning)
+            try:
+                text = _render(e)
+                score = _score(e, self._seat, campaigning=self._campaigning)
+            except Exception:
+                # issue #42：摄入回调若抛错，ConnectionManager 会摘除订阅，该座位此后只凭观察
+                # 行动——单条渲染失败只降级成占位条目，绝不让异常冒出去
+                logger.error(
+                    "座位 %d 记忆渲染失败 seq=%d type=%s，已降级占位",
+                    self._seat,
+                    e.seq,
+                    e.type.value,
+                    exc_info=True,
+                )
+                text, score = f"{e.type.value}（记录失败）", 1
             self.entries.append(
                 MemoryEntry(
                     seq=e.seq,
                     round=self._current_round,
                     kind=e.type.value,
-                    text=_render(e),
-                    score=_score(e, self._seat, campaigning=self._campaigning),
+                    text=text,
+                    score=score,
                 )
             )
 
@@ -201,8 +215,17 @@ class AgentMemory:
             r for r in done if r < self._current_round and r not in self._reflected_rounds
         )
 
-    async def reflect(self, client: LLMClient, model: str, temperature: float = 0.3) -> None:
-        for r in self.rounds_needing_reflection():
+    async def reflect(
+        self,
+        client: LLMClient,
+        model: str,
+        temperature: float = 0.3,
+        *,
+        max_rounds: int | None = None,
+    ) -> None:
+        """补做待反思轮。max_rounds：本次至多反思几轮（issue #42：决策前只做一轮，
+        避免慢反思把整个行动窗口吃掉而落默认行动）。"""
+        for r in self.rounds_needing_reflection()[:max_rounds]:
             round_lines = "\n".join(e.text for e in self.entries if e.round == r)
             questions = "\n".join(f"- {q}" for q in PREDEFINED_QUESTIONS)
             user_prompt = (
