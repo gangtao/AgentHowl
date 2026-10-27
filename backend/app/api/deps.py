@@ -9,6 +9,8 @@ from fastapi import Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, ConfigDict
 
+from app.runtime.rating_index import RatingIndex
+
 if TYPE_CHECKING:
     from app.runtime.registry import GameRegistry
 
@@ -87,3 +89,10 @@ def require_kind(info: TokenInfo, game_id: str, *kinds: str) -> TokenInfo:
     if info.game_id != game_id or info.kind not in kinds:
         raise HTTPException(status_code=403, detail="token 与对局或操作不匹配")
     return info
+
+
+def get_rating_index(request: Request) -> RatingIndex:
+    """积分推导索引（issue #123），运行时取自 app.state。"""
+    index = request.app.state.rating_index
+    assert isinstance(index, RatingIndex)
+    return index
