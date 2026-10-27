@@ -43,13 +43,17 @@ class GameSummary(BaseModel):
     owner_id: str | None = None
     owner_name: str | None = None  # rest 层按 UserStore 补；普通用户列表里就是自己
     share_token: str | None = None  # rest 层按站点密钥补
+    # 局后复盘进度（issue #70）：none | pending | done | failed；重启后只剩事件文件 → none
+    postgame: str = "none"
 
 
 def is_finished(events: Sequence[Event]) -> bool:
     return bool(events) and events[-1].type == EventType.GAME_OVER
 
 
-def summarize_game(meta: GameMeta, events: Sequence[Event], live: bool) -> GameSummary:
+def summarize_game(
+    meta: GameMeta, events: Sequence[Event], live: bool, postgame: str = "none"
+) -> GameSummary:
     finished = is_finished(events)
     status: GameStatus = "finished" if finished else ("live" if live else "aborted")
     winner = None
@@ -80,6 +84,7 @@ def summarize_game(meta: GameMeta, events: Sequence[Event], live: bool) -> GameS
         seats=seats,
         seq=events[-1].seq if events else 0,
         owner_id=meta.owner_id,
+        postgame=postgame,
     )
 
 
@@ -91,6 +96,13 @@ def _is_live(registry: GameRegistry, game_id: str) -> bool:
     return handle.task is not None and not handle.task.done()
 
 
+def _postgame(registry: GameRegistry, game_id: str) -> str:
+    try:
+        return registry.get(game_id).postgame_status()
+    except LookupError:
+        return "none"
+
+
 def list_history(store: EventStore, registry: GameRegistry) -> list[GameSummary]:
     out: list[GameSummary] = []
     for game_id in store.list_games():
@@ -100,7 +112,14 @@ def list_history(store: EventStore, registry: GameRegistry) -> list[GameSummary]
         except Exception as exc:  # noqa: BLE001 —— 坏文件不拖垮列表
             logger.warning("历史对局 %s 读取失败，已跳过：%s", game_id, exc)
             continue
-        out.append(summarize_game(meta, events, live=_is_live(registry, game_id)))
+        out.append(
+            summarize_game(
+                meta,
+                events,
+                live=_is_live(registry, game_id),
+                postgame=_postgame(registry, game_id),
+            )
+        )
     # 有时间戳的在前且按时间倒序；无时间戳的排最后；同时间戳用 game_id 决胜（稳定排序）
     out.sort(key=lambda s: (s.started_at is not None, s.started_at or "", s.game_id), reverse=True)
     return out
