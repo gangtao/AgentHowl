@@ -22,6 +22,10 @@ class RatingIndex:
     def __init__(self, store: EventStore) -> None:
         self._store = store
         self._cache: dict[str, FinishedGame] = {}
+        # issue #139：按「已结束对局 id 元组」记住上次快照——没有新终局时 /agents 直接复用，
+        # 不再每个请求全量重算。值不可变、重算结果相同，线程池并发最多多算一次
+        self._snap_key: tuple[str, ...] | None = None
+        self._snap: dict[str, AgentRating] = {}
 
     def extract_finished(self, game_id: str) -> FinishedGame | None:
         """已结束且带 agent_ids 的对局 → FinishedGame（缓存）；否则 None 且不缓存。"""
@@ -52,8 +56,13 @@ class RatingIndex:
         return finished
 
     def snapshot(self) -> dict[str, AgentRating]:
-        """当前全部档案的积分（纯函数重算，线性）。"""
+        """当前全部档案的积分；已结束对局集合未变时返回上次结果（issue #139）。"""
         games = [
             fg for gid in self._store.list_games() if (fg := self.extract_finished(gid)) is not None
         ]
-        return compute_ratings(games)
+        key = tuple(fg.game_id for fg in games)
+        if key == self._snap_key:
+            return self._snap
+        snap = compute_ratings(games)
+        self._snap_key, self._snap = key, snap
+        return snap
