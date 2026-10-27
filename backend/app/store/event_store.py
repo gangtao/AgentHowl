@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import threading
 import time
 from pathlib import Path
 from typing import Protocol
@@ -213,32 +214,41 @@ class JsonFileEventStore:
         self._data_dir.mkdir(parents=True, exist_ok=True)
         # 写通缓存：首次触碰某局时从盘装载
         self._cache: dict[str, tuple[GameMeta, list[Event]]] = {}
+        # issue #138：GET /games、/agents* 等同步端点在 Starlette 线程池里调 load_*，与事件循环
+        # 上的 create_game / append 并发。check-then-load 不加锁时，线程池可能用一份陈旧的
+        # 事件列表覆盖缓存，之后 append 的 seq 校验失败让 runner 崩溃。可重入锁把
+        # 「查缓存 → 读盘 → 写缓存」「写文件 → 更新缓存」各自变成原子段。
+        self._lock = threading.RLock()
 
     def create_game(self, meta: GameMeta) -> None:
         _check_game_id(meta.game_id)
         path = self._path(meta.game_id)
-        if path.exists():
-            # issue #35：0 字节文件是旧版本把「meta 行即残」截断后留下的卡死态，
-            # 既装载不了也从未写入过事件，视为不存在，允许重建
-            if path.stat().st_size == 0:
-                path.unlink()
-            else:
-                raise GameExistsError(f"对局已存在：{meta.game_id}")
-        self._write_line(path, {"kind": "meta", "data": meta.model_dump(mode="json")})
-        self._cache[meta.game_id] = (meta, [])
+        with self._lock:
+            if path.exists():
+                # issue #35：0 字节文件是旧版本把「meta 行即残」截断后留下的卡死态，
+                # 既装载不了也从未写入过事件，视为不存在，允许重建
+                if path.stat().st_size == 0:
+                    path.unlink()
+                else:
+                    raise GameExistsError(f"对局已存在：{meta.game_id}")
+            self._write_line(path, {"kind": "meta", "data": meta.model_dump(mode="json")})
+            self._cache[meta.game_id] = (meta, [])
 
     def append(self, game_id: str, event: Event) -> None:
-        _, events = self._ensure_loaded(game_id)
-        last_seq = events[-1].seq if events else 0
-        _check_append(game_id, last_seq, event)
-        self._write_line(self._path(game_id), {"kind": "event", "data": event_to_json(event)})
-        events.append(event)
+        with self._lock:
+            _, events = self._ensure_loaded(game_id)
+            last_seq = events[-1].seq if events else 0
+            _check_append(game_id, last_seq, event)
+            self._write_line(self._path(game_id), {"kind": "event", "data": event_to_json(event)})
+            events.append(event)
 
     def load_meta(self, game_id: str) -> GameMeta:
         return self._ensure_loaded(game_id)[0]
 
     def load_events(self, game_id: str, from_seq: int = 0) -> list[Event]:
-        return [e for e in self._ensure_loaded(game_id)[1] if e.seq >= from_seq]
+        with self._lock:
+            # 快照拷贝：返回值不与缓存共享列表对象，调用方（线程池）遍历时不受 append 影响
+            return [e for e in self._ensure_loaded(game_id)[1] if e.seq >= from_seq]
 
     def list_games(self) -> list[str]:
         return sorted(p.stem for p in self._data_dir.glob("*.jsonl"))
@@ -246,13 +256,14 @@ class JsonFileEventStore:
     def delete_game(self, game_id: str) -> None:
         """整局删除（issue #100）：删文件并清缓存；文件不在 → GameNotFoundError。"""
         path = self._path(game_id)
-        self._cache.pop(game_id, None)
-        try:
-            path.unlink()
-        except FileNotFoundError:
-            raise GameNotFoundError(f"对局不存在：{game_id}") from None
-        except OSError as exc:
-            raise StoreError(f"{path.name}：删除失败：{exc}") from exc
+        with self._lock:
+            self._cache.pop(game_id, None)
+            try:
+                path.unlink()
+            except FileNotFoundError:
+                raise GameNotFoundError(f"对局不存在：{game_id}") from None
+            except OSError as exc:
+                raise StoreError(f"{path.name}：删除失败：{exc}") from exc
 
     # ---------- 内部 ----------
 
@@ -266,9 +277,10 @@ class JsonFileEventStore:
             f.write(line + "\n")
 
     def _ensure_loaded(self, game_id: str) -> tuple[GameMeta, list[Event]]:
-        if game_id not in self._cache:
-            self._cache[game_id] = self._load_from_disk(game_id)
-        return self._cache[game_id]
+        with self._lock:
+            if game_id not in self._cache:
+                self._cache[game_id] = self._load_from_disk(game_id)
+            return self._cache[game_id]
 
     def _load_from_disk(self, game_id: str) -> tuple[GameMeta, list[Event]]:
         path = self._path(game_id)
