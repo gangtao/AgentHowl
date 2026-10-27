@@ -9,6 +9,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
+import logging
 import os
 import re
 import secrets
@@ -464,7 +465,16 @@ def bootstrap_admin(store: UserStore, *, username: str, email: str, password: st
     validate_username(name)
     validate_email(mail)
     validate_password(password)
-    if store.get_by_username(name) is not None:
+    existing = store.get_by_username(name)
+    if existing is not None:
+        if existing.role != "admin":
+            # issue #120：管理员用户名已被普通用户注册（抢注），不能静默跳过——留 ERROR 级痕迹
+            logging.getLogger(__name__).error(
+                "管理员引导：用户名 %s 已被非管理员账号占用（user_id=%s），未创建管理员；"
+                "请改用其它 AGENTHOWL_ADMIN_USERNAME 或用 app.cli.claim 处理该账号",
+                name,
+                existing.user_id,
+            )
         return None
     user = User(
         user_id=new_user_id(),

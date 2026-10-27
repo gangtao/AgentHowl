@@ -191,10 +191,23 @@ async def start_endpoint(
     return StartResponse(ok=True, num_players=handle.config.num_players)
 
 
-def _handle_for(games: GameRegistry, game_id: str) -> GameHandle:
+def _handle_for(games: GameRegistry, game_id: str, info: TokenInfo | None = None) -> GameHandle:
+    """取 handle 并做健康检查。给 info 时（issue #120）：先拒 HOST（403 优先于 500），
+    崩溃异常文本只回给 GM 视角，其它视角（含 share 持有者）得到通用 500 文案。"""
     handle = games.get(game_id)
-    handle.ensure_healthy()
+    if info is not None:
+        _reject_host(info)
+    _ensure_healthy_for(handle, info)
     return handle
+
+
+def _ensure_healthy_for(handle: GameHandle, info: TokenInfo | None) -> None:
+    try:
+        handle.ensure_healthy()
+    except RuntimeError as exc:
+        if info is not None and info.kind != "GM":
+            raise HTTPException(status_code=500, detail="对局运行异常，已停摆") from exc
+        raise
 
 
 def viewer_of(info: TokenInfo) -> Any:
@@ -390,8 +403,7 @@ def state_endpoint(
     games: GameRegistry = Depends(get_games),
 ) -> dict[str, Any]:
     """按视角返回快照；顶层 `viewer` 告诉前端本次被解析成了哪种视角（issue #115）。"""
-    handle = _handle_for(games, game_id)
-    _reject_host(info)
+    handle = _handle_for(games, game_id, info)
     live = handle.live_state()  # 未开局 → LobbyError(409)
     # 公开规则子集（issue #80）：观众 / 玩家视角的计票展示需要真实的 sheriff.vote_weight，
     # 之前前端对缺失的 config 猜 1.5，config_override 改票权后票数徽标与服务端 tally 不一致
@@ -448,7 +460,7 @@ def speeches_endpoint(
     except LookupError:
         handle = None  # 无活 handle：resolve_viewer 已校验归属 / 分享，事件文件齐全
     if handle is not None:
-        handle.ensure_healthy()
+        _ensure_healthy_for(handle, _info)
         if not handle.started:
             return []
     # 服务端以 GM 视角扫描以计算 round/phase（返回的两类事件本身是 PUBLIC）
@@ -505,8 +517,7 @@ def events_endpoint(
     info: TokenInfo = Depends(resolve_viewer),
     games: GameRegistry = Depends(get_games),
 ) -> list[dict[str, Any]]:
-    handle = _handle_for(games, game_id)
-    _reject_host(info)
+    handle = _handle_for(games, game_id, info)
     if not handle.started:
         return []
     viewer: Any = viewer_of(info)
@@ -560,17 +571,23 @@ def avatars_endpoint(
         handle = None
     agents: AgentProfiles
     num_players: int
+    owner_id: str | None
     if handle is not None and not handle.started:
-        agents, num_players = handle.agents, handle.config.num_players
+        agents, num_players, owner_id = handle.agents, handle.config.num_players, handle.owner_id
     else:
         try:
             meta = games.store.load_meta(game_id)
         except (GameNotFoundError, StoreError):
             if handle is None:
                 raise HTTPException(status_code=404, detail=f"对局不存在：{game_id}") from None
-            agents, num_players = handle.agents, handle.config.num_players  # 刚开局，meta 尚未落盘
+            # 刚开局，meta 尚未落盘
+            agents, num_players, owner_id = (
+                handle.agents,
+                handle.config.num_players,
+                handle.owner_id,
+            )
         else:
-            agents, num_players = meta.agents, meta.config.num_players
+            agents, num_players, owner_id = meta.agents, meta.config.num_players, meta.owner_id
     # 头像晚于对局加到档案上的（老对局 meta 里 avatar=None）：按档案名在当前档案库里补一次。
     # 显示的是"该角色现在的头像"而非历史快照——头像是公开资源引用，不涉及任何对局信息。
     library: AgentLibraryStore = request.app.state.agent_library
@@ -586,10 +603,14 @@ def avatars_endpoint(
         if p.name is None:
             continue
         if by_name is None:
+            # issue #120：只在建局者自己的档案库里按名补，名字按 owner 唯一，
+            # 不能拿别人同名档案的头像来显示
             by_name = {
                 s.profile.name: s.profile.avatar
                 for s in library.list()
-                if s.profile.name is not None and s.profile.avatar is not None
+                if s.owner_id == owner_id
+                and s.profile.name is not None
+                and s.profile.avatar is not None
             }
         if p.name in by_name:
             out[str(seat)] = by_name[p.name]

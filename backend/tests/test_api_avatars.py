@@ -146,3 +146,25 @@ def test_game_avatars_fall_back_to_library_by_name(client: TestClient) -> None:
     gid = body["game_id"]
     spect = {"share": body["share_token"]}
     assert client.get(f"/api/v1/games/{gid}/avatars", params=spect).json() == {"0": aid}
+
+
+def test_game_avatars_name_fallback_does_not_cross_owner(client: TestClient) -> None:
+    """issue #120：按名回退只看建局者自己的档案库——另一用户同名档案的头像不能被显示。"""
+    aid = _put(client, PNG).json()["avatar_id"]
+    r = client.post("/api/v1/agents", json={"name": "夜枭", "model": "x", "avatar": aid})
+    assert r.status_code == 201, r.text
+    other = TestClient(client.app)
+    login_as(other, "bob", role="admin")  # 普通用户建局须带 provider；这里只测跨 owner 隔离
+    body = other.post(
+        "/api/v1/games",
+        json={
+            "preset": "std_9_kill_side",
+            "config_override": {"seed": 2},
+            "agents": {"0": {"model": "x", "name": "夜枭"}},  # bob 自己库里没有这个名字
+        },
+    ).json()
+    gid = body["game_id"]
+    assert (
+        other.get(f"/api/v1/games/{gid}/avatars", params={"share": body["share_token"]}).json()
+        == {}
+    )

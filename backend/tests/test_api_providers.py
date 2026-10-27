@@ -85,7 +85,8 @@ def test_provider_crud_key_semantics_and_reference_guard(
         "/api/v1/agents", json={"name": "铁齿", "model": "gpt-4o-mini", "provider": pid}
     ).json()
     r = client.delete(f"/api/v1/providers/{pid}")
-    assert r.status_code == 409 and "铁齿" in r.json()["detail"]
+    # issue #120：只给计数，不列档案名（admin 跨 owner 时会泄露他人档案名）
+    assert r.status_code == 409 and "1 个" in r.json()["detail"] and "铁齿" not in r.text
     missing = client.post(
         "/api/v1/agents", json={"name": "q", "model": "m", "provider": "p_missing"}
     )
