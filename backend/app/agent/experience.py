@@ -6,9 +6,10 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterable, Mapping
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.engine.config import Faction, RoleType
 from app.engine.phases import Phase
@@ -54,6 +55,27 @@ class GameReflection(BaseModel):
 
     lessons: list[str] = []
     opponent_notes: dict[int, list[str]] = {}
+
+    @field_validator("opponent_notes", mode="before")
+    @classmethod
+    def _loose_seat_keys(cls, value: object) -> dict[int, object]:
+        """issue #69：键宽松解析——「3号」「seat 3」「"3"」→ 3；解析不了的键丢弃而非报错，
+        否则一个坏键让整个响应校验失败，本局 lessons 也一起丢。单条字符串值包成列表。"""
+        if not isinstance(value, Mapping):
+            return {}
+        out: dict[int, object] = {}
+        for key, notes in value.items():
+            seat = key if isinstance(key, int) else _seat_from_key(str(key))
+            if seat is None:
+                continue
+            out[seat] = [notes] if isinstance(notes, str) else notes
+        return out
+
+
+def _seat_from_key(key: str) -> int | None:
+    """从「3号」「seat 3」「玩家 4 号」这类键里取第一个整数；没有 → None。"""
+    m = re.search(r"\d+", key)
+    return int(m.group()) if m else None
 
 
 def _cleaned(items: Iterable[str], limit: int) -> list[str]:
