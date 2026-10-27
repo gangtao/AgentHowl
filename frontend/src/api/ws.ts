@@ -9,7 +9,7 @@
 // 不进 appendEvents——零信息过滤原则下也不代表任何游戏状态变化；url 会拼上本连接的 ?token=，
 // 因为直播期间 /audio/{seq}/{part} 匿名必 401，而 <audio> 元素发不出 Authorization 头，fix round 1）
 // / {type:"speech_audio_end", seq, parts}（本 hook 不消费，仅服务端用来标记某句配音已出完）。
-// 关闭码：4401 token 无效、4403 无权、4404 对局不存在、4409 对局尚未开始——均为终局，不重连；
+// 关闭码：4401 token 无效、4403 无权、4404 对局不存在、4409 对局尚未开始、4500 对局运行异常——均为终局，不重连；
 // 其余意外关闭（如 1006）且未收到 game_over → 指数退避重连，从 lastSeq+1 补发。
 
 import { useCallback, useEffect, useRef } from "react";
@@ -27,6 +27,7 @@ export const CLOSE_TEXT: Record<number, string> = {
   4403: "该 token 无权观战",
   4404: "对局不存在",
   4409: "对局尚未开始",
+  4500: "对局运行异常，已停摆",
 };
 
 const TERMINAL_CODES = new Set(Object.keys(CLOSE_TEXT).map(Number));
@@ -195,6 +196,12 @@ export function useLiveEvents({ gameId, auth, enabled }: UseLiveEventsArgs): Liv
           gameOverRef.current = true;
           // 终局后不再有轮次：清掉残留的 your_turn / pending，避免 ActionBar 与遮罩状态过期
           useTurn.getState().reset();
+        } else if (frame.type === "error" && frame.code === "RUNNER_CRASHED") {
+          // 对局 runner 崩溃（issue #39）：服务端随后以 4500 关闭；这是终态，不重连、清掉残留轮次
+          gameOverRef.current = true;
+          useTurn.getState().reset();
+          useGameStore.getState().setConnection("error");
+          useGameStore.getState().setError(frame.detail || CLOSE_TEXT[4500]!);
         } else if (frame.type === "error") {
           // 每个 error 帧都要结束 pending（空 detail 也不能让 ActionBar 卡在「提交中…」）
           const detail = frame.detail || "服务端返回了未说明的错误";

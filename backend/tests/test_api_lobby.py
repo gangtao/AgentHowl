@@ -574,3 +574,28 @@ def test_create_agent_ids_validated_and_never_leave_meta_or_events() -> None:
         for e in [*replay, *events]:
             assert "agent_ids" not in e and "agent_ids" not in e["meta"]
             assert mine not in json.dumps(e, ensure_ascii=False)
+
+
+def test_config_override_unknown_key_400_and_nested_merge(client: TestClient) -> None:
+    """issue #39：config_override 键名笔误 → 400 而非静默无效；嵌套覆盖保留预设其余字段。"""
+    r = client.post(
+        "/api/v1/games",
+        json={"preset": "std_9_kill_side", "config_override": {"seed": 1, "spech_timeout_sec": 5}},
+    )
+    assert r.status_code == 400 and "spech_timeout_sec" in r.json()["detail"]
+    r = client.post(
+        "/api/v1/games",
+        json={"preset": "std_9_kill_side", "config_override": {"sheriff": {"vote_weigth": 2.0}}},
+    )
+    assert r.status_code == 400 and "sheriff.vote_weigth" in r.json()["detail"]
+    r = client.post(
+        "/api/v1/games",
+        json={
+            "preset": "std_9_kill_side",
+            "config_override": {"seed": 1, "witch": {"self_rescue_always": True}},
+        },
+    )
+    assert r.status_code == 200
+    cfg = r.json()["config"]
+    assert cfg["witch"]["self_rescue_always"] is True
+    assert cfg["witch"]["self_rescue_first_night"] is True  # 预设值保留

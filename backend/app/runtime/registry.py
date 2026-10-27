@@ -24,7 +24,7 @@ from app.agent.provider import Provider
 from app.agent.skills import SkillLibrary, default_library
 from app.engine.config import GameConfig
 from app.engine.state import GameState
-from app.runtime.connection import ConnectionManager
+from app.runtime.connection import RUNNER_CRASHED_FRAME, ConnectionManager, runner_crashed
 from app.runtime.experience_store import ExperienceStore, InMemoryExperienceStore
 from app.runtime.game_runner import GameLobby, GameRunner, LobbyError, RunnerTimeouts
 from app.runtime.player_port import (
@@ -324,6 +324,7 @@ class GameRegistry:
             voices = [p.voice for p in effective.values() if p.voice is not None]
             handle.warm_task = asyncio.create_task(self._speech_audio.warm(voices))
         handle.task.add_done_callback(lambda t: _log_runner_exit(handle.game_id, t))
+        handle.task.add_done_callback(lambda t: _notify_runner_crash(handle, t))
         if handle.seat_memory_ids:
             handle.task.add_done_callback(lambda t: self._schedule_postgame(handle, t))
 
@@ -367,6 +368,16 @@ def _log_runner_exit(game_id: str, task: asyncio.Task[GameState]) -> None:
         logger.warning("对局 %s runner 被取消", game_id)
     elif (exc := task.exception()) is not None:
         logger.error("对局 %s runner 崩溃，对局停摆：%s", game_id, exc, exc_info=exc)
+
+
+def _notify_runner_crash(handle: GameHandle, task: asyncio.Task[GameState]) -> None:
+    """runner 崩溃 → 向所有已连接的 WS 推终止帧（issue #39）；正常终局 / 取消不推。
+    done-callback 在事件循环上执行，可直接起任务。"""
+    if handle.connections is None or not runner_crashed(task):
+        return
+    asyncio.get_running_loop().create_task(
+        handle.connections.broadcast_frame_all(RUNNER_CRASHED_FRAME)
+    )
 
 
 def _log_postgame(game_id: str, task: asyncio.Task[dict[str, AgentExperience]]) -> None:

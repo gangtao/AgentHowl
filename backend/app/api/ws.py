@@ -33,7 +33,12 @@ from app.api.rest import (
 from app.api.views import event_json_for_viewer
 from app.engine.events import Event, EventType
 from app.engine.observation import visible_events
-from app.runtime.connection import public_phase
+from app.runtime.connection import (
+    RUNNER_CRASHED_FRAME,
+    WS_CLOSE_RUNNER_CRASHED,
+    public_phase,
+    runner_crashed,
+)
 from app.runtime.player_port import (
     ACCEPT_WAIT_SEC,
     HumanPlayerPort,
@@ -217,11 +222,19 @@ async def ws_endpoint(
             out_q.put_nowait(frame)
     # ---- 同步块结束 ----
 
+    # 连接时 runner 已崩溃：补发完历史后立刻给终止帧（issue #39；REST 同场景经 ensure_healthy 500）
+    if runner_crashed(handle.task):
+        out_q.put_nowait(RUNNER_CRASHED_FRAME)
+
     async def sender_loop() -> None:
         """唯一的 ws.send_json 调用点：串行消费队列，杜绝并发无锁 send。"""
         while True:
             frame = await out_q.get()
             await ws.send_json(frame)
+            if frame.get("code") == "RUNNER_CRASHED":
+                # 终止帧之后不会再有任何事件：关闭连接，前端据 4500 停止重连（issue #39）
+                await ws.close(code=WS_CLOSE_RUNNER_CRASHED)
+                return
 
     sender_task = asyncio.create_task(sender_loop())
 

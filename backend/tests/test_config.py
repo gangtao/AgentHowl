@@ -141,3 +141,23 @@ def test_all_presets_run_to_completion() -> None:
         cfg = build_preset(name).model_copy(update={"seed": 2024})
         final, events = run_game(cfg, game_id=f"g_{name}")
         assert final.phase == Phase.GAME_OVER, f"{name} 未终局"
+
+
+def test_apply_override_rejects_unknown_keys_and_deep_merges() -> None:
+    """issue #39：config_override 未知键（含嵌套）→ ConfigError；嵌套子规则只覆盖给出的字段。"""
+    from app.engine.config import apply_override
+
+    base = build_preset("std_9_kill_side")
+    assert base.witch.self_rescue_first_night is True  # 预设里的非默认子规则
+    with pytest.raises(ConfigError, match="spech_timeout_sec"):
+        apply_override(base, {"spech_timeout_sec": 5})
+    with pytest.raises(ConfigError, match="sheriff.vote_weigth"):
+        apply_override(base, {"sheriff": {"vote_weigth": 2.0}})
+    cfg = apply_override(base, {"seed": 7, "witch": {"self_rescue_always": True}})
+    assert cfg.seed == 7
+    assert cfg.witch.self_rescue_always is True
+    assert cfg.witch.self_rescue_first_night is True  # 之前整个 witch 子模型被重置为默认
+    assert cfg.sheriff == base.sheriff
+    # 顶层非法值仍由 pydantic 校验
+    with pytest.raises(ValueError):
+        apply_override(base, {"num_players": "many"})

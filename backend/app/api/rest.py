@@ -24,7 +24,7 @@ from app.api.deps import (
 )
 from app.api.providers import visible_providers
 from app.api.views import event_json_for_viewer
-from app.engine.config import build_preset
+from app.engine.config import apply_override, build_preset
 from app.engine.events import Event, EventType, Visibility
 from app.engine.observation import build_observation, visible_events
 from app.engine.phases import Phase
@@ -88,8 +88,8 @@ async def create_game_endpoint(
     tokens: TokenRegistry = Depends(get_tokens),
 ) -> CreateGameResponse:
     try:
-        config = build_preset(req.preset).model_copy(update=req.config_override)
-        config = type(config).model_validate(config.model_dump())  # override 后全量校验
+        # issue #39：深合并 + 未知键 400（之前 model_copy 静默丢弃笔误键、嵌套子规则被整体重置）
+        config = apply_override(build_preset(req.preset), req.config_override)
     except (KeyError, ValueError, ValidationError) as exc:
         raise ToolCallError(f"preset/config_override 非法：{exc}") from exc
     if req.narration and not req.voice:
