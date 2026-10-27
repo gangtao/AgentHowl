@@ -234,6 +234,40 @@ class TestJsonFile:
         # 再次冷装载验证文件已物理修复
         assert JsonFileEventStore(path.parent).load_events("g1") == events[:11]
 
+    def test_torn_meta_only_file_is_quarantined_not_bricked(self, tmp_path: Path) -> None:
+        """issue #35：崩溃落在 create_game 写 meta 行中途，盘上只有一段无换行的残 meta。
+        旧行为把文件截成 0 字节后永久卡死（不可装载、不可重建、仍在列表里）。
+        新行为：残尾转存 .corrupt 侧文件留证，对局按不存在处理，game_id 可重建。"""
+        d = tmp_path / "d"
+        d.mkdir()
+        path = d / "g1.jsonl"
+        torn = b'{"kind": "meta", "da'
+        path.write_bytes(torn)
+        s = JsonFileEventStore(d)
+        with pytest.raises(GameNotFoundError):
+            s.load_events("g1")
+        assert not path.exists()
+        side = list(d.glob("g1.jsonl.corrupt*"))
+        assert len(side) == 1 and side[0].read_bytes() == torn  # 崩溃现场保留
+        assert s.list_games() == []  # 侧文件不算对局
+        meta, _, events = _run_fixture_game()
+        s.create_game(meta)  # 可重建
+        s.append("g1", events[0])
+        assert JsonFileEventStore(d).load_events("g1") == events[:1]
+
+    def test_zero_byte_file_is_recreatable(self, tmp_path: Path) -> None:
+        """issue #35：旧版本已把全残尾截成 0 字节的卡死态：按不存在处理，允许重建。"""
+        d = tmp_path / "d"
+        d.mkdir()
+        path = d / "g1.jsonl"
+        path.write_bytes(b"")
+        s = JsonFileEventStore(d)
+        with pytest.raises(GameNotFoundError):
+            s.load_meta("g1")
+        meta, _, _ = _run_fixture_game()
+        s.create_game(meta)
+        assert JsonFileEventStore(d).load_meta("g1") == meta
+
     def test_middle_bad_line_fails_loud(self, tmp_path: Path) -> None:
         path, _, _ = self._populated_dir(tmp_path)
         lines = path.read_bytes().split(b"\n")
