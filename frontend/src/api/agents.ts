@@ -41,11 +41,28 @@ export interface AgentProfile {
   voice?: VoiceSpec | null;
 }
 
-export interface StoredAgent {
+/** 与 app/schemas/agents.py::RatingSummary 对应（issue #123）；没打过 = 1000 / 0。 */
+export interface RatingSummary {
+  rating: number;
+  games: number;
+  wins: number;
+  losses: number;
+  draws: number;
+}
+
+export const EMPTY_RATING: RatingSummary = { rating: 1000, games: 0, wins: 0, losses: 0, draws: 0 };
+
+/** POST / PUT /agents 的响应（后端 StoredAgent）：不带积分。 */
+export interface StoredAgentBase {
   agent_id: string;
   profile: AgentProfile;
   created_at: string;
   updated_at: string;
+}
+
+/** GET /agents 与 GET /agents/{id} 的响应：档案 + 积分摘要。只渲染，前端不算 Elo。 */
+export interface StoredAgent extends StoredAgentBase {
+  rating: RatingSummary;
 }
 
 export interface SkillInfo {
@@ -73,16 +90,16 @@ export function listAgents(): Promise<StoredAgent[]> {
   return req<StoredAgent[]>("GET", "/agents");
 }
 
-export function createAgent(profile: AgentProfile): Promise<StoredAgent> {
-  return req<StoredAgent>("POST", "/agents", { body: profile });
+export function createAgent(profile: AgentProfile): Promise<StoredAgentBase> {
+  return req<StoredAgentBase>("POST", "/agents", { body: profile });
 }
 
 export function getAgent(agentId: string): Promise<StoredAgent> {
   return req<StoredAgent>("GET", `/agents/${agentId}`);
 }
 
-export function updateAgent(agentId: string, profile: AgentProfile): Promise<StoredAgent> {
-  return req<StoredAgent>("PUT", `/agents/${agentId}`, { body: profile });
+export function updateAgent(agentId: string, profile: AgentProfile): Promise<StoredAgentBase> {
+  return req<StoredAgentBase>("PUT", `/agents/${agentId}`, { body: profile });
 }
 
 export function deleteAgent(agentId: string): Promise<void> {

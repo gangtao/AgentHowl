@@ -3,6 +3,7 @@
 
 import { create } from "zustand";
 import {
+  EMPTY_RATING,
   createAgent,
   deleteAgent,
   listAgents,
@@ -58,7 +59,8 @@ export const useAgentLibrary = create<AgentLibraryState>((set, get) => ({
 
   async create(profile) {
     try {
-      const stored = await createAgent(profile);
+      // POST 响应不带积分；新档案尚无战绩，补 EMPTY_RATING 即是真值
+      const stored: StoredAgent = { ...(await createAgent(profile)), rating: EMPTY_RATING };
       set({ items: [stored, ...get().items] });
       return stored;
     } catch (err) {
@@ -69,7 +71,10 @@ export const useAgentLibrary = create<AgentLibraryState>((set, get) => ({
 
   async update(agentId, profile) {
     try {
-      const stored = await updateAgent(agentId, profile);
+      const base = await updateAgent(agentId, profile);
+      // 积分只由终局推导，编辑档案不改变它：沿用列表里的原值
+      const prev = get().items.find((a) => a.agent_id === agentId);
+      const stored: StoredAgent = { ...base, rating: prev?.rating ?? EMPTY_RATING };
       set({ items: get().items.map((a) => (a.agent_id === agentId ? stored : a)) });
       return stored;
     } catch (err) {

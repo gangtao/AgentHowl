@@ -1,7 +1,7 @@
 // buildAgentsPayload / memoryConflicts：覆盖设计稿 2a 的示例分配。
 
 import { describe, expect, it } from "vitest";
-import type { StoredAgent } from "../api/agents";
+import { EMPTY_RATING, type StoredAgent } from "../api/agents";
 import {
   assignmentSummary,
   buildAgentsPayload,
@@ -23,6 +23,7 @@ function agent(
     profile: { name, model: "qwen2.5:14b", temperature: 0.3, skills: [], ...extra },
     created_at: "2026-09-20T00:00:00+00:00",
     updated_at: "2026-09-20T00:00:00+00:00",
+    rating: EMPTY_RATING,
   };
 }
 
