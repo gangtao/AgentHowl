@@ -132,3 +132,21 @@ def test_rating_accumulates_after_finished_game_and_is_owner_scoped() -> None:
         assert c.get(f"/api/v1/agents/{b['agent_id']}/rating").status_code == 404
         index = c.app.state.rating_index  # type: ignore[attr-defined]
         assert index.snapshot()[b["agent_id"]].games == 1
+
+
+def test_admin_editing_others_profile_checks_uniqueness_in_owner_scope() -> None:
+    """issue #120：admin 改 bob 的档案时，唯一性按 bob 的集合判定——与 admin 自己的同名不冲突，
+    与 bob 的另一档案同名才 409。"""
+    app = make_app()
+    with TestClient(app) as root, TestClient(app) as bob:
+        login_as(root, "root", role="admin")
+        login_as(bob, "bob", role="admin")  # 普通用户建档须带 provider；这里只测作用域
+        assert root.post("/api/v1/agents", json={"name": "同名", "model": "x"}).status_code == 201
+        b1 = bob.post("/api/v1/agents", json={"name": "甲", "model": "x"}).json()
+        assert bob.post("/api/v1/agents", json={"name": "乙", "model": "x"}).status_code == 201
+        # admin 把 bob 的「甲」改名为「同名」：admin 自己有「同名」不算冲突
+        r = root.put(f"/api/v1/agents/{b1['agent_id']}", json={"name": "同名", "model": "x"})
+        assert r.status_code == 200, r.text
+        # 改成 bob 的「乙」→ 409
+        r = root.put(f"/api/v1/agents/{b1['agent_id']}", json={"name": "乙", "model": "x"})
+        assert r.status_code == 409

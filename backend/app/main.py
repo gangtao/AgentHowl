@@ -35,7 +35,7 @@ from app.runtime.tts import TtsClient, TtsConfig, build_tts_client
 from app.runtime.users import SqliteUserStore, UserStore, bootstrap_admin
 from app.runtime.voice_anchors import VoiceAnchorStore
 from app.schemas.actions import ToolCallError
-from app.store.event_store import EventStore, JsonFileEventStore, StoreError
+from app.store.event_store import EventStore, GameNotFoundError, JsonFileEventStore, StoreError
 
 if TYPE_CHECKING:
     from app.runtime.registry import GameHandle
@@ -244,6 +244,8 @@ def create_app(
     app.add_exception_handler(NotYourTurnError, _handler(409))
     app.add_exception_handler(ToolCallError, _handler(400))
     app.add_exception_handler(LookupError, _handler(404))
+    # issue #120：已删除对局持 share 读 /speeches 等落到 store 层 → 404，而非 StoreError 的 500
+    app.add_exception_handler(GameNotFoundError, _handler(404))
     app.add_exception_handler(StoreError, _handler(500))
     # runner task 崩溃后 handle.ensure_healthy() 抛出裸 RuntimeError，需兜底为 500（否则落到
     # Starlette 默认异常页，客户端拿不到 JSON detail）——issue #30 Task 5 复审发现。

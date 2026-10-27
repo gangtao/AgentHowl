@@ -12,7 +12,7 @@ from app.runtime.game_runner import RunnerTimeouts
 from app.runtime.secret import share_token
 from app.runtime.users import InMemoryUserStore
 from app.store.event_store import InMemoryEventStore, JsonFileEventStore
-from tests.conftest import bearer, login_as, make_app
+from tests.conftest import bearer, login_as, make_app, wait_game_done
 
 
 def _app(store: InMemoryEventStore, users: InMemoryUserStore | None = None) -> TestClient:
@@ -176,6 +176,15 @@ def test_crashed_game_anonymous_401_without_leak(store: InMemoryEventStore) -> N
         for path in ("speeches", "state", "events"):
             resp = c.get(f"/api/v1/games/{gid}/{path}")
             assert resp.status_code == 500, (path, resp.text)
+        # issue #120：share 持有者（观众）拿通用 500 文案，不含异常文本；HOST 先被 403 拒掉
+        share = {"share": body["share_token"]}
+        for path in ("speeches", "state", "events"):
+            resp = anon.get(f"/api/v1/games/{gid}/{path}", params=share)
+            assert resp.status_code == 500 and "secret" not in resp.text, (path, resp.text)
+            assert "对局运行异常" in resp.text
+        for path in ("state", "events"):
+            resp = c.get(f"/api/v1/games/{gid}/{path}", headers=_auth(body["host_token"]))
+            assert resp.status_code == 403, (path, resp.text)
 
 
 class _RunningTask(_CrashedTask):
@@ -315,3 +324,15 @@ def test_store_fallback_maps_illegal_or_corrupt_game_id_to_404(tmp_path: Path) -
         resp = c.get("/api/v1/games")
         assert resp.status_code == 200
         assert all(r["game_id"] != "g_corrupt" for r in resp.json())
+
+
+def test_speeches_on_deleted_game_with_share_is_404(store: InMemoryEventStore) -> None:
+    """issue #120：已删除的对局持 share 读 /speeches → 404（之前 GameNotFoundError 落成 500）。"""
+    with _app(store) as c:
+        body = c.post("/api/v1/games", json={"preset": "std_9_kill_side"}).json()
+        gid = body["game_id"]
+        c.post(f"/api/v1/games/{gid}/start", json={}, headers=_auth(body["host_token"]))
+        wait_game_done(c, gid)
+        assert c.delete(f"/api/v1/games/{gid}").status_code == 204
+        r = c.get(f"/api/v1/games/{gid}/speeches", params={"share": body["share_token"]})
+        assert r.status_code == 404, r.text

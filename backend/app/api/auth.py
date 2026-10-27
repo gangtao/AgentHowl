@@ -105,9 +105,9 @@ def client_ip(request: Request) -> str:
     return request.client.host if request.client is not None else "unknown"
 
 
-def _limit(request: Request, rule: str) -> None:
+def _limit(request: Request, rule: str, key: str | None = None) -> None:
     limiter: RateLimiter = request.app.state.rate_limiter
-    if not limiter.check(rule, client_ip(request)):
+    if not limiter.check(rule, key if key is not None else client_ip(request)):
         raise HTTPException(status_code=429, detail="请求过于频繁，请稍后再试")
 
 
@@ -252,6 +252,8 @@ def login(req: LoginRequest, request: Request, response: Response) -> LoginRespo
     _limit(request, "login")
     users = get_users(request)
     ident = req.identifier.strip()
+    # issue #120：再按账号限一次（用户名 / 邮箱归一化），换 IP 撞同一账号也受限
+    _limit(request, "login_account", ident.lower())
     user = users.get_by_username(normalize_username(ident)) or users.get_by_email(
         normalize_email(ident)
     )

@@ -139,3 +139,16 @@ def test_bootstrap_admin_idempotent(store: UserStore) -> None:
     assert created.username == "root" and created.email == "r@x.io"
     assert bootstrap_admin(store, username="root", email="r@x.io", password="other123") is None
     assert store.count() == 1
+
+
+def test_bootstrap_admin_logs_error_when_username_taken_by_non_admin(
+    store: UserStore, caplog: pytest.LogCaptureFixture
+) -> None:
+    """issue #120：普通用户抢注了管理员用户名 → 不静默跳过，ERROR 级告警且不建管理员。"""
+    import logging
+
+    store.put(_user("u_9", "root", "someone@x.io"))
+    with caplog.at_level(logging.ERROR, logger="app.runtime.users"):
+        assert bootstrap_admin(store, username="root", email="r@x.io", password="password1") is None
+    assert any("已被非管理员账号占用" in r.getMessage() for r in caplog.records)
+    assert store.count() == 1 and store.get("u_9").role == "user"  # type: ignore[union-attr]

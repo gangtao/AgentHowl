@@ -155,6 +155,21 @@ def test_rate_limit_429() -> None:
         assert c.post("/api/v1/auth/login", json=body).status_code == 429
 
 
+def test_rate_limit_per_account() -> None:
+    """issue #120：登录另按账号限流（用户名 / 邮箱归一化），与 IP 无关；换账号不受影响。"""
+    rl = RateLimiter({"login_account": (2, 60.0)})
+    with TestClient(make_app(rate_limiter=rl)) as c:
+        for ident in ("Alice", "alice", "ALICE"):
+            r = c.post("/api/v1/auth/login", json={"identifier": ident, "password": "password1"})
+        assert r.status_code == 429
+        assert (
+            c.post(
+                "/api/v1/auth/login", json={"identifier": "bob", "password": "password1"}
+            ).status_code
+            == 401
+        )
+
+
 def test_cookie_flags() -> None:
     with TestClient(make_app(cookie_secure=True)) as c:
         store = c.app.state.users  # type: ignore[attr-defined]

@@ -19,4 +19,4 @@ def test_unknown_rule_allows_and_disabled() -> None:
     assert rl.check("nope", "x")
     off = RateLimiter.disabled()
     assert all(off.check("login", "x") for _ in range(100))
-    assert set(DEFAULT_RULES) == {"register", "login", "resend", "verify"}
+    assert set(DEFAULT_RULES) == {"register", "login", "login_account", "resend", "verify"}

@@ -158,11 +158,10 @@ def delete_provider(
     lib: AgentLibraryStore = Depends(get_agent_library),
 ) -> Response:
     _get_owned_provider(store, user, provider_id)
-    refs = [s.profile.name or s.agent_id for s in lib.list() if s.profile.provider == provider_id]
+    # issue #120：只给计数——admin 删被他人档案引用的 provider 时，文案不得列出他人档案名
+    refs = sum(1 for s in lib.list() if s.profile.provider == provider_id)
     if refs:
-        raise HTTPException(
-            status_code=409, detail=f"仍被 {len(refs)} 个 Agent 引用：{'、'.join(refs)}"
-        )
+        raise HTTPException(status_code=409, detail=f"仍被 {refs} 个 Agent 引用，请先解除引用")
     store.delete(provider_id)
     return Response(status_code=204)
 

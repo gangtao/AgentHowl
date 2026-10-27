@@ -65,12 +65,18 @@ def _check_profile(
     *,
     user: User,
     exclude_id: str | None,
+    owner_id: str | None = None,
 ) -> None:
-    """名字必填且在自己的集合内唯一；memory_id 同理；技能名可解析；provider 须存在且可访问。"""
+    """名字必填且在档案主人的集合内唯一；memory_id 同理；技能名可解析；provider 须存在且可访问。
+
+    owner_id（issue #120）：唯一性按档案的 owner 作用域——admin 编辑他人档案时比对的是
+    对方的集合，而不是调用者自己的；缺省为调用者（新建）。
+    """
     if not profile.name:
         raise HTTPException(status_code=422, detail="档案须有名字（name）")
+    scope = owner_id if owner_id is not None else user.user_id
     for other in lib.list():
-        if other.agent_id == exclude_id or other.owner_id != user.user_id:
+        if other.agent_id == exclude_id or other.owner_id != scope:
             continue
         if other.profile.name == profile.name:
             raise HTTPException(status_code=409, detail=f"已有同名档案：{profile.name}")
@@ -155,7 +161,15 @@ def update_agent(
     providers: ProviderStore = Depends(get_provider_store),
 ) -> StoredAgent:
     existing = _get_owned_agent(lib, user, agent_id)
-    _check_profile(profile, lib, skills, providers, user=user, exclude_id=agent_id)
+    _check_profile(
+        profile,
+        lib,
+        skills,
+        providers,
+        user=user,
+        exclude_id=agent_id,
+        owner_id=existing.owner_id if existing.owner_id is not None else user.user_id,
+    )
     stored = existing.model_copy(update={"profile": profile, "updated_at": _now()})
     lib.put(stored)
     return stored
