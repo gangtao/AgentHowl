@@ -11,11 +11,15 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from app.agent.profile import AgentProfile
 from app.agent.skills import SkillError, SkillLibrary
 from app.api.auth import can_access, require_user
+from app.api.deps import get_rating_index
 from app.engine.config import PRESET_NAMES, build_preset
 from app.runtime.agent_library import AgentLibraryStore, StoredAgent
 from app.runtime.provider_store import ProviderStore
+from app.runtime.rating import HISTORY_LIMIT, AgentRating
+from app.runtime.rating_index import RatingIndex
 from app.runtime.registry import BYOK_REQUIRED_MSG
 from app.runtime.users import User
+from app.schemas.agents import StoredAgentWithRating, with_rating
 from app.schemas.presets import PresetInfo, preset_info
 
 router = APIRouter()
@@ -89,9 +93,12 @@ def _check_profile(
 
 @router.get("/agents")
 def list_agents(
-    user: User = Depends(require_user), lib: AgentLibraryStore = Depends(get_library)
-) -> list[StoredAgent]:
-    return _visible_agents(lib, user)
+    user: User = Depends(require_user),
+    lib: AgentLibraryStore = Depends(get_library),
+    index: RatingIndex = Depends(get_rating_index),
+) -> list[StoredAgentWithRating]:
+    ratings = index.snapshot()
+    return [with_rating(s, ratings) for s in _visible_agents(lib, user)]
 
 
 @router.post("/agents", status_code=201)
@@ -120,8 +127,22 @@ def get_agent(
     agent_id: str,
     user: User = Depends(require_user),
     lib: AgentLibraryStore = Depends(get_library),
-) -> StoredAgent:
-    return _get_owned_agent(lib, user, agent_id)
+    index: RatingIndex = Depends(get_rating_index),
+) -> StoredAgentWithRating:
+    return with_rating(_get_owned_agent(lib, user, agent_id), index.snapshot())
+
+
+@router.get("/agents/{agent_id}/rating")
+def get_agent_rating(
+    agent_id: str,
+    user: User = Depends(require_user),
+    lib: AgentLibraryStore = Depends(get_library),
+    index: RatingIndex = Depends(get_rating_index),
+) -> AgentRating:
+    """完整积分对象（issue #123）；history 只回最近 HISTORY_LIMIT 条。可见性同档案本身。"""
+    _get_owned_agent(lib, user, agent_id)
+    full = index.snapshot().get(agent_id, AgentRating())
+    return full.model_copy(update={"history": full.history[-HISTORY_LIMIT:]})
 
 
 @router.put("/agents/{agent_id}")
