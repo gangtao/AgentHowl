@@ -3,7 +3,7 @@
 
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import type { AgentProfile, SkillInfo, StoredAgent } from "../../api/agents";
+import { EMPTY_RATING, type AgentProfile, type SkillInfo, type StoredAgent } from "../../api/agents";
 import { MAX_DESCRIPTION } from "../../lib/personality";
 import { useAgentLibrary } from "../../store/agents";
 import AgentEditor from "./AgentEditor";
@@ -19,6 +19,7 @@ function existing(name: string, memoryId: string | null = null): StoredAgent {
     profile: { name, model: "m", memory_id: memoryId },
     created_at: "2026-09-20T00:00:00+00:00",
     updated_at: "2026-09-20T00:00:00+00:00",
+    rating: EMPTY_RATING,
   };
 }
 
@@ -28,6 +29,7 @@ function renderEditor(others: StoredAgent[] = []): { create: ReturnType<typeof v
     profile: p,
     created_at: "",
     updated_at: "",
+    rating: EMPTY_RATING,
   }));
   useAgentLibrary.setState({ create });
   render(

@@ -3,6 +3,7 @@
 
 import type { StoredAgent } from "../../api/agents";
 import { personalitySummary, type PersonalitySpecShape } from "../../lib/personality";
+import { ratingLine } from "../../lib/rating";
 import Avatar from "../Avatar/Avatar";
 import styles from "./AgentCard.module.css";
 
@@ -81,6 +82,7 @@ export default function AgentCard({
           <span>{summary || "—"}</span>
           {p.memory_id && <span className={styles.memory}>记忆 {p.memory_id}</span>}
         </div>
+        <div className={styles.rating}>{ratingLine(stored.rating)}</div>
       </div>
     );
   }
@@ -117,6 +119,7 @@ export default function AgentCard({
         <span className={styles.summary}>{summary || "—"}</span>
         {p.memory_id && <span className={styles.memory}>记忆 {p.memory_id}</span>}
       </div>
+      <div className={styles.rating}>{ratingLine(stored.rating)}</div>
       <div className="card-meta" style={{ marginTop: "auto", justifyContent: "space-between" }}>
         <span>更新于 {formatTime(stored.updated_at)}</span>
         <span className={styles.actions}>

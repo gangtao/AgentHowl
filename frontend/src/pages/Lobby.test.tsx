@@ -175,3 +175,47 @@ describe("Lobby 我自己入座（issue #115）", () => {
     expect(window.location.hash).toBe("#/");
   });
 });
+
+const LIBRARY_ROWS = [
+  {
+    agent_id: "a_owl",
+    profile: { name: "夜枭", model: "m", skills: [] },
+    created_at: "t",
+    updated_at: "t",
+    rating: { rating: 1000, games: 0, wins: 0, losses: 0, draws: 0 },
+  },
+  {
+    agent_id: "a_nice",
+    profile: { name: "老好人", model: "m", skills: [] },
+    created_at: "t",
+    updated_at: "t",
+    rating: { rating: 1000, games: 0, wins: 0, losses: 0, draws: 0 },
+  },
+];
+
+describe("Lobby 建局归因（issue #123）", () => {
+  it("座位选库内档案 + 填满档案 → 请求体 agent_ids 含座位键与 \"*\"，与 agents 键一致", async () => {
+    const fetchMock = stubLobbyFetch();
+    const inner = fetchMock.getMockImplementation() as (u: string, i?: RequestInit) => Promise<Response>;
+    fetchMock.mockImplementation(async (rawUrl: string, init?: RequestInit) => {
+      const url = rawUrl.split("?")[0] as string;
+      if (url.endsWith("/agents") && (init?.method ?? "GET") === "GET")
+        return new Response(JSON.stringify(LIBRARY_ROWS), { status: 200, headers: { "Content-Type": "application/json" } });
+      return inner(rawUrl, init);
+    });
+    useAuth.setState({ status: "authed", user: { username: "alice" } as never });
+    window.location.hash = "#/";
+    render(<Lobby />);
+    await screen.findByText("标准 9 人局");
+    fireEvent.click(screen.getByRole("button", { name: /下一步 · 分配座位/ }));
+    fireEvent.change(await screen.findByLabelText("3号 座位"), { target: { value: "a_owl" } });
+    fireEvent.change(screen.getByLabelText("填满其余座位"), { target: { value: "a_nice" } });
+    fireEvent.click(screen.getByRole("button", { name: /下一步 · 汇总/ }));
+    expect(screen.getByText(/agent_ids: \{"\*", "3"\}/)).toBeInTheDocument();
+    fireEvent.click(screen.getAllByRole("button", { name: "创建并开始" })[0] as HTMLElement);
+    await vi.waitFor(() => expect(bodyOf(fetchMock, "/games").agent_ids).toBeDefined());
+    const create = bodyOf(fetchMock, "/games");
+    expect(create.agent_ids).toEqual({ "3": "a_owl", "*": "a_nice" });
+    expect(Object.keys(create.agents as object).sort()).toEqual(["*", "3"]);
+  });
+});

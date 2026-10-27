@@ -26,6 +26,7 @@ from app.runtime.player_port import NotYourTurnError, PlayerPort
 from app.runtime.provider_probe import LiteLLMProbe, ProviderProbe
 from app.runtime.provider_store import JsonFileProviderStore, ProviderStore
 from app.runtime.ratelimit import DEFAULT_RULES, RateLimiter
+from app.runtime.rating_index import RatingIndex
 from app.runtime.registry import GameRegistry
 from app.runtime.secret import load_secret
 from app.runtime.speech_audio import SpeechAudioSink
@@ -152,6 +153,8 @@ def create_app(
             (memory_dir or Path("data/agent_memory")) / owner_id
         ),
     )
+    # Agent 积分（issue #123）：由事件日志推导，进程内缓存，不落盘
+    app.state.rating_index = RatingIndex(app.state.games.store)
     app.state.tokens = TokenRegistry()
     # 用户与会话（issue #114）
     base_dir = Path("data")

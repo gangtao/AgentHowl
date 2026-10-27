@@ -92,6 +92,8 @@ export interface CreateGameRequest {
   ai_model?: string | null;
   ai_model_speech?: string | null;
   agents?: Record<string, unknown>;
+  /** 座位号或 "*" → 库内档案 agent_id（issue #123）；键须同时在 agents 里，只用于归因计分。 */
+  agent_ids?: Record<string, string>;
   /** 语音播报开关（issue #103）；TTS 探测失败时后端 400。 */
   voice?: boolean;
   /** GM 旁白（issue #110）；需 voice=true，否则后端 400。 */

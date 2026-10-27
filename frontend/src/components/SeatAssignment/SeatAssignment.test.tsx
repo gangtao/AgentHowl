@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, within } from "@testing-library/react";
-import type { StoredAgent } from "../../api/agents";
+import { EMPTY_RATING, type StoredAgent } from "../../api/agents";
 import { buildAgentsPayload, emptyAssignment, type SeatSlot } from "../../lib/seats";
 import SeatAssignment from "./SeatAssignment";
 
@@ -19,6 +19,7 @@ function agent(id: string, name: string, memoryId: string | null): StoredAgent {
     },
     created_at: "2026-09-20T00:00:00+00:00",
     updated_at: "2026-09-20T00:00:00+00:00",
+    rating: EMPTY_RATING,
   };
 }
 

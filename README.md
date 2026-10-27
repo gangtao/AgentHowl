@@ -44,6 +44,7 @@ backend/
 │       ├── simulate.py    # 命令行模拟入口（胜负统计）
 │       ├── render.py      # 终端叙述器：事件/观察 → 可读中文
 │       ├── play.py        # 终端观战/对局入口（python -m app.cli.play）
+│       ├── rating.py      # Agent 积分表核对（python -m app.cli.rating，issue #123）
 │       └── play_human.py  # 交互玩局：mini-syntax + turn-loop
 ├── tests/                 # 380+ 测试：规则/隔离/确定性/API E2E/Agent/CLI
 └── pyproject.toml
@@ -439,6 +440,7 @@ uv run python -m app.cli.play --view spectator                # 拟真观战
 uv run python -m app.cli.play --seat 2                        # 玩 2 号座位
 uv run python -m app.cli.play --ai-model ollama/llama3.1      # LLM 自对局
 uv run python -m app.cli.simulate --games 100                 # 纯引擎胜负统计
+uv run python -m app.cli.rating                               # Agent 积分表（由已结束对局推导）
 ```
 
 ### 每座位 Agent 档案 / Per-seat Agent Profiles

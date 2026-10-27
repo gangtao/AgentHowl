@@ -61,6 +61,7 @@ class GameHandle:
         voice_enabled: bool = False,
         narration_enabled: bool = False,
         owner_id: str | None = None,
+        agent_ids: dict[str, str] | None = None,
     ) -> None:
         self.game_id = game_id
         self.config = config
@@ -70,6 +71,8 @@ class GameHandle:
         self.voice_enabled = voice_enabled
         self.narration_enabled = narration_enabled
         self.owner_id = owner_id
+        # 座位号或 "*" → 库内档案 id（issue #123）；start() 按实际建成的 Agent 端口展开进 meta
+        self.agent_ids: dict[str, str] = dict(agent_ids or {})
         self.lobby = GameLobby(config, game_id)
         self.ports: dict[int, PlayerPort] = {}
         self.human_ports: dict[int, HumanPlayerPort] = {}
@@ -170,6 +173,7 @@ class GameRegistry:
         owner_id: str | None = None,
         allowed_providers: Collection[str] | None = None,
         require_provider: bool = False,
+        agent_ids: dict[str, str] | None = None,
     ) -> GameHandle:
         # 旧入口 ai_model 折叠为 "*" 默认档案；与显式 agents["*"] 冲突、座位键非法 → ValueError
         resolved = merge_profiles(agents, legacy_to_profiles(ai_model, ai_model_speech))
@@ -194,6 +198,7 @@ class GameRegistry:
             voice_enabled=voice,
             narration_enabled=narration,
             owner_id=owner_id,
+            agent_ids=agent_ids,
         )
         self._games[game_id] = handle
         return handle
@@ -280,6 +285,7 @@ class GameRegistry:
 
         handle.connections = ConnectionManager(state_provider=_state_of)
         effective: AgentProfiles = {}  # 实际建成 Agent 端口的座位 → 档案，写进 meta（issue #64）
+        effective_ids: dict[str, str] = {}  # 同上，座位 → 库内档案 id（issue #123）
         for seat in range(handle.config.num_players):
             if seat not in handle.ports:
                 profile = handle.profile_for(seat)
@@ -288,6 +294,11 @@ class GameRegistry:
                 else:
                     handle.ports[seat] = self._build_agent_port(seat, handle)
                     effective[str(seat)] = profile
+                    # 与 profile_for 同一优先级：座位专属档案只认座位专属 id，否则取 "*" 的 id
+                    key = str(seat) if str(seat) in handle.agents else "*"
+                    aid = handle.agent_ids.get(key)
+                    if aid is not None:
+                        effective_ids[str(seat)] = aid
         runner = GameRunner(
             store=self._store,
             config=handle.config,
@@ -300,6 +311,7 @@ class GameRegistry:
             speech_audio=self._speech_audio if handle.voice_enabled else None,
             narration_enabled=handle.voice_enabled and handle.narration_enabled,
             owner_id=handle.owner_id,
+            agent_ids=effective_ids,
         )
         handle.runner = runner
         # 订阅须在 create_task 之前完成，否则 GAME_CREATED/ROLES_ASSIGNED 首批事件漏投

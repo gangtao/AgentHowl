@@ -82,13 +82,22 @@ def test_to_agent_config_maps_fields_and_seed() -> None:
     assert to_agent_config(p, cfg.model_copy(update={"seed": None})).agent_seed == 0
 
 
-def test_importing_registry_does_not_load_litellm() -> None:
-    """档案模块进 registry 的 import 图后，服务启动不得连带加载 litellm（惰性加载设计）。"""
+@pytest.mark.parametrize(
+    "modules",
+    [
+        "app.runtime.registry, app.agent.profile",
+        "app.runtime.rating_index",
+        "app.cli.rating",
+    ],
+)
+def test_importing_registry_does_not_load_litellm(modules: str) -> None:
+    """档案模块进 registry 的 import 图后，服务启动不得连带加载 litellm（惰性加载设计）；
+    积分索引与积分 CLI（issue #123）同样不得。"""
     import subprocess
     import sys
     from pathlib import Path
 
-    code = "import sys, app.runtime.registry, app.agent.profile; print('litellm' in sys.modules)"
+    code = f"import sys, {modules}; print('litellm' in sys.modules)"
     out = subprocess.run(
         [sys.executable, "-c", code],
         capture_output=True,

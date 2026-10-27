@@ -1,5 +1,6 @@
 """REST 大厅端点：create/join/start 与鉴权（issue #30）。"""
 
+import json
 from collections.abc import Iterator
 from typing import Any
 
@@ -518,3 +519,58 @@ def test_create_without_seed_echoes_random_seed(client: TestClient) -> None:
         "/api/v1/games", json={"preset": "std_9_kill_side", "config_override": {"seed": 3}}
     ).json()
     assert c["config"]["seed"] == 3
+
+
+def test_create_agent_ids_validated_and_never_leave_meta_or_events() -> None:
+    """issue #123：agent_ids 键须在 agents 里、id 须当前用户可见（不存在与无权同文案）；
+    服务端 meta 记下展开后的 id，但 /meta、/replay、/events 都不回传 agent_ids。"""
+    import time as _t
+
+    from app.runtime.player_port import BotPlayerPort
+
+    app = make_app(
+        timeouts=RunnerTimeouts(speech_sec=5.0, action_sec=5.0),
+        agent_port_factory=lambda seat, h: BotPlayerPort(state_provider=h.live_state),
+    )
+    with TestClient(app) as client, TestClient(app) as other:
+        login_as(client, "host", role="admin")
+        login_as(other, "bob")
+        created_agent = client.post("/api/v1/agents", json={"name": "夜枭", "model": "m"}).json()
+        mine = created_agent["agent_id"]
+        base = {"preset": "std_9_kill_side", "config_override": {"seed": 11}}
+        agents = {"1": {"model": "m"}}
+
+        r = client.post("/api/v1/games", json={**base, "agents": agents, "agent_ids": {"2": mine}})
+        assert r.status_code == 400
+        assert r.json()["detail"] == "agent_ids 非法：座位 2 没有对应的 agents 档案"
+        r = client.post(
+            "/api/v1/games", json={**base, "agents": agents, "agent_ids": {"1": "a_nope"}}
+        )
+        assert r.status_code == 400 and r.json()["detail"] == "agent_ids 非法：档案不存在：a_nope"
+        # bob 看不到 host 的档案：与不存在同文案（不泄露存在性）
+        r = other.post("/api/v1/games", json={**base, "agents": agents, "agent_ids": {"1": mine}})
+        assert r.status_code == 400 and r.json()["detail"] == f"agent_ids 非法：档案不存在：{mine}"
+
+        created = client.post(
+            "/api/v1/games", json={**base, "agents": agents, "agent_ids": {"1": mine}}
+        ).json()
+        gid, host, spec = created["game_id"], created["host_token"], created["share_token"]
+        assert "agent_ids" not in created
+        assert (
+            client.post(f"/api/v1/games/{gid}/start", json={}, headers=_auth(host)).status_code
+            == 200
+        )
+        handle = client.app.state.games.get(gid)  # type: ignore[attr-defined]
+        deadline = _t.time() + 30
+        while not (handle.task is not None and handle.task.done()) and _t.time() < deadline:
+            _t.sleep(0.05)
+        assert handle.task is not None and handle.task.done()
+        store = client.app.state.games.store  # type: ignore[attr-defined]
+        assert store.load_meta(gid).agent_ids == {"1": mine}  # 服务端真相：meta 首行记了展开后的 id
+        meta = client.get(f"/api/v1/games/{gid}/meta", params={"share": spec}).json()
+        assert set(meta["agents"]) == {"1"} and "agent_ids" not in meta
+        replay = client.get(f"/api/v1/games/{gid}/replay", params={"share": spec}).json()
+        events = client.get(f"/api/v1/games/{gid}/events", params={"share": spec}).json()
+        for e in [*replay, *events]:
+            assert "agent_ids" not in e and "agent_ids" not in e["meta"]
+            assert mine not in json.dumps(e, ensure_ascii=False)

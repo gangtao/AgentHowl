@@ -67,6 +67,17 @@ tts_router = APIRouter(prefix="/tts", tags=["tts"])
 _bearer = HTTPBearer(auto_error=False)
 
 
+def _check_agent_ids(req: CreateGameRequest, lib: AgentLibraryStore, user: User) -> None:
+    """agent_ids（issue #123）：键须在 agents 里（有 id 必有档案）；id 须是当前用户可见的档案
+    （不存在与无权一律「档案不存在」，不泄露存在性）。不校验内联 profile 与库里是否一致。"""
+    for key, agent_id in req.agent_ids.items():
+        if key not in req.agents:
+            raise ToolCallError(f"agent_ids 非法：座位 {key} 没有对应的 agents 档案")
+        stored = lib.get(agent_id)
+        if stored is None or not can_access(user, stored.owner_id):
+            raise ToolCallError(f"agent_ids 非法：档案不存在：{agent_id}")
+
+
 @router.post("")
 async def create_game_endpoint(
     req: CreateGameRequest,
@@ -91,6 +102,7 @@ async def create_game_endpoint(
                 status_code=400,
                 detail=f"TTS 服务不可用，无法开启语音：{status.detail or ''}".rstrip("："),
             )
+    _check_agent_ids(req, request.app.state.agent_library, user)
     # 普通用户只能引用自己的 provider；admin 不限（issue #114）
     allowed: set[str] | None = (
         None
@@ -110,6 +122,7 @@ async def create_game_endpoint(
             owner_id=user.user_id,
             allowed_providers=allowed,
             require_provider=user.role != "admin",
+            agent_ids=req.agent_ids,
         )
     except ValueError as exc:
         raise ToolCallError(f"agents 非法：{exc}") from exc
@@ -503,7 +516,9 @@ def meta_endpoint(
     """
     _require_finished(games, game_id)
     meta = games.store.load_meta(game_id)
-    return {**meta.model_dump(mode="json"), "viewer": viewer_of(info)}
+    data = meta.model_dump(mode="json")
+    data.pop("agent_ids", None)  # 归因 id 不随分享链接外泄（issue #123）
+    return {**data, "viewer": viewer_of(info)}
 
 
 @router.get("/{game_id}/avatars")
