@@ -28,3 +28,29 @@ describe("App 匿名首访（issue #114）", () => {
     expect(window.location.hash).toBe("#/history");
   });
 });
+
+describe("App 登录态下的认证路由（issue #120）", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    window.location.hash = "";
+    sessionStorage.removeItem("agenthowl.next");
+  });
+
+  it("已登录打开 #/login → 不显示表单，回跳到记下的目的地并清掉 agenthowl.next", async () => {
+    const me = { user_id: "u", username: "alice", email: "a@x", role: "user", status: "active", email_verified: true, created_at: "t" };
+    useAuth.setState({ user: me as never, status: "authed" });
+    sessionStorage.setItem("agenthowl.next", "#/history");
+    window.location.hash = "#/login";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        const body = url.includes("/auth/me") ? me : []; // 回跳后的历史页会拉 /games 列表
+        return new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } });
+      }),
+    );
+    render(<App />);
+    await waitFor(() => expect(window.location.hash).toBe("#/history"));
+    expect(screen.queryByLabelText("用户名或邮箱")).toBeNull();
+    expect(sessionStorage.getItem("agenthowl.next")).toBeNull();
+  });
+});

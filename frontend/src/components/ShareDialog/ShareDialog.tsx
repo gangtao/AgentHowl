@@ -90,7 +90,7 @@ export default function ShareDialog({
             稍后
           </button>
           <button type="button" className="btn btn-primary" onClick={onEnter}>
-            进入上帝视角 →
+            {gmLink === null ? "进入对局 →" : "进入上帝视角 →"}
           </button>
         </div>
       </div>

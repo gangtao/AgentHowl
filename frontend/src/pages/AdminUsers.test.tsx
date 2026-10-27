@@ -65,4 +65,27 @@ describe("AdminUsers", () => {
     await waitFor(() => expect(screen.getByText("至少保留一个可用的管理员")).toBeInTheDocument());
     expect(screen.getByRole("button", { name: "禁用 bob" })).toBeEnabled();
   });
+
+  it("两行并发失败各自显示错误、互不覆盖；注册时间按本地格式显示（issue #120）", async () => {
+    useAuth.setState({ user: me, status: "authed" });
+    const carol = { ...bob, user_id: "u_carol", username: "carol", email: "c@x", created_at: "2026-10-02T03:00:00+00:00" };
+    const fetchMock = vi.fn((url: string, init?: RequestInit) => {
+      if (init?.method === "PATCH") {
+        const who = url.endsWith("/u_bob") ? "bob 不能改" : "carol 不能改";
+        return Promise.resolve(json(400, { detail: who }));
+      }
+      return Promise.resolve(json(200, [me, bob, carol]));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<AdminUsers />);
+    await waitFor(() => expect(screen.getByText("carol")).toBeInTheDocument());
+    const cell = screen.getByText("carol").parentElement as HTMLElement;
+    expect(cell.textContent).toContain("2026");
+    expect(cell.textContent).not.toContain("T03:00:00");
+    fireEvent.click(screen.getByRole("button", { name: "禁用 bob" }));
+    fireEvent.click(screen.getByRole("button", { name: "禁用 carol" }));
+    await waitFor(() => expect(screen.getByText("bob 不能改")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("carol 不能改")).toBeInTheDocument());
+    expect(screen.getByText("bob 不能改")).toBeInTheDocument(); // 没被后到的 carol 错误覆盖
+  });
 });

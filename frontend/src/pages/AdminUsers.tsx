@@ -8,6 +8,13 @@ import { ApiError } from "../api/rest";
 import { useAuth } from "../store/auth";
 import styles from "./AdminUsers.module.css";
 
+/** ISO 时间 → 本地可读；解析不了（旧数据 / 测试桩）原样返回。 */
+function fmtTime(iso: string): string {
+  const t = Date.parse(iso);
+  if (Number.isNaN(t)) return iso;
+  return new Date(t).toLocaleString("zh-CN", { hour12: false });
+}
+
 export default function AdminUsers(): JSX.Element {
   const me = useAuth((s) => s.user);
   const [users, setUsers] = useState<UserPublic[]>([]);
@@ -15,6 +22,8 @@ export default function AdminUsers(): JSX.Element {
   const [error, setError] = useState<string | null>(null);
   // 在途请求的 user_id：同一行请求未返回前禁用该行按钮，避免响应乱序互相覆盖
   const [busy, setBusy] = useState<ReadonlySet<string>>(new Set());
+  // issue #120：操作错误按行记录，两行并发失败互不覆盖；顶部错误条只给列表载入失败
+  const [rowErrors, setRowErrors] = useState<Record<string, string>>({});
 
   useEffect(() => {
     let alive = true;
@@ -34,13 +43,18 @@ export default function AdminUsers(): JSX.Element {
   }, []);
 
   const act = useCallback(async (userId: string, call: () => Promise<UserPublic>): Promise<void> => {
-    setError(null);
+    setRowErrors((prev) => {
+      const next = { ...prev };
+      delete next[userId];
+      return next;
+    });
     setBusy((prev) => new Set(prev).add(userId));
     try {
       const updated = await call();
       setUsers((prev) => prev.map((u) => (u.user_id === updated.user_id ? updated : u)));
     } catch (e) {
-      setError(e instanceof ApiError ? e.detail : "操作失败");
+      const detail = e instanceof ApiError ? e.detail : "操作失败";
+      setRowErrors((prev) => ({ ...prev, [userId]: detail }));
     } finally {
       setBusy((prev) => {
         const next = new Set(prev);
@@ -86,8 +100,13 @@ export default function AdminUsers(): JSX.Element {
                 <td>{u.role === "admin" ? "管理员" : "普通用户"}</td>
                 <td>{u.status === "active" ? "正常" : "已禁用"}</td>
                 <td>{u.email_verified ? "已验证" : "未验证"}</td>
-                <td className={styles.nowrap}>{u.created_at}</td>
+                <td className={styles.nowrap}>{fmtTime(u.created_at)}</td>
                 <td>
+                  {rowErrors[u.user_id] !== undefined && (
+                    <div className={styles.error} role="alert">
+                      {rowErrors[u.user_id]}
+                    </div>
+                  )}
                   {u.user_id !== me?.user_id && (
                     <div className={styles.actions}>
                       <button

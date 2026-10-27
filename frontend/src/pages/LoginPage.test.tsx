@@ -34,6 +34,18 @@ describe("LoginPage", () => {
     await waitFor(() => expect(window.location.hash).toBe("#/verify"));
   });
 
+  it("未验证且 identifier 是用户名 → 验证页邮箱不预填（issue #120）", async () => {
+    vi.stubGlobal("fetch", vi.fn(() => Promise.resolve(json(401, { detail: "邮箱未验证", reason: "unverified" }))));
+    const { unmount } = render(<LoginPage mode="login" />);
+    fireEvent.change(screen.getByLabelText("用户名或邮箱"), { target: { value: "alice" } });
+    fireEvent.change(screen.getByLabelText("密码"), { target: { value: "password1" } });
+    fireEvent.click(screen.getByRole("button", { name: "登录" }));
+    await waitFor(() => expect(window.location.hash).toBe("#/verify"));
+    unmount();
+    render(<LoginPage mode="verify" />);
+    expect((screen.getByLabelText("邮箱") as HTMLInputElement).value).toBe("");
+  });
+
   it("注册：auto 模式提示去登录", async () => {
     vi.stubGlobal("fetch", vi.fn(() => Promise.resolve(json(201, { user: userBody, verification: "auto" }))));
     render(<LoginPage mode="register" />);

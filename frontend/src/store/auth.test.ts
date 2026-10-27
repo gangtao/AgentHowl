@@ -37,6 +37,21 @@ describe("useAuth", () => {
     expect(useAuth.getState()).toMatchObject({ status: "anon", user: null });
   });
 
+  it("load：网络 / 5xx 时已登录态保持，未登录态才落匿名（issue #120）", async () => {
+    useAuth.setState({ user, status: "authed" });
+    mockFetch(() => json(503, { detail: "upstream" }));
+    await useAuth.getState().load();
+    expect(useAuth.getState().status).toBe("authed");
+    expect(useAuth.getState().user).toEqual(user);
+    useAuth.setState({ user: null, status: "loading" });
+    await useAuth.getState().load();
+    expect(useAuth.getState().status).toBe("anon");
+    useAuth.setState({ user, status: "authed" });
+    mockFetch(() => json(401, { detail: "未登录" }));
+    await useAuth.getState().load();
+    expect(useAuth.getState().status).toBe("anon");
+  });
+
   it("login 成功写入 user；失败抛 ApiError 带 reason", async () => {
     mockFetch(() => json(200, { user }));
     await useAuth.getState().login("alice", "password1");

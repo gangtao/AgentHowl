@@ -40,11 +40,22 @@ function writeNext(value: string): void {
   }
 }
 
+function clearNext(): void {
+  try {
+    sessionStorage.removeItem(NEXT_KEY);
+  } catch {
+    // 同上
+  }
+}
+
+const AUTH_ROUTES = new Set(["login", "register", "verify"]);
+
 export default function App(): JSX.Element {
   const [hash, setHash] = useState<ParsedHash>(() => parseHash());
   const status = useAuth((s) => s.status);
   const user = useAuth((s) => s.user);
-  const anonLogin = status === "anon" && hash.route !== "login" && hash.route !== "register" && hash.route !== "verify" && hash.route !== "game";
+  const authRoute = AUTH_ROUTES.has(hash.route);
+  const anonLogin = status === "anon" && !authRoute && hash.route !== "game";
 
   useEffect(() => {
     setUnauthorizedHandler(() => {
@@ -59,6 +70,19 @@ export default function App(): JSX.Element {
   useEffect(() => {
     if (anonLogin) writeNext(location.hash || "#/");
   }, [anonLogin]);
+
+  // issue #120：登录态下打开 #/login、#/register、#/verify 不再显示表单——直接回跳到记下的目的地；
+  // 目的地用过即清，不然下次匿名访问会跳到上一次残留的页面。
+  useEffect(() => {
+    if (status !== "authed") return;
+    if (authRoute) {
+      const next = readNext();
+      clearNext();
+      window.location.hash = next.startsWith("#/login") || next.startsWith("#/register") || next.startsWith("#/verify") ? "#/" : next;
+    } else {
+      clearNext();
+    }
+  }, [status, authRoute]);
 
   useEffect(() => {
     const onHash = (): void => setHash(parseHash());
@@ -79,6 +103,7 @@ export default function App(): JSX.Element {
   }
 
   if (hash.route === "login" || hash.route === "register" || hash.route === "verify") {
+    if (status === "authed") return <p className="text-muted">载入中…</p>; // 正在回跳
     return <LoginPage mode={hash.route} next={readNext()} />;
   }
 

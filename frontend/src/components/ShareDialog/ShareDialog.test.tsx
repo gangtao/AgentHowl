@@ -13,4 +13,12 @@ describe("ShareDialog", () => {
     expect(screen.queryByLabelText(/观众链接/)).toBeNull();
     expect(screen.queryByLabelText(/上帝视角链接/)).toBeNull();
   });
+  it("主按钮文案：有 GM 链接「进入上帝视角」，无 GM 链接「进入对局」（issue #120）", () => {
+    const { unmount } = render(<ShareDialog gameId="g_1" gmToken="G" shareToken="S" onEnter={vi.fn()} onLater={vi.fn()} />);
+    expect(screen.getByRole("button", { name: "进入上帝视角 →" })).toBeInTheDocument();
+    unmount();
+    render(<ShareDialog gameId="g_1" gmToken={null} shareToken="S" onEnter={vi.fn()} onLater={vi.fn()} />);
+    expect(screen.getByRole("button", { name: "进入对局 →" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "进入上帝视角 →" })).toBeNull();
+  });
 });
