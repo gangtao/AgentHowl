@@ -1,11 +1,11 @@
 """observation 公开字段增量（issue #31 Task 1）：竞选/PK 公开信息对所有座位可见。"""
 
 from app.cli.bot import RandomBot
-from app.engine.config import build_preset
+from app.engine.config import Faction, RoleType, build_preset
 from app.engine.engine import create_game, step
 from app.engine.observation import build_observation
 from app.engine.phases import Phase, expected_actors
-from app.engine.state import GameState
+from app.engine.state import GameState, Player
 
 
 def _advance_until(state: GameState, pred) -> GameState:
@@ -70,3 +70,67 @@ def test_defaults_keep_old_constructions_valid() -> None:
     assert obs.sheriff_candidates == []
     assert obs.vote_candidates == []
     assert obs.pk_speech_pending is False
+
+
+def _six(sheriff: int | None = None, dead: tuple[int, ...] = ()) -> tuple[Player, ...]:
+    return tuple(
+        Player(
+            seat=i,
+            display_name=f"P{i}",
+            role=RoleType.VILLAGER,
+            faction=Faction.GOOD,
+            alive=i not in dead,
+            is_sheriff=i == sheriff,
+        )
+        for i in range(6)
+    )
+
+
+def _st(**kw: object) -> GameState:
+    cfg = build_preset("std_9_kill_side").model_copy(update={"num_players": 6, "seed": 1})
+    cfg = cfg.model_copy(
+        update={"sheriff": cfg.sheriff.model_copy(update={"night_death_badge_window": True})}
+    )
+    base: dict[str, object] = {"game_id": "g", "config": cfg, "round": 2, "players": _six()}
+    base.update(kw)
+    return GameState(**base)  # type: ignore[arg-type]
+
+
+def test_sheriff_options_follow_engine_validation() -> None:
+    """issue #126：观测里的 sheriff_options 由服务端按引擎校验给出，前端只渲染这个集合。"""
+    # 报名阶段：未表态座位可上警 / 不上
+    st = _st(phase=Phase.SHERIFF_ELECTION, election_stage="candidacy")
+    assert build_observation(st, 0).sheriff_options == ["run_for_sheriff", "withdraw"]
+    # 警下投票：非候选人只能投；候选人没有警长行动
+    st = _st(phase=Phase.SHERIFF_ELECTION, election_stage="vote", sheriff_candidates=(1, 2))
+    assert build_observation(st, 0).sheriff_options == ["vote_sheriff"]
+    assert build_observation(st, 1).sheriff_options == []
+    # 发言方向：只有警长本人
+    st = _st(
+        phase=Phase.SHERIFF_ELECTION,
+        election_stage="direction",
+        sheriff_seat=2,
+        players=_six(sheriff=2),
+    )
+    assert build_observation(st, 2).sheriff_options == ["set_speech_direction"]
+    assert build_observation(st, 0).sheriff_options == []
+    # 两步制遗言：普通遗言回合死亡警长没有任何警长行动（曾误显示发言方向按钮）
+    st = _st(
+        phase=Phase.LAST_WORDS,
+        sheriff_seat=2,
+        players=_six(sheriff=2, dead=(2,)),
+        speech_order=(2,),
+        speech_idx=0,
+        resume_token="day_speech",
+    )
+    assert build_observation(st, 2).sheriff_options == []
+    # 警徽处置窗口：只有移交 / 撕
+    st = _st(
+        phase=Phase.LAST_WORDS,
+        sheriff_seat=2,
+        players=_six(sheriff=2, dead=(2,)),
+        speech_order=(2,),
+        speech_idx=0,
+        resume_token="badge_only:day_speech",
+    )
+    assert build_observation(st, 2).sheriff_options == ["pass_badge", "tear_badge"]

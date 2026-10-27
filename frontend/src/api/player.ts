@@ -34,6 +34,8 @@ export interface PlayerObservation {
   vote_candidates: number[];
   pk_speech_pending: boolean;
   badge_only: boolean;
+  /** 服务端按引擎校验给出的当前可用警长行动（issue #126）；前端只渲染这个集合。 */
+  sheriff_options: string[];
   available_actions: number[];
 }
 

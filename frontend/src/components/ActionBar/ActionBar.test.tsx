@@ -21,6 +21,7 @@ function obs(extra: Partial<PlayerObservation>): PlayerObservation {
     vote_candidates: [],
     pk_speech_pending: false,
     badge_only: false,
+    sheriff_options: [],
     available_actions: [],
     ...extra,
   };
@@ -99,7 +100,7 @@ describe("ActionBar", () => {
     const { rerender } = render(
       <ActionBar
         {...base}
-        prompt={prompt(["sheriff_action", "speak"], { phase: "SHERIFF_ELECTION", election_stage: "candidacy" })}
+        prompt={prompt(["sheriff_action", "speak"], { phase: "SHERIFF_ELECTION", election_stage: "candidacy", sheriff_options: ["run_for_sheriff", "withdraw"] })}
         onSubmit={onSubmit}
       />,
     );
@@ -108,7 +109,7 @@ describe("ActionBar", () => {
     rerender(
       <ActionBar
         {...base}
-        prompt={prompt(["sheriff_action"], { phase: "LAST_WORDS", badge_only: true, sheriff_seat: 2, state_version: 2 })}
+        prompt={prompt(["sheriff_action"], { phase: "LAST_WORDS", badge_only: true, sheriff_seat: 2, state_version: 2, sheriff_options: ["pass_badge", "tear_badge"] })}
         onSubmit={onSubmit}
       />,
     );
@@ -122,7 +123,7 @@ describe("ActionBar", () => {
     render(
       <ActionBar
         {...base}
-        prompt={prompt(["sheriff_action"], { phase: "SHERIFF_ELECTION", election_stage: "candidacy" })}
+        prompt={prompt(["sheriff_action"], { phase: "SHERIFF_ELECTION", election_stage: "candidacy", sheriff_options: ["run_for_sheriff", "withdraw"] })}
         onSubmit={onSubmit}
       />,
     );
@@ -140,6 +141,7 @@ describe("ActionBar", () => {
           phase: "SHERIFF_ELECTION",
           election_stage: "withdraw",
           sheriff_candidates: [1, 2],
+          sheriff_options: ["run_for_sheriff", "withdraw"],
         })}
         onSubmit={onSubmit}
       />,
@@ -169,6 +171,7 @@ describe("ActionBar", () => {
           phase: "LAST_WORDS",
           badge_only: true,
           sheriff_seat: 2,
+          sheriff_options: ["pass_badge", "tear_badge"],
           state_version: 2,
         })}
         onSubmit={vi.fn()}
@@ -195,6 +198,49 @@ describe("ActionBar", () => {
     fireEvent.click(screen.getByRole("tab", { name: "警长" }));
     expect(screen.queryByRole("button", { name: "撕警徽" })).toBeNull();
     expect(screen.queryByRole("button", { name: "移交警徽" })).toBeNull();
+    // issue #126：发言方向只在服务端给出 set_speech_direction 时显示
+    expect(screen.queryByRole("button", { name: "从左发言" })).toBeNull();
+    expect(screen.getByText("当前没有可用的警长行动。")).toBeInTheDocument();
+  });
+
+  it("sheriff_action：只渲染服务端 sheriff_options 给出的行动（警长方向 / 警下投票）", () => {
+    const onSubmit = vi.fn();
+    const { rerender } = render(
+      <ActionBar
+        {...base}
+        prompt={prompt(["sheriff_action"], {
+          phase: "SHERIFF_ELECTION",
+          election_stage: "direction",
+          sheriff_seat: 2,
+          sheriff_options: ["set_speech_direction"],
+        })}
+        onSubmit={onSubmit}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "从右发言" }));
+    expect(onSubmit).toHaveBeenLastCalledWith({
+      tool: "sheriff_action",
+      arguments: { action_type: "set_speech_direction", direction: "RIGHT" },
+    });
+    rerender(
+      <ActionBar
+        {...base}
+        prompt={prompt(["sheriff_action"], {
+          phase: "SHERIFF_ELECTION",
+          election_stage: "vote",
+          sheriff_candidates: [0, 1],
+          sheriff_options: ["vote_sheriff"],
+        })}
+        onSubmit={onSubmit}
+      />,
+    );
+    expect(screen.queryByRole("button", { name: "从右发言" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "1号" }));
+    fireEvent.click(screen.getByRole("button", { name: "投给候选人" }));
+    expect(onSubmit).toHaveBeenLastCalledWith({
+      tool: "sheriff_action",
+      arguments: { action_type: "vote_sheriff", target_seat: 1 },
+    });
   });
 
   it("self_destruct 需二次确认", () => {
@@ -240,6 +286,7 @@ describe("ActionBar", () => {
           election_stage: "vote",
           sheriff_candidates: [0, 1],
           vote_candidates: [0, 1],
+          sheriff_options: ["vote_sheriff"],
         })}
         onSubmit={onSubmit}
       />,

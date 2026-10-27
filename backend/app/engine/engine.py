@@ -15,6 +15,7 @@ from app.engine import rng
 from app.engine.actions import (
     Action,
     DayVote,
+    Direction,
     NightAction,
     NightActionType,
     RejectedReason,
@@ -483,6 +484,28 @@ def _validate_sheriff(state: GameState, a: SheriffAction) -> RejectedReason | No
             return RejectedReason.NOT_A_CANDIDATE
         return None
     return RejectedReason.WRONG_PHASE
+
+
+def sheriff_options(state: GameState, seat: int) -> list[str]:
+    """该座位此刻可提交的警长行动类型（issue #126）：逐类型探测 _validate_sheriff，
+    与真实校验同口径；需要目标的类型用一个合法代表目标探测。供观测 sheriff_options 字段。"""
+    probes: list[SheriffAction] = []
+    alive_other = next((p.seat for p in state.players if p.alive and p.seat != seat), None)
+    candidate = next(iter(sorted(state.sheriff_candidates)), None)
+    for at in SheriffActionType:
+        if at == SheriffActionType.VOTE_SHERIFF:
+            if candidate is None:
+                continue
+            probes.append(SheriffAction(actor_seat=seat, action_type=at, target_seat=candidate))
+        elif at == SheriffActionType.PASS_BADGE:
+            if alive_other is None:
+                continue
+            probes.append(SheriffAction(actor_seat=seat, action_type=at, target_seat=alive_other))
+        elif at == SheriffActionType.SET_SPEECH_DIRECTION:
+            probes.append(SheriffAction(actor_seat=seat, action_type=at, direction=Direction.LEFT))
+        else:
+            probes.append(SheriffAction(actor_seat=seat, action_type=at))
+    return [p.action_type.value for p in probes if _validate_sheriff(state, p) is None]
 
 
 # ---------- 应用行动 ----------

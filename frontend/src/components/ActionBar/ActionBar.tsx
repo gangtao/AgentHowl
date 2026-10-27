@@ -330,14 +330,39 @@ export default function ActionBar({
         </>
       );
   } else if (active === "sheriff_action") {
-    const isSheriff = obs.sheriff_seat === obs.my_seat;
-    const isCandidate = obs.sheriff_candidates.includes(obs.my_seat);
-    const voting =
-      (obs.phase === "SHERIFF_ELECTION" && obs.election_stage === "vote") || obs.phase === "SHERIFF_PK";
-    // 只认服务端给出的 badge_only：普通遗言窗口里引擎不接受移交/撕警徽
-    const badgeWindow = obs.badge_only;
+    // 零裁决（issue #126）：只渲染服务端 sheriff_options 里的行动；文案按阶段区分
+    const options = obs.sheriff_options ?? [];
+    const candidacy = obs.phase === "SHERIFF_ELECTION" && obs.election_stage === "candidacy";
     const buttons: JSX.Element[] = [];
-    if (badgeWindow) {
+    if (options.includes("run_for_sheriff")) {
+      buttons.push(
+        <button key="run" type="button" className="btn btn-primary" disabled={pending} onClick={() => submit(sheriffCall("run_for_sheriff"))}>
+          {candidacy ? "上警" : "坚持竞选"}
+        </button>,
+      );
+    }
+    if (options.includes("withdraw")) {
+      buttons.push(
+        <button key="withdraw" type="button" className="btn btn-secondary" disabled={pending} onClick={() => submit(sheriffCall("withdraw"))}>
+          {candidacy ? "不上" : "退水"}
+        </button>,
+      );
+    }
+    if (options.includes("vote_sheriff")) {
+      buttons.push(
+        <SeatButtons key="vote-seats" seats={obs.sheriff_candidates} selected={target} onPick={setTarget} />,
+        <button
+          key="vote"
+          type="button"
+          className="btn btn-primary"
+          disabled={pending || target === null}
+          onClick={() => target !== null && submit(sheriffCall("vote_sheriff", { target }))}
+        >
+          投给候选人
+        </button>,
+      );
+    }
+    if (options.includes("pass_badge")) {
       buttons.push(
         <SeatButtons key="pass-seats" seats={aliveTargets(obs, false)} selected={target} onPick={setTarget} />,
         <button
@@ -349,61 +374,24 @@ export default function ActionBar({
         >
           移交警徽
         </button>,
+      );
+    }
+    if (options.includes("tear_badge")) {
+      buttons.push(
         <button key="tear" type="button" className={`btn btn-secondary ${styles.danger}`} disabled={pending} onClick={() => submit(sheriffCall("tear_badge"))}>
           撕警徽
         </button>,
       );
-    } else {
-      if (obs.phase === "SHERIFF_ELECTION" && obs.election_stage === "candidacy" && !isCandidate) {
-        buttons.push(
-          <button key="run" type="button" className="btn btn-primary" disabled={pending} onClick={() => submit(sheriffCall("run_for_sheriff"))}>
-            上警
-          </button>,
-          // 报名阶段 withdraw = 不上（引擎记 running=false）
-          <button key="not-run" type="button" className="btn btn-secondary" disabled={pending} onClick={() => submit(sheriffCall("withdraw"))}>
-            不上
-          </button>,
-        );
-      }
-      if (isCandidate) {
-        buttons.push(
-          <button key="withdraw" type="button" className="btn btn-secondary" disabled={pending} onClick={() => submit(sheriffCall("withdraw"))}>
-            退水
-          </button>,
-        );
-        if (obs.phase === "SHERIFF_ELECTION" && obs.election_stage === "withdraw") {
-          // 退水确认子阶段 run_for_sheriff = 坚持竞选
-          buttons.push(
-            <button key="stay" type="button" className="btn btn-primary" disabled={pending} onClick={() => submit(sheriffCall("run_for_sheriff"))}>
-              坚持竞选
-            </button>,
-          );
-        }
-      }
-      if (voting && !isCandidate && obs.sheriff_candidates.length > 0) {
-        buttons.push(
-          <SeatButtons key="vote-seats" seats={obs.sheriff_candidates} selected={target} onPick={setTarget} />,
-          <button
-            key="vote"
-            type="button"
-            className="btn btn-primary"
-            disabled={pending || target === null}
-            onClick={() => target !== null && submit(sheriffCall("vote_sheriff", { target }))}
-          >
-            投给候选人
-          </button>,
-        );
-      }
-      if (isSheriff) {
-        buttons.push(
-          <button key="left" type="button" className="btn btn-secondary" disabled={pending} onClick={() => submit(sheriffCall("set_speech_direction", { direction: "LEFT" }))}>
-            从左发言
-          </button>,
-          <button key="right" type="button" className="btn btn-secondary" disabled={pending} onClick={() => submit(sheriffCall("set_speech_direction", { direction: "RIGHT" }))}>
-            从右发言
-          </button>,
-        );
-      }
+    }
+    if (options.includes("set_speech_direction")) {
+      buttons.push(
+        <button key="left" type="button" className="btn btn-secondary" disabled={pending} onClick={() => submit(sheriffCall("set_speech_direction", { direction: "LEFT" }))}>
+          从左发言
+        </button>,
+        <button key="right" type="button" className="btn btn-secondary" disabled={pending} onClick={() => submit(sheriffCall("set_speech_direction", { direction: "RIGHT" }))}>
+          从右发言
+        </button>,
+      );
     }
     body =
       buttons.length === 0 ? (
