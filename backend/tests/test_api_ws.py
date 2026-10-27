@@ -39,6 +39,7 @@ def test_spectator_stream_public_only_until_game_over(client: TestClient) -> Non
             if frame["type"] == "game_over":
                 break
     events = [f for f in frames if f["type"] == "game_event"]
+    assert all("agent_ids" not in f["event"] for f in events)  # issue #123：归因只在 meta
     assert events and all(f["event"]["visibility"] == "PUBLIC" for f in events)
     assert any(
         f["type"] == "phase_change" for f in frames
