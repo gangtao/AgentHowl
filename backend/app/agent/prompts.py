@@ -11,7 +11,7 @@ import random
 from typing import Any
 
 from app.agent.decisions import DecisionKind
-from app.engine.config import GameConfig, RoleType, WinCondition
+from app.engine.config import GameConfig, RoleType, WinCondition, WolfKillRule
 from app.engine.observation import PlayerObservation
 
 ROLE_BRIEFS: dict[RoleType, str] = {
@@ -79,14 +79,60 @@ def static_system_prompt(
     # 为空时输出逐字不变
     personality_block = f"== 你的性格 ==\n{personality_text}\n" if personality_text else ""
     experience_block = f"== 跨局经验 ==\n{experience_text}\n" if experience_text else ""
+    brief = role_rule_brief(config, role)
+    rule_line = f"\n{brief}" if brief else ""
     return (
         "你在玩狼人杀。服务器是唯一裁决者，你只提交意图。\n"
         f"本局配置：{config.num_players} 人（{roles_desc}）；胜利条件：{win}；{sheriff}。\n"
-        f"你是 {seat} 号，角色：{role.value}。{ROLE_BRIEFS[role]}\n"
+        f"你是 {seat} 号，角色：{role.value}。{ROLE_BRIEFS[role]}{rule_line}\n"
         f"{personality_block}"
         f"{experience_block}"
         "发言用中文，符合角色立场；狼人白天绝不能泄露夜间的私下谋划。"
     )
+
+
+_WOLF_RULE_TEXT = {
+    WolfKillRule.UNANIMOUS_OR_NO_KILL: "刀口须狼队全员一致，否则空刀",
+    WolfKillRule.MAJORITY: "刀口按相对多数决定，并列（含与空刀并列）则空刀",
+    WolfKillRule.RANDOM_PROPOSAL: "刀口从各狼提案中加权随机抽取",
+}
+
+
+def role_rule_brief(config: GameConfig, role: RoleType) -> str:
+    """本局与该角色相关的可配置规则，一两句自然语言（issue #63）。
+
+    模型看不到 GameConfig；技能里「除非本局规则明确开放，否则不要自救」这类条件对它不可判定——
+    std_9_kill_side 恰恰开放首夜自救，女巫会白白放弃；禁自救的板子上提交 SAVE 又会被拒。
+    与规则无关的角色返回空串。
+    """
+    if role == RoleType.WITCH:
+        w = config.witch
+        if w.self_rescue_always:
+            rescue = "全程可自救"
+        elif w.self_rescue_first_night:
+            rescue = "仅首夜可自救"
+        else:
+            rescue = "不可自救"
+        potions = "同夜可双开（解药与毒药同用）" if w.two_potions_same_night else "同夜不能双开"
+        knows = (
+            "解药用完后仍会告知每夜刀口"
+            if w.knows_kill_after_antidote_used
+            else "解药用完后不再告知刀口"
+        )
+        return f"本局女巫规则：{rescue}；{potions}；{knows}。"
+    if role == RoleType.GUARD:
+        g = config.guard
+        self_guard = "可自守" if g.can_guard_self else "不可自守"
+        consec = "可连守同一人" if g.can_guard_same_target_consecutively else "不能连守同一人"
+        cancel = "同守同救则目标仍死亡" if g.guard_plus_antidote_cancels else "同守同救不冲突"
+        return f"本局守卫规则：{self_guard}；{consec}；{cancel}。"
+    if role == RoleType.WEREWOLF:
+        rule = _WOLF_RULE_TEXT[config.wolf_kill_rule]
+        empty = "可以主动空刀" if config.allow_wolf_empty_knife else "不能空刀"
+        self_knife = "可以自刀" if config.allow_wolf_self_knife else "不能自刀"
+        rounds = f"提案最多 {config.wolf_consensus_rounds} 轮"
+        return f"本局狼人规则：{rule}；{rounds}；{empty}；{self_knife}。"
+    return ""
 
 
 def _alive_others(obs: PlayerObservation) -> list[int]:
