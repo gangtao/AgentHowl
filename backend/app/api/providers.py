@@ -16,6 +16,7 @@ from pydantic import BaseModel
 from app.agent.provider import Provider, ProviderInput, ProviderPublic, redact_secret
 from app.api.auth import can_access, require_user
 from app.runtime.agent_library import AgentLibraryStore
+from app.runtime.netguard import private_api_base_blocking_enabled, private_api_base_reason
 from app.runtime.provider_probe import ProviderProbe
 from app.runtime.provider_store import ProviderStore
 from app.runtime.users import User
@@ -61,6 +62,16 @@ def _get_owned_provider(store: ProviderStore, user: User, provider_id: str) -> P
     return p
 
 
+def _check_api_base(api_base: str | None) -> None:
+    """issue #120：公网部署开启 AGENTHOWL_BLOCK_PRIVATE_API_BASE 后，
+    拒绝指向内网 / 本机的 api_base。"""
+    if not private_api_base_blocking_enabled():
+        return
+    reason = private_api_base_reason(api_base)
+    if reason is not None:
+        raise HTTPException(status_code=400, detail=f"api_base 不允许指向内网 / 本机（{reason}）")
+
+
 def _check_name_unique(
     name: str, store: ProviderStore, *, owner_id: str, exclude_id: str | None
 ) -> None:
@@ -95,6 +106,7 @@ def create_provider(
     store: ProviderStore = Depends(get_provider_store),
 ) -> ProviderPublic:
     _check_name_unique(body.name, store, owner_id=user.user_id, exclude_id=None)
+    _check_api_base(body.api_base)
     now = _now()
     provider = Provider(
         provider_id=f"p_{secrets.token_hex(4)}",
@@ -131,6 +143,7 @@ def update_provider(
     （不像 api_key 那样"保留原值"——PUT 对其余字段一律整体覆盖）。
     """
     existing = _get_owned_provider(store, user, provider_id)
+    _check_api_base(body.api_base)
     _check_name_unique(
         body.name, store, owner_id=existing.owner_id or user.user_id, exclude_id=provider_id
     )

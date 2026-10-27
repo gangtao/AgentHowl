@@ -191,3 +191,28 @@ def test_corrupt_provider_file_returns_500_without_echoing_secret(tmp_path) -> N
     r = client.get("/api/v1/providers/p_bad")
     assert r.status_code == 500
     assert secret not in r.text
+
+
+def test_private_api_base_blocked_when_enabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    """issue #120：AGENTHOWL_BLOCK_PRIVATE_API_BASE=1 时拒绝指向本机 / 内网 / 元数据地址的
+    api_base；默认关闭（本地 Ollama 就在 127.0.0.1）。"""
+    from app.runtime.netguard import private_api_base_reason
+
+    assert private_api_base_reason("http://127.0.0.1:11434") is not None
+    assert private_api_base_reason("http://10.1.2.3:8000/v1") is not None
+    assert private_api_base_reason("http://169.254.169.254/latest/meta-data") is not None
+    assert private_api_base_reason("http://localhost:11434") is not None
+    assert private_api_base_reason("https://8.8.8.8/v1") is None
+    assert private_api_base_reason(None) is None
+    body = {"name": "本地", "kind": "openai_compatible", "api_base": "http://127.0.0.1:11434/v1"}
+    with TestClient(make_app()) as c:
+        login_as(c, "root", role="admin")
+        assert c.post("/api/v1/providers", json=body).status_code == 201  # 默认不拦
+        monkeypatch.setenv("AGENTHOWL_BLOCK_PRIVATE_API_BASE", "1")
+        r = c.post("/api/v1/providers", json={**body, "name": "本地2"})
+        assert r.status_code == 400 and "内网" in r.json()["detail"]
+        ok = c.post(
+            "/api/v1/providers",
+            json={"name": "公网", "kind": "openai_compatible", "api_base": "https://8.8.8.8/v1"},
+        )
+        assert ok.status_code == 201

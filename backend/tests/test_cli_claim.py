@@ -146,3 +146,29 @@ def test_main_warns_to_stop_server(tmp_path: Path, capsys: pytest.CaptureFixture
     assert "请先停止 AgentHowl 服务" not in capsys.readouterr().err
     main(["--user", "alice", "--data-dir", str(tmp_path)])
     assert "请先停止 AgentHowl 服务" in capsys.readouterr().err
+
+
+def test_claim_users_db_from_env_and_missing_db_is_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """issue #120：用户库路径读 AGENTHOWL_USERS_DB / --users-db；库文件不存在时报错而不是建空库。"""
+    uid = _seed(tmp_path)
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    (tmp_path / "users.db").rename(elsewhere / "u.db")
+    with pytest.raises(LookupError, match="用户库不存在"):
+        claim(tmp_path, "alice", dry_run=True)
+    assert not (tmp_path / "users.db").exists()  # 没有悄悄建空库
+    monkeypatch.setenv("AGENTHOWL_USERS_DB", str(elsewhere / "u.db"))
+    assert claim(tmp_path, "alice", dry_run=True)["games"] == 1
+    assert claim(tmp_path, "alice", dry_run=False, users_db=elsewhere / "u.db")["games"] == 1
+    assert JsonFileEventStore(tmp_path / "games").load_meta("g_old").owner_id == uid
+
+
+def test_claim_cleans_stale_tmp(tmp_path: Path) -> None:
+    _seed(tmp_path)
+    stale = tmp_path / "games" / "g_old.jsonl.tmp"
+    stale.write_bytes(b"half")
+    claim(tmp_path, "alice", dry_run=False)
+    assert not stale.exists()
+    assert not list((tmp_path / "games").glob("*.tmp"))

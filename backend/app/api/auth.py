@@ -195,8 +195,16 @@ async def register(req: RegisterRequest, request: Request) -> RegisterResponse:
     password_hash = await run_in_threadpool(hash_password, req.password)
     users = get_users(request)
     mailer: Mailer = request.app.state.mailer
+    # issue #120：未验证邮箱占位——任何人都能用他人邮箱注册并永久占住。验证码过期后仍未验证的
+    # 账号视为失效占位，允许被重新注册覆盖（复用 user_id，旧验证码与会话一并清掉）
+    reuse_id: str | None = None
+    squatter = users.get_by_email(email) or users.get_by_username(username)
+    if squatter is not None and squatter.email_verified_at is None:
+        code = users.get_email_code(squatter.user_id)
+        if code is None or is_expired(code.expires_at):
+            reuse_id = squatter.user_id
     user = User(
-        user_id=new_user_id(),
+        user_id=reuse_id or new_user_id(),
         username=username,
         email=email,
         password_hash=password_hash,
@@ -207,6 +215,9 @@ async def register(req: RegisterRequest, request: Request) -> RegisterResponse:
         users.put(user)
     except UserConflictError as exc:
         raise HTTPException(status_code=409, detail="用户名或邮箱已被占用") from exc
+    if reuse_id is not None:
+        users.delete_email_code(reuse_id)
+        users.delete_sessions_of(reuse_id)
     if mailer.enabled:
         await _send_code(request, user)
         return RegisterResponse(user=user.public(), verification="email")

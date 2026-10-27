@@ -474,3 +474,34 @@ def test_runner_crash_pushes_error_frame_and_closes_4500() -> None:
             while True:
                 last = ws2.receive_json()
         assert exc2.value.code == 4500 and last.get("code") == "RUNNER_CRASHED"
+
+
+def test_ws_cookie_entry_checks_origin() -> None:
+    """issue #120：cookie 入口校验 Origin——跨站页面带 cookie 连 WS 被 4403；
+    同源与无 Origin 放行。"""
+    app = make_app()
+    with TestClient(app) as owner:
+        login_as(owner, "alice")
+        created = owner.post("/api/v1/games", json={"preset": "std_9_kill_side"}).json()
+        gid = created["game_id"]
+        owner.post(
+            f"/api/v1/games/{gid}/start",
+            json={},
+            headers={"Authorization": f"Bearer {created['host_token']}"},
+        )
+        with (
+            pytest.raises(WebSocketDisconnect) as exc,
+            owner.websocket_connect(
+                f"/api/v1/ws?game_id={gid}", headers={"origin": "https://evil.example"}
+            ) as ws,
+        ):
+            ws.receive_json()
+        assert exc.value.code == 4403
+        with owner.websocket_connect(
+            f"/api/v1/ws?game_id={gid}", headers={"origin": "http://testserver"}
+        ) as ws:
+            assert ws.receive_json()["type"] == "game_event"
+        with owner.websocket_connect(
+            f"/api/v1/ws?game_id={gid}"
+        ) as ws:  # 无 Origin：非浏览器客户端
+            assert ws.receive_json()["type"] == "game_event"

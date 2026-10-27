@@ -376,6 +376,7 @@ issue #114：账号体系 + 按用户隔离。设计见 `docs/superpowers/specs/
 4. 固定 `AGENTHOWL_SECRET_KEY` 并持久化 `backend/data`（含 `users.db`、`secret.key`）。
 5. Provider 密钥目前仍是明文 0600 落盘（加密落盘见后续 issue）。
 6. 普通用户的 Agent 必须绑定自己的 Provider（BYOK），服务端 `.env` 里的 `OPENAI_API_KEY` 等环境密钥只有管理员的档案会用到。
+7. Provider 的 `api_base` 是用户可控的出站地址（SSRF 入口）：多租户公网部署设 `AGENTHOWL_BLOCK_PRIVATE_API_BASE=1`，拒绝指向本机 / 内网 / 链路本地（含云元数据 169.254.169.254）的地址；本地单机用 Ollama 时保持关闭。
 
 ### 自己入座 / Play a seat yourself（issue #115）
 

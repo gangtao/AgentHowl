@@ -232,3 +232,30 @@ def test_resend_after_expiry_resets_attempts(client: TestClient, mailer: Recordi
     assert users.get_email_code(uid).attempts == 0
     r = client.post("/api/v1/auth/verify", json={"email": "a@x.io", "code": _code_from(mailer)})
     assert r.status_code == 200
+
+
+def test_unverified_squatter_can_be_overwritten_after_code_expiry(
+    client: TestClient, mailer: RecordingMailer
+) -> None:
+    """issue #120：他人邮箱被注册但从未验证——验证码有效期内仍 409；过期后允许重新注册覆盖
+    （复用 user_id，旧验证码 / 会话清掉），受害者不再被永久占位。"""
+    users = client.app.state.users  # type: ignore[attr-defined]
+    r = client.post(
+        "/api/v1/auth/register",
+        json={"username": "mallory", "email": "victim@x.io", "password": "password1"},
+    )
+    assert r.status_code == 201
+    squat_id = users.get_by_email("victim@x.io").user_id
+    again = {"username": "victim", "email": "victim@x.io", "password": "password2"}
+    assert client.post("/api/v1/auth/register", json=again).status_code == 409  # 验证码仍有效
+    code = users.get_email_code(squat_id)
+    users.put_email_code(code.model_copy(update={"expires_at": "2000-01-01T00:00:00+00:00"}))
+    r = client.post("/api/v1/auth/register", json=again)
+    assert r.status_code == 201, r.text
+    owner = users.get_by_email("victim@x.io")
+    assert owner.username == "victim" and owner.user_id == squat_id
+    assert users.get_by_username("mallory") is None
+    assert mailer.sent[-1][0] == "victim@x.io"  # 新验证码发给真正的邮箱主人
+    # 已验证的账号不会被覆盖
+    client.post("/api/v1/auth/verify", json={"email": "victim@x.io", "code": _code_from(mailer)})
+    assert client.post("/api/v1/auth/register", json=again).status_code == 409
