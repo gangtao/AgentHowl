@@ -18,6 +18,7 @@ import asyncio
 import contextlib
 from collections.abc import Awaitable, Callable
 from typing import Any
+from urllib.parse import urlsplit
 
 from fastapi import APIRouter, HTTPException, Query, WebSocket, WebSocketDisconnect
 
@@ -121,6 +122,21 @@ def _seq_round_map(gm_events: list[Event]) -> dict[int, int]:
     return out
 
 
+def _same_origin(origin: str, host: str | None) -> bool:
+    """Origin 的 host[:port] 与请求 Host 一致才算同源（端口缺省按 scheme 补齐）。"""
+    try:
+        parts = urlsplit(origin)
+    except ValueError:
+        return False
+    if not parts.hostname or not host:
+        return False
+    port = parts.port or (443 if parts.scheme == "https" else 80)
+    h = host.lower()
+    if ":" not in h:
+        h = f"{h}:80" if port == 80 else f"{h}:443" if port == 443 else h
+    return f"{parts.hostname.lower()}:{port}" == h
+
+
 @router.websocket("/ws")
 async def ws_endpoint(
     ws: WebSocket,
@@ -148,6 +164,12 @@ async def ws_endpoint(
             if share:
                 info = _share_viewer(games, ws.app.state.secret, game_id, share)
             else:
+                # issue #120：cookie 入口校验 Origin（浏览器跨站页面带不上 Bearer，但带得上
+                # SameSite=Lax 的 cookie）；非浏览器客户端不带 Origin 则放行
+                origin = ws.headers.get("origin")
+                if origin and not _same_origin(origin, ws.headers.get("host")):
+                    await ws.close(code=4403)
+                    return
                 user = user_from_cookie(ws.app.state.users, ws.cookies)
                 info = _session_viewer(games, user, game_id)
         except HTTPException as exc:

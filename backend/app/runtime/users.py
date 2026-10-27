@@ -116,6 +116,11 @@ def new_user_id() -> str:
     return f"u_{secrets.token_hex(4)}"
 
 
+def session_key(session_id: str) -> str:
+    """会话 id 的存储键（issue #120）：库里只存 sha256，拿到数据库也拼不出可用的 cookie。"""
+    return hashlib.sha256(session_id.encode("utf-8")).hexdigest()
+
+
 def new_session(user_id: str) -> Session:
     return Session(
         session_id=secrets.token_urlsafe(32),
@@ -253,19 +258,20 @@ class InMemoryUserStore:
         return len(self._users)
 
     def create_session(self, session: Session) -> None:
-        self._sessions[session.session_id] = session
+        self._sessions[session_key(session.session_id)] = session
 
     def get_session(self, session_id: str) -> Session | None:
-        s = self._sessions.get(session_id)
+        key = session_key(session_id)
+        s = self._sessions.get(key)
         if s is None:
             return None
         if is_expired(s.expires_at):
-            del self._sessions[session_id]
+            del self._sessions[key]
             return None
         return s
 
     def delete_session(self, session_id: str) -> None:
-        self._sessions.pop(session_id, None)
+        self._sessions.pop(session_key(session_id), None)
 
     def delete_sessions_of(self, user_id: str) -> None:
         for sid in [k for k, s in self._sessions.items() if s.user_id == user_id]:
@@ -329,9 +335,16 @@ class SqliteUserStore:
     def __init__(self, path: Path) -> None:
         self._path = path
         path.parent.mkdir(parents=True, exist_ok=True)
+        # issue #120：主文件先以 0600 创建（之前按 umask 创建再 chmod，有一瞬可读）
+        fd = os.open(path, os.O_CREAT | os.O_RDWR, 0o600)
+        os.close(fd)
+        os.chmod(path, 0o600)
         with self._conn() as conn:
             conn.executescript(_SCHEMA)
-        os.chmod(path, 0o600)
+
+    def _sidecars(self) -> tuple[Path, Path]:
+        name = self._path.name
+        return self._path.with_name(name + "-wal"), self._path.with_name(name + "-shm")
 
     @contextmanager
     def _conn(self) -> Iterator[sqlite3.Connection]:
@@ -339,6 +352,11 @@ class SqliteUserStore:
         conn.row_factory = sqlite3.Row
         try:
             conn.execute("PRAGMA journal_mode=WAL")
+            # issue #120：WAL / SHM 旁文件由 sqlite 按 umask 创建（含会话 id 与密码哈希），
+            # 开连接后立刻收紧；最后一个连接关闭时 sqlite 会删掉它们，下次再建再收
+            for side in self._sidecars():
+                if side.exists():
+                    os.chmod(side, 0o600)
             yield conn
             conn.commit()
         finally:
@@ -373,22 +391,28 @@ class SqliteUserStore:
             ).fetchone()
             if clash is not None:
                 raise UserConflictError("用户名或邮箱已被占用")
-            conn.execute(
-                f"INSERT INTO users ({_USER_COLS}) VALUES (?,?,?,?,?,?,?,?) "
-                "ON CONFLICT(user_id) DO UPDATE SET username=excluded.username, "
-                "email=excluded.email, password_hash=excluded.password_hash, role=excluded.role, "
-                "status=excluded.status, email_verified_at=excluded.email_verified_at",
-                (
-                    user.user_id,
-                    user.username,
-                    user.email,
-                    user.password_hash,
-                    user.role,
-                    user.status,
-                    user.email_verified_at,
-                    user.created_at,
-                ),
-            )
+            try:
+                conn.execute(
+                    f"INSERT INTO users ({_USER_COLS}) VALUES (?,?,?,?,?,?,?,?) "
+                    "ON CONFLICT(user_id) DO UPDATE SET username=excluded.username, "
+                    "email=excluded.email, password_hash=excluded.password_hash, "
+                    "role=excluded.role, status=excluded.status, "
+                    "email_verified_at=excluded.email_verified_at",
+                    (
+                        user.user_id,
+                        user.username,
+                        user.email,
+                        user.password_hash,
+                        user.role,
+                        user.status,
+                        user.email_verified_at,
+                        user.created_at,
+                    ),
+                )
+            except sqlite3.IntegrityError as exc:
+                # issue #120：查重与插入不是一个原子段，并发注册可能在 UNIQUE 约束上冒出来——
+                # 归一为 409 语义的 UserConflictError，而不是 500
+                raise UserConflictError("用户名或邮箱已被占用") from exc
 
     def count(self) -> int:
         with self._conn() as conn:
@@ -396,26 +420,32 @@ class SqliteUserStore:
         return int(n)
 
     def create_session(self, session: Session) -> None:
+        # issue #120：session_id 列存 sha256（升级后旧的明文会话自然失效，用户重新登录即可）
         with self._conn() as conn:
             conn.execute(
                 "INSERT INTO sessions VALUES (?,?,?,?)",
-                (session.session_id, session.user_id, session.created_at, session.expires_at),
+                (
+                    session_key(session.session_id),
+                    session.user_id,
+                    session.created_at,
+                    session.expires_at,
+                ),
             )
 
     def get_session(self, session_id: str) -> Session | None:
+        key = session_key(session_id)
         with self._conn() as conn:
             row = conn.execute(
-                "SELECT session_id, user_id, created_at, expires_at FROM sessions "
-                "WHERE session_id=?",
-                (session_id,),
+                "SELECT user_id, created_at, expires_at FROM sessions WHERE session_id=?",
+                (key,),
             ).fetchone()
             if row is None:
                 return None
             if is_expired(row["expires_at"]):
-                conn.execute("DELETE FROM sessions WHERE session_id=?", (session_id,))
+                conn.execute("DELETE FROM sessions WHERE session_id=?", (key,))
                 return None
         return Session(
-            session_id=row["session_id"],
+            session_id=session_id,
             user_id=row["user_id"],
             created_at=row["created_at"],
             expires_at=row["expires_at"],
@@ -423,7 +453,7 @@ class SqliteUserStore:
 
     def delete_session(self, session_id: str) -> None:
         with self._conn() as conn:
-            conn.execute("DELETE FROM sessions WHERE session_id=?", (session_id,))
+            conn.execute("DELETE FROM sessions WHERE session_id=?", (session_key(session_id),))
 
     def delete_sessions_of(self, user_id: str) -> None:
         with self._conn() as conn:

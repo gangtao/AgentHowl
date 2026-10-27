@@ -152,3 +152,50 @@ def test_bootstrap_admin_logs_error_when_username_taken_by_non_admin(
         assert bootstrap_admin(store, username="root", email="r@x.io", password="password1") is None
     assert any("已被非管理员账号占用" in r.getMessage() for r in caplog.records)
     assert store.count() == 1 and store.get("u_9").role == "user"  # type: ignore[union-attr]
+
+
+def test_sqlite_files_are_private_and_sessions_hashed(tmp_path: Path) -> None:
+    """issue #120：users.db 以 0600 创建；WAL / SHM 旁文件在连接期间也是 0600；
+    会话 id 只存 sha256。"""
+    import sqlite3
+    import stat
+
+    from app.runtime.users import new_session, session_key
+
+    db = tmp_path / "users.db"
+    store = SqliteUserStore(db)
+    assert stat.S_IMODE(db.stat().st_mode) == 0o600
+    store.put(_user("u_1", "alice", "a@x.io"))
+    sess = new_session("u_1")
+    store.create_session(sess)
+    with store._conn() as conn:
+        for side in store._sidecars():
+            if side.exists():
+                assert stat.S_IMODE(side.stat().st_mode) == 0o600, side
+        rows = [r[0] for r in conn.execute("SELECT session_id FROM sessions").fetchall()]
+    assert rows == [session_key(sess.session_id)] and sess.session_id not in rows
+    got = store.get_session(sess.session_id)
+    assert got is not None and got.user_id == "u_1" and got.session_id == sess.session_id
+    assert store.get_session(session_key(sess.session_id)) is None  # 哈希值本身不是凭据
+    store.delete_session(sess.session_id)
+    assert store.get_session(sess.session_id) is None
+    # 并发冲突在 UNIQUE 约束上冒出来时归一为 UserConflictError（绕过查重直接插）
+    with sqlite3.connect(db) as raw:
+        raw.execute(
+            "INSERT INTO users (user_id, username, email, password_hash, role, status, "
+            "email_verified_at, created_at) VALUES ('u_2','bob','b@x.io','h','user','active',"
+            "NULL,'2026-01-01T00:00:00+00:00')"
+        )
+    with pytest.raises(UserConflictError):
+        store.put(_user("u_3", "bob", "c@x.io"))
+
+
+def test_memory_store_sessions_hashed() -> None:
+    from app.runtime.users import new_session, session_key
+
+    store = InMemoryUserStore()
+    sess = new_session("u_1")
+    store.create_session(sess)
+    assert set(store._sessions) == {session_key(sess.session_id)}
+    assert store.get_session(sess.session_id) is not None
+    assert store.get_session(session_key(sess.session_id)) is None

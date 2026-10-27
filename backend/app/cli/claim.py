@@ -18,6 +18,9 @@ from app.runtime.users import SqliteUserStore
 
 
 def _claim_games(games_dir: Path, owner_id: str, dry_run: bool) -> int:
+    # issue #120：上次中断留下的 .jsonl.tmp 残件先清掉（它们从未被 os.replace 提升为正式文件）
+    for stale in games_dir.glob("*.jsonl.tmp"):
+        stale.unlink(missing_ok=True)
     n = 0
     for path in sorted(games_dir.glob("*.jsonl")) if games_dir.is_dir() else []:
         raw = path.read_bytes()
@@ -39,8 +42,13 @@ def _claim_games(games_dir: Path, owner_id: str, dry_run: bool) -> int:
         data["owner_id"] = owner_id
         new_head = json.dumps(head, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
         tmp = path.with_suffix(".jsonl.tmp")
-        tmp.write_bytes(new_head + cr + sep + rest)
-        os.replace(tmp, path)
+        try:
+            tmp.write_bytes(new_head + cr + sep + rest)
+            os.replace(tmp, path)
+        except BaseException:
+            # issue #120：写一半失败不留 .jsonl.tmp 残件
+            tmp.unlink(missing_ok=True)
+            raise
     return n
 
 
@@ -87,8 +95,23 @@ def _claim_memory(memory_dir: Path, owner_id: str, dry_run: bool) -> int:
     return moved
 
 
-def claim(data_dir: Path, username: str, *, dry_run: bool) -> dict[str, int]:
-    users = SqliteUserStore(data_dir / "users.db")
+def users_db_path(data_dir: Path, users_db: Path | None = None) -> Path:
+    """用户库路径：显式参数 > AGENTHOWL_USERS_DB > data_dir/users.db
+    （与服务端 create_app 同口径）。"""
+    if users_db is not None:
+        return users_db
+    env = os.environ.get("AGENTHOWL_USERS_DB", "").strip()
+    return Path(env) if env else data_dir / "users.db"
+
+
+def claim(
+    data_dir: Path, username: str, *, dry_run: bool, users_db: Path | None = None
+) -> dict[str, int]:
+    db = users_db_path(data_dir, users_db)
+    if not db.is_file():
+        # issue #120：之前写死 data_dir/users.db，--data-dir 给错时会悄悄建空库再报「用户不存在」
+        raise LookupError(f"用户库不存在：{db}（--data-dir / --users-db 是否正确？）")
+    users = SqliteUserStore(db)
     user = users.get_by_username(username.strip().lower())
     if user is None:
         raise LookupError(f"用户不存在：{username}")
@@ -106,12 +129,22 @@ def main(argv: list[str] | None = None) -> None:
     )
     parser.add_argument("--user", required=True, help="目标用户名")
     parser.add_argument("--data-dir", default="data")
+    parser.add_argument(
+        "--users-db",
+        default=None,
+        help="用户库路径（默认 AGENTHOWL_USERS_DB 或 data-dir/users.db）",
+    )
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args(argv)
     if not args.dry_run:
         print("警告：请先停止 AgentHowl 服务再运行", file=sys.stderr)
     try:
-        counts = claim(Path(args.data_dir), args.user, dry_run=args.dry_run)
+        counts = claim(
+            Path(args.data_dir),
+            args.user,
+            dry_run=args.dry_run,
+            users_db=Path(args.users_db) if args.users_db else None,
+        )
     except LookupError as exc:
         print(str(exc), file=sys.stderr)
         sys.exit(2)
