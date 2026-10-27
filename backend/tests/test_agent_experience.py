@@ -216,3 +216,31 @@ def test_render_experience_empty_and_budget() -> None:
     exp = _exp_with(*[(RoleType.SEER, True, "x" * 100) for _ in range(20)])
     text = render_experience(exp, role=RoleType.SEER, opponents={}, budget_chars=350)
     assert text.count("- [SEER·胜]") == 3  # 每条约 113 字符，预算 350 装 3 条
+
+
+def test_reflection_parses_loose_opponent_note_keys() -> None:
+    """issue #69：小模型常把 opponent_notes 的键写成「3号」「seat 3」；
+    一个坏键不能让整个复盘校验失败（否则本局 lessons 也一起丢）。"""
+    refl = GameReflection.model_validate(
+        {
+            "lessons": ["别首夜跳"],
+            "opponent_notes": {
+                "3号": ["悍跳过"],
+                "seat 5": ["划水"],
+                "7": ["冲锋"],
+                2: ["老实"],
+                "不知道": ["丢弃"],
+                "玩家 4 号": "单条字符串也收",  # 字符串包成单元素列表
+            },
+        }
+    )
+    assert refl.lessons == ["别首夜跳"]
+    assert refl.opponent_notes == {
+        3: ["悍跳过"],
+        5: ["划水"],
+        7: ["冲锋"],
+        2: ["老实"],
+        4: ["单条字符串也收"],
+    }
+    # 非字典整体给空，不报错
+    assert GameReflection.model_validate({"opponent_notes": "无"}).opponent_notes == {}
