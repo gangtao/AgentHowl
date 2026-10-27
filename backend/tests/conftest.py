@@ -22,6 +22,37 @@ from app.store.event_store import InMemoryEventStore
 TEST_PASSWORD = "password1"
 
 
+def wait_game_done(client: TestClient, gid: str, timeout: float = 60.0) -> Any:
+    """事件驱动地等 runner task 结束（issue #74）：在 TestClient 的后台事件循环上 await 任务，
+    而不是从测试线程 sleep 轮询（满负载下 30s 轮询截止会偶发超时）。超时不取消任务，
+    断言信息带当前阶段 / 轮次便于排查。返回 GameHandle。"""
+    import asyncio
+
+    handle = client.app.state.games.get(gid)  # type: ignore[attr-defined]
+    assert handle.task is not None, f"对局 {gid} 尚未开始"
+
+    async def _wait(task: Any, t: float) -> bool:
+        _done, pending = await asyncio.wait({task}, timeout=t)
+        return not pending
+
+    portal = getattr(client, "portal", None)
+    if portal is not None:
+        finished = client.portal.call(_wait, handle.task, timeout)
+    else:
+        # 不在 `with TestClient(app)` 块里：没有常驻 portal，只能轮询 done()（间隔很短）
+        import time
+
+        deadline = time.time() + timeout
+        while not handle.task.done() and time.time() < deadline:
+            time.sleep(0.02)
+        finished = handle.task.done()
+    if not finished:
+        st = handle.runner.state if handle.runner is not None else None
+        where = f"phase={st.phase} round={st.round} seq={st.state_version}" if st else "未开局"
+        raise AssertionError(f"对局 {gid} 在 {timeout}s 内未结束（{where}）")
+    return handle
+
+
 @pytest.fixture(autouse=True)
 def _isolate_agenthowl_env(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     """issue #124：litellm 在 import 时 load_dotenv()，从 .venv 向上找到仓库根的 .env（docker

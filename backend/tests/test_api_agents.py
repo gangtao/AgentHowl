@@ -5,7 +5,7 @@ from fastapi.testclient import TestClient
 
 from app.runtime.agent_library import InMemoryAgentLibrary
 from app.store.event_store import InMemoryEventStore
-from tests.conftest import login_as, make_app
+from tests.conftest import login_as, make_app, wait_game_done
 
 
 @pytest.fixture()
@@ -66,7 +66,6 @@ def test_skills_and_presets(client: TestClient) -> None:
 def test_rating_accumulates_after_finished_game_and_is_owner_scoped() -> None:
     """issue #123：建局带 agent_ids → 终局后 /agents 两条档案 games=1、胜负与 winner 一致；
     /agents/{id}/rating 一条 history；他人 404；删除档案后 404 但索引仍有其积分。"""
-    import time as _t
 
     from app.runtime.game_runner import RunnerTimeouts
     from app.runtime.player_port import BotPlayerPort
@@ -105,10 +104,7 @@ def test_rating_accumulates_after_finished_game_and_is_owner_scoped() -> None:
         assert (
             c.post(f"/api/v1/games/{gid}/start", json={}, headers=bearer(host)).status_code == 200
         )
-        handle = c.app.state.games.get(gid)  # type: ignore[attr-defined]
-        deadline = _t.time() + 30
-        while not (handle.task is not None and handle.task.done()) and _t.time() < deadline:
-            _t.sleep(0.05)
+        handle = wait_game_done(c, gid)  # 事件驱动等待（issue #74）
         final = handle.task.result()
 
         by_id = {x["agent_id"]: x["rating"] for x in c.get("/api/v1/agents").json()}

@@ -166,7 +166,10 @@ class HumanPlayerPort:
             self._notify_closed(observation.state_version)
 
     async def wait_armed(self, timeout: float) -> TurnPrompt | None:
-        """my-turn 长轮询：挂起至开窗或超时（返回 None）。"""
+        """my-turn 长轮询：挂起至开窗或超时（返回 None）。已开窗时立即返回，
+        timeout=0 也拿得到 prompt（asyncio.wait_for 对 0 超时会先取消再判定，不能依赖它）。"""
+        if self._armed.is_set():
+            return self._prompt
         try:
             await asyncio.wait_for(self._armed.wait(), timeout)
         except TimeoutError:

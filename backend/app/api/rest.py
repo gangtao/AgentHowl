@@ -709,14 +709,15 @@ async def my_turn_endpoint(
         raise HTTPException(status_code=403, detail="该座位非外接玩家")
     deadline = time.time() + wait
     while True:
-        remaining = deadline - time.time()
-        if remaining <= 0:
-            return Response(status_code=204)
         if handle.task is not None and handle.task.done():
             return Response(status_code=204)  # 对局已终局：立即结束长轮询
-        prompt = await port.wait_armed(min(remaining, 0.25))
+        remaining = deadline - time.time()
+        # 至少探测一次（issue #74）：wait=0 也要能拿到已开窗的 prompt，外接座位才能用短轮询驱动
+        prompt = await port.wait_armed(max(0.0, min(remaining, 0.25)))
         if prompt is not None:
             return JSONResponse(_your_turn_payload(prompt))
+        if remaining <= 0:
+            return Response(status_code=204)
 
 
 def _your_turn_payload(prompt: TurnPrompt) -> dict[str, Any]:

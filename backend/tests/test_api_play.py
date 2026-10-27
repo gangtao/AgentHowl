@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 from app.cli.bot import RandomBot
 from app.runtime.game_runner import RunnerTimeouts
 from app.store.event_store import InMemoryEventStore
-from tests.conftest import bearer, login_as, make_app
+from tests.conftest import bearer, login_as, make_app, wait_game_done
 
 
 @pytest.fixture()
@@ -26,12 +26,8 @@ def client() -> Iterator[TestClient]:
 _auth = bearer
 
 
-def _wait_done(client: TestClient, gid: str, timeout: float = 30.0) -> None:
-    handle = client.app.state.games.get(gid)  # type: ignore[attr-defined]
-    deadline = time.time() + timeout
-    while not (handle.task is not None and handle.task.done()) and time.time() < deadline:
-        time.sleep(0.05)
-    assert handle.task is not None and handle.task.done()
+def _wait_done(client: TestClient, gid: str, timeout: float = 60.0) -> None:
+    wait_game_done(client, gid, timeout)  # 事件驱动等待（issue #74）
 
 
 def _start_ai_game(client: TestClient, seed: int = 42) -> tuple[str, dict[str, Any]]:
@@ -344,3 +340,24 @@ def test_state_carries_public_sheriff_config(client: TestClient) -> None:
     assert me.json()["config"]["sheriff"]["vote_weight"] == 2.0
     assert me.json()["viewer"] == 0
     _wait_done(client, gid)
+
+
+def test_my_turn_wait_zero_returns_armed_prompt(client: TestClient) -> None:
+    """issue #74：wait=0 也要拿到已开窗的 prompt（短轮询驱动外接座位的前提）。"""
+    created = client.post("/api/v1/games", json={"config_override": {"seed": 42}}).json()
+    gid = created["game_id"]
+    joined = client.post(
+        f"/api/v1/games/{gid}/join",
+        json={"display_name": "Zero"},
+        headers=_auth(created["host_token"]),
+    ).json()
+    client.post(f"/api/v1/games/{gid}/start", json={}, headers=_auth(created["host_token"]))
+    tok = joined["player_token"]
+    got = None
+    for _ in range(400):  # 最多 ~20s：其它座位是随机 bot，窗口很快轮到真人
+        r = client.get(f"/api/v1/games/{gid}/my-turn?wait=0", headers=_auth(tok))
+        if r.status_code == 200:
+            got = r.json()
+            break
+        time.sleep(0.05)
+    assert got is not None and got["observation"]["my_seat"] == joined["seat"]

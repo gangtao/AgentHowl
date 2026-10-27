@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 
 from app.runtime.game_runner import RunnerTimeouts
 from app.store.event_store import InMemoryEventStore
-from tests.conftest import bearer, login_as, make_app
+from tests.conftest import bearer, login_as, make_app, wait_game_done
 
 
 @pytest.fixture()
@@ -38,14 +38,7 @@ def test_create_join_start_all_ai(client: TestClient) -> None:
     assert r.status_code == 200 and r.json()["num_players"] == 9
 
     # 全 AI 局在后台事件循环中跑完（TestClient 事件循环在后台线程，轮询 task 即可）
-    registry = client.app.state.games  # type: ignore[attr-defined]
-    handle = registry.get(gid)
-    import time as _t
-
-    deadline = _t.time() + 30
-    while not (handle.task is not None and handle.task.done()) and _t.time() < deadline:
-        _t.sleep(0.05)
-    assert handle.task is not None and handle.task.done()
+    handle = wait_game_done(client, gid)  # 事件驱动等待，不再 sleep 轮询（issue #74）
     assert handle.task.result().winner is not None
 
 
@@ -325,7 +318,6 @@ def test_create_app_memory_dir_is_lazy_and_corrupt_file_is_500(tmp_path) -> None
 
 def test_meta_endpoint_gated_until_game_over_and_echoes_effective_agents() -> None:
     """issue #64：/meta 终局前 403；终局后返回 meta，agents 只含实际建成 Agent 端口的座位。"""
-    import time as _t
 
     from app.runtime.player_port import BotPlayerPort
 
@@ -349,10 +341,7 @@ def test_meta_endpoint_gated_until_game_over_and_echoes_effective_agents() -> No
     assert (
         client.post(f"/api/v1/games/{gid}/start", json={}, headers=_auth(host)).status_code == 200
     )
-    handle = client.app.state.games.get(gid)  # type: ignore[attr-defined]
-    deadline = _t.time() + 30
-    while not (handle.task is not None and handle.task.done()) and _t.time() < deadline:
-        _t.sleep(0.05)
+    wait_game_done(client, gid)  # 事件驱动等待（issue #74）
     r = client.get(f"/api/v1/games/{gid}/meta", params={"share": spec})
     assert r.status_code == 200
     meta = r.json()
@@ -364,7 +353,6 @@ def test_meta_endpoint_gated_until_game_over_and_echoes_effective_agents() -> No
 
 def test_events_endpoint_filters_skills_meta_from_spectators_but_replay_not() -> None:
     """issue #60：/events（观众）不外泄 skills meta；/replay（终局后）保留。"""
-    import time as _t
 
     from app.runtime.player_port import BotPlayerPort
 
@@ -388,10 +376,7 @@ def test_events_endpoint_filters_skills_meta_from_spectators_but_replay_not() ->
     created = client.post("/api/v1/games", json=body).json()
     gid, host, spec = created["game_id"], created["host_token"], created["share_token"]
     client.post(f"/api/v1/games/{gid}/start", json={}, headers=_auth(host))
-    handle = client.app.state.games.get(gid)  # type: ignore[attr-defined]
-    deadline = _t.time() + 30
-    while not (handle.task is not None and handle.task.done()) and _t.time() < deadline:
-        _t.sleep(0.05)
+    wait_game_done(client, gid)  # 事件驱动等待（issue #74）
 
     # 服务端真实：回放事件中应有 skills meta
     replay = client.get(f"/api/v1/games/{gid}/replay", params={"share": spec}).json()
@@ -407,7 +392,6 @@ def test_events_endpoint_filters_skills_meta_from_spectators_but_replay_not() ->
 def test_ws_replay_frames_do_not_leak_skills() -> None:
     """F2（终审）：WS 实时 + 补发共用的 _build_event_frames 同样不外泄 skills
     （Task 7 起用 ?game_id=&share= 连接）。"""
-    import time as _t
 
     from app.runtime.player_port import BotPlayerPort
 
@@ -429,10 +413,7 @@ def test_ws_replay_frames_do_not_leak_skills() -> None:
     created = client.post("/api/v1/games", json=body).json()
     gid, host, spec = created["game_id"], created["host_token"], created["share_token"]
     client.post(f"/api/v1/games/{gid}/start", json={}, headers=_auth(host))
-    handle = client.app.state.games.get(gid)  # type: ignore[attr-defined]
-    deadline = _t.time() + 30
-    while not (handle.task is not None and handle.task.done()) and _t.time() < deadline:
-        _t.sleep(0.05)
+    wait_game_done(client, gid)  # 事件驱动等待（issue #74）
     events = client.get(f"/api/v1/games/{gid}/events", params={"share": spec}).json()
     with client.websocket_connect(f"/api/v1/ws?game_id={gid}&share={spec}&from_seq=0") as ws:
         frames: list[dict[str, Any]] = []
@@ -445,7 +426,6 @@ def test_ws_replay_frames_do_not_leak_skills() -> None:
 
 def test_gm_token_reads_full_state_events_and_cannot_act_or_start() -> None:
     """issue #26：GM token 读全量（GM_ONLY/WOLVES/ROLE_SELF、meta.skills）；不能行动/开局。"""
-    import time as _t
 
     from app.runtime.player_port import BotPlayerPort
 
@@ -472,10 +452,7 @@ def test_gm_token_reads_full_state_events_and_cannot_act_or_start() -> None:
     assert r_start_gm.status_code == 403
     r_start_host = client.post(f"/api/v1/games/{gid}/start", json={}, headers=_auth(host))
     assert r_start_host.status_code == 200
-    handle = client.app.state.games.get(gid)  # type: ignore[attr-defined]
-    deadline = _t.time() + 30
-    while not (handle.task is not None and handle.task.done()) and _t.time() < deadline:
-        _t.sleep(0.05)
+    wait_game_done(client, gid)  # 事件驱动等待（issue #74）
     state = client.get(f"/api/v1/games/{gid}/state", headers=_auth(gm)).json()
     roles = {p["role"] for p in state["players"]}
     assert state["phase"] == "GAME_OVER" and roles >= {"WEREWOLF", "SEER"}
@@ -524,7 +501,6 @@ def test_create_without_seed_echoes_random_seed(client: TestClient) -> None:
 def test_create_agent_ids_validated_and_never_leave_meta_or_events() -> None:
     """issue #123：agent_ids 键须在 agents 里、id 须当前用户可见（不存在与无权同文案）；
     服务端 meta 记下展开后的 id，但 /meta、/replay、/events 都不回传 agent_ids。"""
-    import time as _t
 
     from app.runtime.player_port import BotPlayerPort
 
@@ -560,11 +536,7 @@ def test_create_agent_ids_validated_and_never_leave_meta_or_events() -> None:
             client.post(f"/api/v1/games/{gid}/start", json={}, headers=_auth(host)).status_code
             == 200
         )
-        handle = client.app.state.games.get(gid)  # type: ignore[attr-defined]
-        deadline = _t.time() + 30
-        while not (handle.task is not None and handle.task.done()) and _t.time() < deadline:
-            _t.sleep(0.05)
-        assert handle.task is not None and handle.task.done()
+        wait_game_done(client, gid)  # 事件驱动等待（issue #74）
         store = client.app.state.games.store  # type: ignore[attr-defined]
         assert store.load_meta(gid).agent_ids == {"1": mine}  # 服务端真相：meta 首行记了展开后的 id
         meta = client.get(f"/api/v1/games/{gid}/meta", params={"share": spec}).json()

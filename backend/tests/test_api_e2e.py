@@ -73,23 +73,22 @@ def test_acceptance_human_can_take_any_seat(client: TestClient, seat_to_take: in
     client.post(f"/api/v1/games/{gid}/start", json={}, headers=_auth(created["host_token"]))
     handle = client.app.state.games.get(gid)  # type: ignore[attr-defined]
 
-    # 所有外接座位统一用 my-turn 轮询 + POST actions 驱动至终局
-    # 说明（Task 7 自查偏差）：brief 原文 deadline=60；seat_to_take=5（6 座外接）在本机
-    # seed=7 下实测约需 130s 才终局 —— 根因是本轮询本身按 wait=1 顺序探测 6 个外接座位，
-    # 命中窗口前的每次探测都要付出接近 1s 的长轮询代价（非命中座位的轮询在 my_turn_endpoint
-    # 中会等满 wait 才返回 204），而非引擎/API 缺陷：直接用 BotPlayerPort.act() 验证内置
-    # bot 座位零延迟落子，且 HumanPlayerPort.wait_armed 命中窗口即刻返回（<0.25s）。
-    # 为保持断言口径不变（仍要求最终 winner 非空），仅放宽此常量以容纳真实时长+ 冗余。
-    deadline = time.time() + 200
+    # 所有外接座位统一用 my-turn 轮询 + POST actions 驱动至终局。
+    # issue #74：原来按 wait=1 顺序探测 6 个外接座位，非命中座位每次都等满 1s 才 204，
+    # seat_to_take=5 实测 ~130s、满负载下偶发超过 200s 截止。改为 wait=0.05 短轮询
+    # （my-turn 现保证至少探测一次，已开窗立即返回），整局只需几秒。
+    deadline = time.time() + 120
     while not handle.task.done() and time.time() < deadline:
         for seat, tok in all_ports.items():
-            r = client.get(f"/api/v1/games/{gid}/my-turn?wait=1", headers=_auth(tok))
+            r = client.get(f"/api/v1/games/{gid}/my-turn?wait=0.05", headers=_auth(tok))
             if r.status_code == 200:
                 action = RandomBot.choose_action(handle.runner.state, seat)
                 client.post(
                     f"/api/v1/games/{gid}/actions", json=_to_tool_call(action), headers=_auth(tok)
                 )
-    assert handle.task.done() and handle.task.result().winner is not None
+    st = handle.runner.state
+    assert handle.task.done(), f"未在截止前终局：phase={st.phase} round={st.round}"
+    assert handle.task.result().winner is not None
 
 
 def test_acceptance_isolation_matrix_via_api(client: TestClient) -> None:
