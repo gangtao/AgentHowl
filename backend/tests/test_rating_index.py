@@ -131,3 +131,45 @@ def test_non_numeric_seat_key_in_meta_is_skipped_with_warning(caplog) -> None:
         snap = RatingIndex(store).snapshot()
     assert "a_bad" not in snap and set(snap) == {"a_x"}
     assert any("g_bad" in rec.getMessage() for rec in caplog.records)
+
+
+def test_snapshot_memoized_until_new_finished_game() -> None:
+    """issue #139：已结束对局集合不变 → 复用上次快照对象；新终局 → 重算。"""
+    store = InMemoryEventStore()
+    _finished(store, "g_1", agent_ids={"0": "a_x"})
+    index = RatingIndex(store)
+    first = index.snapshot()
+    assert index.snapshot() is first
+    _finished(store, "g_2", seed=4, agent_ids={"0": "a_x", "3": "a_y"})
+    second = index.snapshot()
+    assert second is not first and second["a_x"].games == 2 and "a_y" in second
+    assert index.snapshot() is second
+
+
+def test_compute_ratings_is_linear_in_history_length() -> None:
+    """issue #139：一个档案打 H 局，fold 不再做 O(H²) 的 history 复制。"""
+    import time
+
+    from app.engine.config import Faction
+    from app.runtime.rating import FinishedGame, compute_ratings, settle_game
+
+    def game(i: int) -> FinishedGame:
+        return FinishedGame(
+            game_id=f"g_{i:05d}",
+            ended_at=f"2026-10-26T00:00:{i:05d}",
+            winner="WOLF" if i % 2 else "GOOD",
+            seat_factions={0: Faction.WOLF, 1: Faction.GOOD},
+            agent_ids={0: "a_x", 1: "a_y"},
+        )
+
+    games = [game(i) for i in range(4000)]
+    t0 = time.perf_counter()
+    snap = compute_ratings(games)
+    elapsed = time.perf_counter() - t0
+    assert snap["a_x"].games == 4000 and len(snap["a_x"].history) == 4000
+    assert elapsed < 3.0, elapsed  # 旧实现在此量级要复制 ~8M 条 history
+    # 与逐局 settle_game 的纯函数结果一致（抽样 50 局）
+    acc: dict[str, object] = {}
+    for g in games[:50]:
+        acc = settle_game(acc, g)  # type: ignore[arg-type]
+    assert acc["a_x"].rating == compute_ratings(games[:50])["a_x"].rating  # type: ignore[union-attr]

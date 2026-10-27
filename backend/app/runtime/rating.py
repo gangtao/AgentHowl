@@ -76,24 +76,43 @@ def _result_for(camp: Faction, winner: str | None) -> Result:
     return "WIN" if winner == camp else "LOSS"
 
 
-def settle_game(ratings: Mapping[str, AgentRating], game: FinishedGame) -> dict[str, AgentRating]:
-    """把一局结果记到各档案上，返回新 dict（不改入参）。
+class _Acc:
+    """compute_ratings 的可变累加器（issue #139）：history 用 list 原地追加，整段 fold 线性；
+    最后一次性构造不可变的 AgentRating。settle_game 的纯函数接口不变。"""
 
-    队伍均分按座位算（无 id 的座位按 INITIAL_RATING 代入，参与均值但不落账）；记账粒度是
-    「档案 × 阵营」：同阵营多座位只记一条，两个阵营都占则记两条（Δ 相抵）。全员同阵营的
-    坏数据对局原样返回。
-    """
-    out: dict[str, AgentRating] = dict(ratings)
+    __slots__ = ("by_camp", "draws", "games", "history", "losses", "rating", "wins")
+
+    def __init__(self, base: AgentRating | None = None) -> None:
+        b = base or AgentRating()
+        self.rating = b.rating
+        self.games, self.wins, self.losses, self.draws = b.games, b.wins, b.losses, b.draws
+        self.by_camp: dict[Faction, CampRecord] = dict(b.by_camp)
+        self.history: list[RatingEntry] = list(b.history)
+
+    def to_rating(self) -> AgentRating:
+        return AgentRating(
+            rating=self.rating,
+            games=self.games,
+            wins=self.wins,
+            losses=self.losses,
+            draws=self.draws,
+            by_camp=dict(self.by_camp),
+            history=list(self.history),
+        )
+
+
+def _settle_into(acc: dict[str, _Acc], game: FinishedGame) -> None:
+    """把一局结果累加进 acc（原地）。规则见 settle_game 文档。"""
 
     def rating_of(seat: int) -> float:
         aid = game.agent_ids.get(seat)
-        return out[aid].rating if aid is not None and aid in out else INITIAL_RATING
+        return acc[aid].rating if aid is not None and aid in acc else INITIAL_RATING
 
     seats = sorted(game.seat_factions)
     wolves = [s for s in seats if game.seat_factions[s] == Faction.WOLF]
     goods = [s for s in seats if game.seat_factions[s] == Faction.GOOD]
     if not wolves or not goods:
-        return out
+        return
     r_wolf = fmean(rating_of(s) for s in wolves)
     r_good = fmean(rating_of(s) for s in goods)
     s_wolf = 0.5 if game.winner is None else (1.0 if game.winner == Faction.WOLF else 0.0)
@@ -110,12 +129,14 @@ def settle_game(ratings: Mapping[str, AgentRating], game: FinishedGame) -> dict[
             touched.append(key)
 
     for aid, camp in touched:
-        old = out.get(aid, AgentRating())
+        a = acc.get(aid)
+        if a is None:
+            a = acc[aid] = _Acc()
         result = _result_for(camp, game.winner)
         delta = deltas[camp]
         won, lost, drew = result == "WIN", result == "LOSS", result == "DRAW"
-        rec = old.by_camp[camp]
-        new_rec = rec.model_copy(
+        rec = a.by_camp[camp]
+        a.by_camp[camp] = rec.model_copy(
             update={
                 "games": rec.games + 1,
                 "wins": rec.wins + int(won),
@@ -123,28 +144,35 @@ def settle_game(ratings: Mapping[str, AgentRating], game: FinishedGame) -> dict[
                 "draws": rec.draws + int(drew),
             }
         )
-        entry = RatingEntry(
-            game_id=game.game_id, ended_at=game.ended_at, camp=camp, result=result, delta=delta
+        a.history.append(
+            RatingEntry(
+                game_id=game.game_id, ended_at=game.ended_at, camp=camp, result=result, delta=delta
+            )
         )
-        out[aid] = old.model_copy(
-            update={
-                "rating": old.rating + delta,
-                "games": old.games + 1,
-                "wins": old.wins + int(won),
-                "losses": old.losses + int(lost),
-                "draws": old.draws + int(drew),
-                "by_camp": {**old.by_camp, camp: new_rec},
-                "history": [*old.history, entry],
-            }
-        )
-    return out
+        a.rating += delta
+        a.games += 1
+        a.wins += int(won)
+        a.losses += int(lost)
+        a.draws += int(drew)
+
+
+def settle_game(ratings: Mapping[str, AgentRating], game: FinishedGame) -> dict[str, AgentRating]:
+    """把一局结果记到各档案上，返回新 dict（不改入参）。
+
+    队伍均分按座位算（无 id 的座位按 INITIAL_RATING 代入，参与均值但不落账）；记账粒度是
+    「档案 × 阵营」：同阵营多座位只记一条，两个阵营都占则记两条（Δ 相抵）。全员同阵营的
+    坏数据对局原样返回。
+    """
+    acc = {aid: _Acc(r) for aid, r in ratings.items()}
+    _settle_into(acc, game)
+    return {aid: a.to_rating() for aid, a in acc.items()}
 
 
 def compute_ratings(games: Iterable[FinishedGame]) -> dict[str, AgentRating]:
     """按 (ended_at, game_id) 升序逐局 fold；输入顺序不影响结果；无 agent_ids 的对局跳过。"""
-    ratings: dict[str, AgentRating] = {}
+    acc: dict[str, _Acc] = {}
     for game in sorted(games, key=lambda g: (g.ended_at, g.game_id)):
         if not game.agent_ids:
             continue
-        ratings = settle_game(ratings, game)
-    return ratings
+        _settle_into(acc, game)
+    return {aid: a.to_rating() for aid, a in acc.items()}
