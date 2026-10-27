@@ -295,6 +295,24 @@ def test_access_log_filter_masks_token() -> None:
     rec2 = logging.LogRecord("uvicorn.access", logging.INFO, "", 0, "ws ?token=zzz", (), None)
     flt.filter(rec2)
     assert rec2.getMessage() == "ws ?token=***"
+    # issue #79：WS 握手的 access log 形态（uvicorn websockets_impl）同样脱敏，gm_token 不落盘
+    for path in (
+        "/api/v1/ws?token=gmSECRET&from_seq=0",
+        "/api/v1/ws?game_id=g_x&share=shSECRET&from_seq=3",
+    ):
+        rec3 = logging.LogRecord(
+            "uvicorn.access",
+            logging.INFO,
+            "",
+            0,
+            '%s - "WebSocket %s" %s',
+            ("127.0.0.1:1", path, "[accepted]"),
+            None,
+        )
+        assert flt.filter(rec3)
+        msg3 = rec3.getMessage()
+        assert "SECRET" not in msg3 and "from_seq=" in msg3
+        assert "token=***" in msg3 or "share=***" in msg3
 
 
 class SlowNarrationTts(FakeTts):
