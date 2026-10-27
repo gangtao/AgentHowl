@@ -108,6 +108,16 @@ def speech_queue_pending(state: GameState) -> bool:
     return campaign_speaking(state) or pk_speaking(state)
 
 
+def sheriff_pk_barred(state: GameState, seat: int) -> bool:
+    """issue #50：pk_voters=NON_CANDIDATES_ONLY 时，首轮上警但未进 PK 的候选人不参与 PK 重投。"""
+    from app.engine.config import SheriffPkVoters
+
+    return (
+        state.config.sheriff.pk_voters == SheriffPkVoters.NON_CANDIDATES_ONLY
+        and seat in state.sheriff_pk_bystanders
+    )
+
+
 def expected_actors(state: GameState) -> set[int]:
     """当前必须行动的座位集合；系统阶段返回空集。"""
     # 局部导入以打破 phases<->state 的模块级循环依赖（谁先被导入不再敏感）
@@ -194,6 +204,7 @@ def expected_actors(state: GameState) -> set[int]:
             and p.seat not in state.sheriff_candidates
             and p.seat not in state.sheriff_votes
             and p.seat not in state.sheriff_withdrawn
+            and not sheriff_pk_barred(state, p.seat)
         }
 
     # 其余为系统阶段

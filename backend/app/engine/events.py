@@ -520,7 +520,15 @@ def _reduce_dispatch(state: GameState, event: Event) -> dict[str, object]:
         return {"sheriff_votes": sv}
 
     if t == EventType.SHERIFF_VOTE_STARTED and isinstance(p, SheriffVoteStartedPayload):
-        return {"sheriff_candidates": p.candidates, "sheriff_votes": {}}
+        # 候选集合被收窄（进 PK）时，落选者记为旁观候选人（issue #50）
+        bystanders = state.sheriff_pk_bystanders
+        if state.sheriff_candidates and set(p.candidates) < set(state.sheriff_candidates):
+            bystanders = bystanders | (set(state.sheriff_candidates) - set(p.candidates))
+        return {
+            "sheriff_candidates": p.candidates,
+            "sheriff_votes": {},
+            "sheriff_pk_bystanders": bystanders,
+        }
 
     if t == EventType.SHERIFF_ELECTED and isinstance(p, SheriffElectedPayload):
         # 先剥离在任者（当选时通常无在任者，保留为 issue #19 全化不变量防御）再授予

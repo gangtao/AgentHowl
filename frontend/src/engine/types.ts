@@ -356,6 +356,7 @@ export interface GameState {
   sheriff_votes: Record<string, number | null>;
   election_stage: ElectionStage;
   sheriff_withdrawn: number[];
+  sheriff_pk_bystanders: number[];
   sheriff_confirmed: number[];
   sheriff_speech_direction: string | null;
   badge_flow_claims: Record<string, number[]>;

@@ -208,3 +208,71 @@ def test_vote_pk_speaker_cannot_vote_during_pk_speech() -> None:
     assert res.rejection == RejectedReason.WRONG_PHASE
     assert res.state.votes == {}
     assert res.state.speech_idx == 0
+
+
+def _election_tie_state(*, pk_voters: str | None = None) -> GameState:
+    """7 人竞选：候选 (1,2,5)，警下 {0,3,4,6}；0/4 投 1、3 投 2，6 最后投 2 → 1/2 平票，5 落选。"""
+    from app.engine.config import SpeechOrderRule
+
+    cfg = build_preset("std_9_kill_side").model_copy(
+        update={"num_players": 7, "seed": 1, "speech_order_rule": SpeechOrderRule.FIXED_CLOCKWISE}
+    )
+    if pk_voters is not None:
+        cfg = cfg.model_copy(
+            update={"sheriff": cfg.sheriff.model_copy(update={"pk_voters": pk_voters})}
+        )
+    return GameState(
+        game_id="g",
+        config=cfg,
+        phase=Phase.SHERIFF_ELECTION,
+        round=1,
+        players=_players(7, wolves=(1,)),
+        election_stage="vote",
+        sheriff_candidates=(1, 2, 5),
+        sheriff_votes={0: 1, 3: 2, 4: 1},
+        night_deaths=(),
+        resolved_first_night=True,
+    )
+
+
+def test_sheriff_pk_non_candidates_only_bars_first_round_losers() -> None:
+    """issue #50：默认 NON_CANDIDATES_ONLY（PRD §3.1「未平票的警下投票」）：首轮上警但未进 PK 的
+    5 号被记为旁观候选人，不参与 PK 重投；投了被拒 CANNOT_VOTE。"""
+    from app.engine.actions import RejectedReason, SheriffAction, SheriffActionType
+
+    st = _election_tie_state()
+    res = step(
+        st, SheriffAction(actor_seat=6, action_type=SheriffActionType.VOTE_SHERIFF, target_seat=2)
+    )
+    assert res.rejection is None
+    stp = res.state
+    assert stp.phase == Phase.SHERIFF_PK and stp.sheriff_candidates == (1, 2)
+    assert stp.sheriff_pk_bystanders == frozenset({5})
+    stp = step(stp, Speak(actor_seat=1, content="pk")).state
+    stp = step(stp, Speak(actor_seat=2, content="pk")).state
+    assert expected_actors(stp) == {0, 3, 4, 6}
+    rej = step(
+        stp, SheriffAction(actor_seat=5, action_type=SheriffActionType.VOTE_SHERIFF, target_seat=1)
+    ).rejection
+    assert rej == RejectedReason.CANNOT_VOTE
+
+
+def test_sheriff_pk_all_non_pk_lets_losers_vote() -> None:
+    """issue #50：ALL_NON_PK 保留旧行为——未进 PK 的原候选人也投票。"""
+    from app.engine.actions import SheriffAction, SheriffActionType
+
+    st = _election_tie_state(pk_voters="ALL_NON_PK")
+    stp = step(
+        st, SheriffAction(actor_seat=6, action_type=SheriffActionType.VOTE_SHERIFF, target_seat=2)
+    ).state
+    assert stp.sheriff_pk_bystanders == frozenset({5})  # 事实照记，口径由配置决定
+    stp = step(stp, Speak(actor_seat=1, content="pk")).state
+    stp = step(stp, Speak(actor_seat=2, content="pk")).state
+    assert expected_actors(stp) == {0, 3, 4, 5, 6}
+    assert (
+        step(
+            stp,
+            SheriffAction(actor_seat=5, action_type=SheriffActionType.VOTE_SHERIFF, target_seat=1),
+        ).rejection
+        is None
+    )

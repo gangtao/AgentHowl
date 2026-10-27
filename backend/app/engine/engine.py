@@ -87,6 +87,7 @@ from app.engine.phases import (
     next_night_phase,
     night_phase_sequence,
     pk_speaking,
+    sheriff_pk_barred,
     speech_queue_pending,
 )
 from app.engine.resolver import check_win, count_votes, resolve_night
@@ -435,7 +436,9 @@ def _validate_sheriff(state: GameState, a: SheriffAction) -> RejectedReason | No
     # 提前检查退水者投票拒绝，比 NOT_YOUR_TURN 优先级高
     if state.phase in (Phase.SHERIFF_ELECTION, Phase.SHERIFF_PK):
         at = a.action_type
-        if at == SheriffActionType.VOTE_SHERIFF and a.actor_seat in state.sheriff_withdrawn:
+        if at == SheriffActionType.VOTE_SHERIFF and (
+            a.actor_seat in state.sheriff_withdrawn or sheriff_pk_barred(state, a.actor_seat)
+        ):
             return RejectedReason.CANNOT_VOTE
     if a.actor_seat not in expected_actors(state):
         return RejectedReason.NOT_YOUR_TURN
@@ -1235,6 +1238,8 @@ def _advance_election(state: GameState) -> tuple[GameState, list[Event]]:
     if elected is not None:
         return _finish_election(state, elected, events)
     if tie and state.phase == Phase.SHERIFF_ELECTION:
+        # PK 投票人（issue #50）在 NON_CANDIDATES_ONLY 下恰等于首轮投票人（平票由他们投出，
+        # 必非空），ALL_NON_PK 下只多不少，故无需再做 NO_VOTERS 守卫
         # 进入 PK：候选缩小为平票者、清空票箱——经 SHERIFF_VOTE_STARTED 落流（issue #37）
         state, e0 = _emit(
             state,

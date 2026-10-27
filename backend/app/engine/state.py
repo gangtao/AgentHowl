@@ -93,6 +93,9 @@ class GameState(BaseModel):
         # 值域见 phases.ElectionStage（PK 由 phase==SHERIFF_PK 区分）
     )
     sheriff_withdrawn: frozenset[int] = frozenset()  # 退水者（事实：整场竞选失去投票权）
+    # 首轮上警但未进 PK 的候选人（issue #50）：SHERIFF_VOTE_STARTED 收窄候选集合时记录；
+    # config.sheriff.pk_voters=NON_CANDIDATES_ONLY 下 PK 重投不投票
+    sheriff_pk_bystanders: frozenset[int] = frozenset()
     # withdraw 子阶段确认进度：reduce 据 SHERIFF_CANDIDACY/SHERIFF_WITHDREW 累加、
     # 随子阶段开启清零（issue #37）
     sheriff_confirmed: frozenset[int] = frozenset()
