@@ -17,11 +17,14 @@ from app.engine.events import (
     ElectionStageChangedPayload,
     Event,
     EventType,
+    PhaseChangedPayload,
     PlayerSpokePayload,
     RoundStartedPayload,
     SeerCheckedPayload,
+    SheriffCandidacyPayload,
     WolfKillRevotePayload,
 )
+from app.engine.phases import ElectionStage, Phase
 
 logger = logging.getLogger(__name__)
 
@@ -77,7 +80,7 @@ _SCORE_2 = {
 }
 
 
-def _score(event: Event, seat: int) -> int:
+def _score(event: Event, seat: int, *, campaigning: bool = False) -> int:
     if event.type == EventType.SEER_CHECKED and event.actor_seat == seat:
         return 5  # 自身查验结果：最高信息量
     if event.type == EventType.ROLES_ASSIGNED:
@@ -90,10 +93,30 @@ def _score(event: Event, seat: int) -> int:
         p = event.payload
         if isinstance(p, PlayerSpokePayload) and (p.claim_role is not None or p.badge_flow):
             return 3  # 跳身份/报警徽流的发言
+        # issue #52：上警发言 / 警上 PK 发言是警下投票的核心依据，高于普通发言，
+        # 否则 12 人局开场一串上警声明就把早期竞选发言挤出后置投票人的 prompt
+        return 2 if campaigning else 1
+    if event.type == EventType.SHERIFF_CANDIDACY:
+        p = event.payload
+        # 「不上警」声明信息量最低（issue #52），只留在新鲜窗口，不参与 top-N 竞争
+        if isinstance(p, SheriffCandidacyPayload) and not p.running:
+            return 0
         return 1
     if event.type in _SCORE_2:
         return 2
     return 1
+
+
+def _campaigning_after(event: Event, current: bool) -> bool:
+    """摄入该事件后是否处于竞选发言语境（上警发言子阶段 / 警上 PK）。"""
+    p = event.payload
+    if event.type == EventType.ELECTION_STAGE_CHANGED and isinstance(
+        p, ElectionStageChangedPayload
+    ):
+        return p.stage == ElectionStage.SPEECH
+    if event.type == EventType.PHASE_CHANGED and isinstance(p, PhaseChangedPayload):
+        return p.to == Phase.SHERIFF_PK
+    return current
 
 
 def _render(event: Event) -> str:
@@ -128,19 +151,21 @@ class AgentMemory:
         self._reflections: list[tuple[int, str]] = []  # (round, rendered_text)
         self._night_private: list[tuple[int, str]] = []  # (round, text)
         self._current_round = 0
+        self._campaigning = False  # 竞选发言语境（issue #52）：上警发言 / 警上 PK 期间为 True
         self._reflected_rounds: set[int] = set()  # 含"已尝试但失败"，避免重试烧预算
 
     def ingest(self, events: list[Event]) -> None:
         for e in events:
             if e.type == EventType.ROUND_STARTED and isinstance(e.payload, RoundStartedPayload):
                 self._current_round = e.payload.round
+            self._campaigning = _campaigning_after(e, self._campaigning)
             self.entries.append(
                 MemoryEntry(
                     seq=e.seq,
                     round=self._current_round,
                     kind=e.type.value,
                     text=_render(e),
-                    score=_score(e, self._seat),
+                    score=_score(e, self._seat, campaigning=self._campaigning),
                 )
             )
 
