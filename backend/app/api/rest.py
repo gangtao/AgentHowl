@@ -28,6 +28,7 @@ from app.engine.config import build_preset
 from app.engine.events import Event, EventType, Visibility
 from app.engine.observation import build_observation, visible_events
 from app.engine.phases import Phase
+from app.engine.state import GameState
 from app.runtime.agent_library import AgentLibraryStore
 from app.runtime.history import GameSummary, is_finished, list_history
 from app.runtime.player_port import ACCEPT_WAIT_SEC, TurnPrompt
@@ -385,6 +386,9 @@ def state_endpoint(
     handle = _handle_for(games, game_id)
     _reject_host(info)
     live = handle.live_state()  # 未开局 → LobbyError(409)
+    # 公开规则子集（issue #80）：观众 / 玩家视角的计票展示需要真实的 sheriff.vote_weight，
+    # 之前前端对缺失的 config 猜 1.5，config_override 改票权后票数徽标与服务端 tally 不一致
+    public_config = _public_config(live)
     if info.kind == "PLAYER":
         assert info.seat is not None
         obs = build_observation(live, info.seat).model_dump(mode="json")
@@ -392,6 +396,7 @@ def state_endpoint(
         names = {p.seat: p.display_name for p in live.players}
         obs["seats"] = [{**s, "display_name": names[int(s["seat"])]} for s in obs["seats"]]
         obs["viewer"] = info.seat
+        obs["config"] = public_config
         return obs
     if info.kind == "GM":
         return {**live.model_dump(mode="json"), "viewer": "GM"}
@@ -411,7 +416,16 @@ def state_endpoint(
         ],
         sheriff_seat=live.sheriff_seat,
         winner=live.winner,
+        config=public_config,
     ).model_dump(mode="json")
+
+
+def _public_config(live: GameState) -> dict[str, Any]:
+    """对局规则里全场公开的子集：人数与警长规则（票权、警徽流等），不含座位角色分配。"""
+    return {
+        "num_players": live.config.num_players,
+        "sheriff": live.config.sheriff.model_dump(mode="json"),
+    }
 
 
 @router.get("/{game_id}/speeches")
