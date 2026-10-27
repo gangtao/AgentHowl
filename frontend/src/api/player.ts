@@ -34,6 +34,8 @@ export interface PlayerObservation {
   vote_candidates: number[];
   pk_speech_pending: boolean;
   badge_only: boolean;
+  /** 服务端按引擎校验给出的当前可用警长行动（issue #126）；前端只渲染这个集合。 */
+  sheriff_options: string[];
   available_actions: number[];
 }
 
@@ -41,6 +43,8 @@ export interface PlayerObservation {
 export interface ToolCall {
   tool: string;
   arguments: Record<string, unknown>;
+  /** 提交所针对的 your_turn 观察版本（issue #125）；send() 自动补上，服务端不符即 STALE_PROMPT。 */
+  state_version?: number;
 }
 
 export interface YourTurn {

@@ -8,6 +8,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict
 
 from app.engine.config import Faction, RoleType
+from app.engine.engine import sheriff_options
 from app.engine.events import Event, Visibility
 from app.engine.phases import expected_actors, is_badge_only_window, night_phase_sequence
 from app.engine.state import GameState, living_wolves, player_at
@@ -38,6 +39,8 @@ class PlayerObservation(BaseModel):
     pk_speech_pending: bool = False
     # 死亡警长的警徽处置窗口（issue #90）：True 时只能 pass_badge/tear_badge，不能发言
     badge_only: bool = False
+    # 当前可提交的警长行动类型（issue #126）：服务端按引擎校验给出，前端只渲染这个集合
+    sheriff_options: list[str] = []
     available_actions: list[int]  # M1：当前是否轮到本人（空=否）；M2 换成工具名
 
 
@@ -109,6 +112,7 @@ def build_observation(state: GameState, seat: int) -> PlayerObservation:
         vote_candidates=sorted(state.vote_candidates),
         pk_speech_pending=state.speech_idx < len(state.speech_order),
         badge_only=is_badge_only_window(state.phase, state.resume_token),
+        sheriff_options=sheriff_options(state, seat),
         available_actions=[seat] if seat in expected_actors(state) else [],
     )
 

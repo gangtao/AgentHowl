@@ -331,4 +331,23 @@ describe("回合帧（issue #115）", () => {
     ws2.emit({ type: "your_turn", observation: { state_version: 2 }, available_tools: ["speak"], deadline_ts: 2 });
     expect(useTurn.getState().prompt?.deadline_ts).toBe(2);
   });
+
+  it("send() 把当前 prompt 的 state_version 放进信封；window_closed / code=NOT_YOUR_TURN 的 error 清掉残留 prompt（issue #125）", () => {
+    const { result } = renderHook(() => useLiveEvents({ gameId: "g1", auth: { token: "tok" }, enabled: true }));
+    const ws = FakeWebSocket.instances[0] as FakeWebSocket;
+    ws.onopen?.();
+    ws.emit({ type: "your_turn", observation: { my_seat: 0, state_version: 7 }, available_tools: ["vote"], deadline_ts: 99 });
+    expect(result.current.send({ tool: "vote", arguments: { abstain: true } })).toBe(true);
+    expect(JSON.parse(ws.sent[ws.sent.length - 1] as string)).toEqual({ tool: "vote", arguments: { abstain: true }, state_version: 7 });
+    // 本连接提交过 7 号窗口：window_closed(7) 不动 prompt（结果由 action_result 收尾）
+    ws.emit({ type: "window_closed", state_version: 7 });
+    expect(useTurn.getState().prompt?.observation.state_version).toBe(7);
+    ws.emit({ type: "error", code: "NOT_YOUR_TURN", detail: "当前不在该玩家的行动窗口" });
+    expect(useTurn.getState().prompt).toBeNull();
+    // 另一标签页提交了 8 号窗口：本连接未提交 → window_closed(8) 清 prompt
+    ws.emit({ type: "your_turn", observation: { my_seat: 0, state_version: 8 }, available_tools: ["vote"], deadline_ts: 99 });
+    ws.emit({ type: "window_closed", state_version: 8 });
+    expect(useTurn.getState().prompt).toBeNull();
+    expect(useTurn.getState().lastError).toContain("本窗口已结束");
+  });
 });

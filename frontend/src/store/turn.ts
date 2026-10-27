@@ -22,7 +22,10 @@ interface TurnState {
   markPending(): void;
   accept(): void;
   resolve(result: ActionResult): void;
-  fail(detail: string): void;
+  /** error 帧；closesWindow（NOT_YOUR_TURN / STALE_PROMPT）表示该窗口对本连接已结束，连 prompt 一起清。 */
+  fail(detail: string, closesWindow?: boolean): void;
+  /** window_closed 帧（issue #125）：窗口被其它连接提交或超时关闭；本连接若未提交该窗口则清掉残留 prompt。 */
+  windowClosed(stateVersion: number): void;
   disconnected(): void;
   reset(): void;
 }
@@ -61,8 +64,22 @@ export const useTurn = create<TurnState>((set) => ({
       };
     });
   },
-  fail(detail) {
-    set({ pending: false, accepted: false, lastError: detail });
+  fail(detail, closesWindow = false) {
+    set((s) => ({
+      pending: false,
+      accepted: false,
+      lastError: detail,
+      prompt: closesWindow ? null : s.prompt,
+      submittedVersion: closesWindow ? null : s.submittedVersion,
+    }));
+  },
+  windowClosed(stateVersion) {
+    set((s) => {
+      if (s.prompt === null || s.prompt.observation.state_version !== stateVersion) return {};
+      // 本连接提交过这一窗口：结果由 action_accepted / action_result 收尾，这里不动
+      if (s.submittedVersion === stateVersion) return {};
+      return { prompt: null, pending: false, accepted: false, lastError: "本窗口已结束（其他连接已提交或已超时）" };
+    });
   },
   disconnected() {
     set({ pending: false });

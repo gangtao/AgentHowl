@@ -28,6 +28,7 @@ function obs(extra: Partial<PlayerObservation>): PlayerObservation {
     election_stage: "",
     sheriff_candidates: [],
     vote_candidates: [],
+    sheriff_options: [],
     pk_speech_pending: false,
     badge_only: false,
     available_actions: [],

@@ -38,6 +38,7 @@ from app.runtime.player_port import (
     ACCEPT_WAIT_SEC,
     HumanPlayerPort,
     NotYourTurnError,
+    StalePromptError,
     SubmitOutcome,
     TurnPrompt,
 )
@@ -227,6 +228,7 @@ async def ws_endpoint(
     # 玩家：attach your_turn 推送（同样只入队）
     port: HumanPlayerPort | None = None
     sender_cb: Callable[[TurnPrompt], Awaitable[None]] | None = None
+    closer_cb: Callable[[int], None] | None = None
     if info.kind == "PLAYER" and info.seat is not None:
         port = handle.human_ports.get(info.seat)
         if port is not None:
@@ -236,6 +238,13 @@ async def ws_endpoint(
 
             sender_cb = send_prompt
             port.attach_sender(send_prompt)
+
+            def window_closed(state_version: int) -> None:
+                # issue #125：窗口被其它连接提交或超时关闭 → 本连接清掉残留 prompt
+                out_q.put_nowait({"type": "window_closed", "state_version": state_version})
+
+            closer_cb = window_closed
+            port.attach_closer(window_closed)
             # 若连接时恰在窗口内，立即补推当前 prompt
             if port.current_prompt is not None:
                 await send_prompt(port.current_prompt)
@@ -255,7 +264,7 @@ async def ws_endpoint(
                     out_q.put_nowait({"type": "error", "detail": "该连接无行动权限或座位无端口"})
                     continue
                 action = parse_tool_call(call, actor_seat=info.seat)
-                fut = port.submit(action)
+                fut = port.submit(action, state_version=call.state_version)
                 try:
                     outcome = await asyncio.wait_for(asyncio.shield(fut), timeout=ACCEPT_WAIT_SEC)
                 except TimeoutError:
@@ -273,7 +282,18 @@ async def ws_endpoint(
                     continue
                 out_q.put_nowait(_action_result_frame(outcome))
             except (ToolCallError, NotYourTurnError) as exc:
-                out_q.put_nowait({"type": "error", "detail": str(exc) or exc.__class__.__name__})
+                # code（issue #125）：NOT_YOUR_TURN / STALE_PROMPT 表示该窗口对本连接已结束，
+                # 前端据此清掉残留 prompt；TOOL_CALL 是参数错，窗口仍开着可重试
+                code = (
+                    "STALE_PROMPT"
+                    if isinstance(exc, StalePromptError)
+                    else "NOT_YOUR_TURN"
+                    if isinstance(exc, NotYourTurnError)
+                    else "TOOL_CALL"
+                )
+                out_q.put_nowait(
+                    {"type": "error", "code": code, "detail": str(exc) or exc.__class__.__name__}
+                )
     except WebSocketDisconnect:
         pass
     finally:
@@ -285,6 +305,8 @@ async def ws_endpoint(
             task.cancel()
         if port is not None and sender_cb is not None:
             port.detach_sender(sender_cb)
+        if port is not None and closer_cb is not None:
+            port.detach_closer(closer_cb)
         sender_task.cancel()
         with contextlib.suppress(
             asyncio.CancelledError, WebSocketDisconnect, RuntimeError, OSError

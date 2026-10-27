@@ -67,6 +67,10 @@ class NotYourTurnError(RuntimeError):
     """未开窗提交（api 映射 409）。"""
 
 
+class StalePromptError(NotYourTurnError):
+    """提交信封的 state_version 与当前窗口不符（issue #125）：迟到提交不得落入下一窗口。"""
+
+
 @runtime_checkable
 class SupportsResultFeedback(Protocol):
     """runner 裁决后回填结果的可选端口能力（Bot 端口不实现即忽略）。"""
@@ -92,6 +96,9 @@ class HumanPlayerPort:
 
     def __init__(self) -> None:
         self._senders: list[Callable[[TurnPrompt], Awaitable[None]]] = []
+        # 窗口结束通知（issue #125）：无论被谁提交还是超时取消，都把该窗口的 state_version
+        # 告诉每条连接，其它标签页据此清掉残留 prompt
+        self._closers: list[Callable[[int], None]] = []
         self._prompt: TurnPrompt | None = None
         self._pending: asyncio.Future[Action] | None = None
         self._outcome: asyncio.Future[SubmitOutcome] | None = None
@@ -109,6 +116,21 @@ class HumanPlayerPort:
     def detach_sender(self, sender: Callable[[TurnPrompt], Awaitable[None]]) -> None:
         """只摘除调用方自己的通道，不影响同座位其它连接。"""
         self._senders = [s for s in self._senders if s is not sender]
+
+    def attach_closer(self, closer: Callable[[int], None]) -> None:
+        """登记窗口结束回调（issue #125）：参数为已结束窗口的 state_version。"""
+        if not any(c is closer for c in self._closers):
+            self._closers.append(closer)
+
+    def detach_closer(self, closer: Callable[[int], None]) -> None:
+        self._closers = [c for c in self._closers if c is not closer]
+
+    def _notify_closed(self, state_version: int) -> None:
+        for closer in list(self._closers):
+            try:
+                closer(state_version)
+            except Exception:
+                self.detach_closer(closer)
 
     async def act(self, observation: PlayerObservation, deadline_ts: float) -> Action:
         self._prompt = TurnPrompt(observation=observation, deadline_ts=deadline_ts)
@@ -141,6 +163,7 @@ class HumanPlayerPort:
             self._pending = None
             self._prompt = None
             self._armed.clear()
+            self._notify_closed(observation.state_version)
 
     async def wait_armed(self, timeout: float) -> TurnPrompt | None:
         """my-turn 长轮询：挂起至开窗或超时（返回 None）。"""
@@ -150,10 +173,18 @@ class HumanPlayerPort:
             return None
         return self._prompt
 
-    def submit(self, action: Action) -> asyncio.Future[SubmitOutcome]:
-        """提交行动，返回裁决结果 future；未开窗抛 NotYourTurnError。"""
-        if self._pending is None or self._pending.done():
+    def submit(
+        self, action: Action, state_version: int | None = None
+    ) -> asyncio.Future[SubmitOutcome]:
+        """提交行动，返回裁决结果 future；未开窗抛 NotYourTurnError。
+
+        state_version（issue #125）：信封带上时必须等于当前 prompt 的观察版本，否则抛
+        StalePromptError——迟到的提交不会被当作下一窗口的行动。
+        """
+        if self._pending is None or self._pending.done() or self._prompt is None:
             raise NotYourTurnError("当前不在该玩家的行动窗口")
+        if state_version is not None and state_version != self._prompt.observation.state_version:
+            raise StalePromptError("提交针对的行动窗口已结束（state_version 不匹配）")
         self._outcome = asyncio.get_running_loop().create_future()
         self._pending.set_result(action)
         return self._outcome

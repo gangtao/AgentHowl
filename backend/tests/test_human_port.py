@@ -127,3 +127,40 @@ async def test_full_game_with_human_seat_via_port() -> None:
     assert not any(e.meta.get("timeout") == "true" for e in store.load_events("g1"))
     # 真人座位至少被提示过一次
     assert prompt_count[0] > 0
+
+
+async def test_submit_with_stale_state_version_rejected() -> None:
+    """issue #125：信封带 state_version 时与当前窗口不符即拒绝，迟到提交不会落入下一窗口。"""
+    from app.runtime.player_port import StalePromptError
+
+    state, seat, obs = _obs()
+    port = HumanPlayerPort()
+    task = asyncio.ensure_future(port.act(obs, deadline_ts=time.time() + 30))
+    await port.wait_armed(1.0)
+    action = RandomBot.choose_action(state, seat)
+    with pytest.raises(StalePromptError):
+        port.submit(action, state_version=obs.state_version + 1)
+    assert isinstance(StalePromptError("x"), NotYourTurnError)  # REST 仍映射 409
+    port.submit(action, state_version=obs.state_version)  # 匹配则正常受理
+    assert await task == action
+
+
+async def test_closers_notified_on_resolve_and_on_cancel() -> None:
+    """issue #125：窗口结束（他人提交 / 超时取消）时通知所有 closer，
+    其它标签页据此清掉残留 prompt。"""
+    state, seat, obs = _obs()
+    port = HumanPlayerPort()
+    closed: list[int] = []
+    port.attach_closer(closed.append)
+    task = asyncio.ensure_future(port.act(obs, deadline_ts=time.time() + 30))
+    await port.wait_armed(1.0)
+    port.submit(RandomBot.choose_action(state, seat))
+    await task
+    assert closed == [obs.state_version]
+    task = asyncio.ensure_future(port.act(obs, deadline_ts=time.time() + 30))
+    await port.wait_armed(1.0)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert closed == [obs.state_version, obs.state_version]
+    port.detach_closer(closed.append)
