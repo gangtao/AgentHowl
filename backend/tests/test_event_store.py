@@ -410,3 +410,55 @@ def test_meta_agent_ids_roundtrip_and_default(tmp_path: Path) -> None:
         json.dumps({**raw, "data": {**raw["data"], "game_id": "g_old"}}) + "\n", encoding="utf-8"
     )
     assert JsonFileEventStore(tmp_path).load_meta("g_old").agent_ids == {}
+
+
+def test_file_store_check_then_load_is_atomic_across_threads(tmp_path: Path) -> None:
+    """issue #138：多线程同时首次触碰同一对局，只读盘一次、缓存不被陈旧列表覆盖；
+    读线程与追加线程并发也不会让 append 的 seq 校验失败。"""
+    import threading
+    import time as _time
+
+    meta, _, events = _run_fixture_game()
+    d = tmp_path / "d"
+    seed_store = JsonFileEventStore(d)
+    seed_store.create_game(meta)
+    for ev in events[:5]:
+        seed_store.append("g1", ev)
+
+    class _SlowLoad(JsonFileEventStore):
+        loads = 0
+
+        def _load_from_disk(self, game_id: str) -> tuple[GameMeta, list[Event]]:
+            type(self).loads += 1
+            _time.sleep(0.05)  # 放大 check-then-load 窗口
+            return super()._load_from_disk(game_id)
+
+    store = _SlowLoad(d)
+    errors: list[BaseException] = []
+
+    def reader() -> None:
+        try:
+            for _ in range(20):
+                store.load_events("g1")
+                store.load_meta("g1")
+        except BaseException as exc:  # noqa: BLE001
+            errors.append(exc)
+
+    def writer() -> None:
+        try:
+            for ev in events[5:60]:
+                store.append("g1", ev)
+        except BaseException as exc:  # noqa: BLE001
+            errors.append(exc)
+
+    threads = [threading.Thread(target=reader) for _ in range(4)] + [
+        threading.Thread(target=writer)
+    ]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert errors == [], errors
+    assert _SlowLoad.loads == 1  # 首次装载只发生一次
+    assert store.load_events("g1") == events[:60]
+    assert JsonFileEventStore(d).load_events("g1") == events[:60]  # 文件与缓存一致
