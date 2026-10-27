@@ -95,6 +95,7 @@ def build_observation(state: GameState, seat: int) -> PlayerObservation:
     if me.role == RoleType.HUNTER:
         private["can_shoot"] = me.hunter_can_shoot
 
+    badge_only = is_badge_only_window(state.phase, state.resume_token)
     return PlayerObservation(
         game_id=state.game_id,
         state_version=state.state_version,
@@ -110,8 +111,10 @@ def build_observation(state: GameState, seat: int) -> PlayerObservation:
         election_stage=state.election_stage,
         sheriff_candidates=sorted(state.sheriff_candidates),
         vote_candidates=sorted(state.vote_candidates),
-        pk_speech_pending=state.speech_idx < len(state.speech_order),
-        badge_only=is_badge_only_window(state.phase, state.resume_token),
+        # issue #141：警徽处置窗口也带 speech_order=(警长,)，但它不是「待发言」，
+        # 否则客户端默认落在发言页签而发言被引擎 WRONG_PHASE 拒绝
+        pk_speech_pending=(not badge_only) and state.speech_idx < len(state.speech_order),
+        badge_only=badge_only,
         sheriff_options=sheriff_options(state, seat),
         available_actions=[seat] if seat in expected_actors(state) else [],
     )

@@ -114,11 +114,12 @@ export default function ActionBar({
     [prompt],
   );
   const [tab, setTab] = useState<string | null>(null);
-  // 默认分组：PK 发言待讲时落在 speak；仅警徽窗口落在 sheriff_action；否则取首个工具
-  const preferred = prompt?.observation.pk_speech_pending
-    ? "speak"
-    : prompt?.observation.badge_only
-      ? "sheriff_action"
+  // 默认分组：警徽处置窗口先落在 sheriff_action（issue #141，窗口内发言会被拒）；
+  // PK 发言待讲时落在 speak；否则取首个工具
+  const preferred = prompt?.observation.badge_only
+    ? "sheriff_action"
+    : prompt?.observation.pk_speech_pending
+      ? "speak"
       : null;
   const fallback = preferred !== null && tools.includes(preferred) ? preferred : (tools[0] ?? null);
   const active = tab !== null && tools.includes(tab) ? tab : fallback;

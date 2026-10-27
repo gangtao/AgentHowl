@@ -118,6 +118,9 @@ def available_tools_for(obs: PlayerObservation) -> tuple[str, ...]:
         return ("speak", "self_destruct", *_READONLY)
     if ph in ("SHERIFF_ELECTION", "SHERIFF_PK"):
         return ("sheriff_action", "speak", "self_destruct", *_READONLY)
+    if ph == "LAST_WORDS" and obs.badge_only:
+        # 警徽处置窗口（issue #90 两步制）：引擎只接受 pass_badge / tear_badge（issue #141）
+        return ("sheriff_action", *_READONLY)
     if ph == "LAST_WORDS":
         return ("speak", "sheriff_action", *_READONLY)
     return _READONLY

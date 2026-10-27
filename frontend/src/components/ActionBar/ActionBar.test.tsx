@@ -181,6 +181,25 @@ describe("ActionBar", () => {
     expect(screen.queryByLabelText("发言内容")).toBeNull();
   });
 
+  it("issue #141：警徽窗口即使 pk_speech_pending 为真也默认落在警长页签", () => {
+    render(
+      <ActionBar
+        {...base}
+        prompt={prompt(["speak", "sheriff_action"], {
+          phase: "LAST_WORDS",
+          badge_only: true,
+          pk_speech_pending: true,
+          sheriff_seat: 2,
+          sheriff_options: ["pass_badge", "tear_badge"],
+          state_version: 2,
+        })}
+        onSubmit={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole("button", { name: "撕警徽" })).toBeInTheDocument();
+    expect(screen.queryByLabelText("发言内容")).toBeNull();
+  });
+
   it("死亡警长的普通遗言窗口不展示移交 / 撕警徽", () => {
     render(
       <ActionBar
