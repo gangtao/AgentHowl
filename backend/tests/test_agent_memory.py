@@ -187,3 +187,72 @@ def test_render_and_score_wolf_kill_revote() -> None:
     assert "第 1 轮" in out and "0 号→8 号" in out and "1 号→空刀" in out
     assert "None" not in out and "proposals" not in out
     assert _score(ev, seat=0) == 2
+
+
+def test_campaign_speeches_score_2_and_outrank_candidacy_noise() -> None:
+    """issue #52：上警发言 / 警上 PK 发言得 2 分，「不上警」声明得 0 分；
+    竞选发言不会被一串上警声明挤出后置投票人的上下文。"""
+    from app.engine.events import (
+        ElectionStageChangedPayload,
+        PhaseChangedPayload,
+        SheriffCandidacyPayload,
+    )
+    from app.engine.phases import Phase
+
+    mem = AgentMemory(seat=0, freshness_k=3, informative_top_n=2)
+    mem.ingest([_ev(1, EventType.ROUND_STARTED, RoundStartedPayload(round=1))])
+    # 竞选声明：上警 1 分、不上警 0 分
+    mem.ingest(
+        [
+            _ev(2, EventType.SHERIFF_CANDIDACY, SheriffCandidacyPayload(seat=2, running=True)),
+            _ev(3, EventType.SHERIFF_CANDIDACY, SheriffCandidacyPayload(seat=3, running=False)),
+        ]
+    )
+    assert [e.score for e in mem.entries[1:]] == [1, 0]
+    # 上警发言子阶段：普通发言 2 分
+    mem.ingest(
+        [
+            _ev(
+                4,
+                EventType.ELECTION_STAGE_CHANGED,
+                ElectionStageChangedPayload(stage=ElectionStage.SPEECH, speech_order=(2, 5)),
+            ),
+            _spoke(5, 2, "我是警上发言"),
+        ]
+    )
+    assert mem.entries[-1].score == 2
+    # 退水子阶段 / 白天发言：回到 1 分
+    mem.ingest(
+        [
+            _ev(
+                6,
+                EventType.ELECTION_STAGE_CHANGED,
+                ElectionStageChangedPayload(stage=ElectionStage.WITHDRAW),
+            ),
+            _ev(7, EventType.PHASE_CHANGED, PhaseChangedPayload(to=Phase.DAY_SPEECH)),
+            _spoke(8, 4, "白天发言"),
+        ]
+    )
+    assert mem.entries[-1].score == 1
+    # 警上 PK：PK 发言 2 分
+    mem.ingest(
+        [
+            _ev(9, EventType.PHASE_CHANGED, PhaseChangedPayload(to=Phase.SHERIFF_PK)),
+            _spoke(10, 5, "PK发言"),
+        ]
+    )
+    assert mem.entries[-1].score == 2
+    # 窗口：一串「不上警」把竞选发言推出新鲜窗口后，top-N 仍把竞选发言捞回来
+    mem.ingest(
+        [
+            _ev(
+                20 + i,
+                EventType.SHERIFF_CANDIDACY,
+                SheriffCandidacyPayload(seat=6 + i, running=False),
+            )
+            for i in range(5)
+        ]
+    )
+    ctx = mem.build_context()
+    assert "我是警上发言" in ctx and "PK发言" in ctx
+    assert "白天发言" not in ctx  # 1 分普通发言被 2 分竞选发言挤掉
