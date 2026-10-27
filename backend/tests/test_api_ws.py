@@ -423,3 +423,54 @@ def test_spectator_backfill_interleaves_folded_phase_frames(client: TestClient) 
     assert rounds[0] == 1 and rounds == sorted(rounds)
     pairs = [(f["to"], f["round"]) for f in frames if f["type"] == "phase_change"]
     assert all(a != b for a, b in zip(pairs, pairs[1:], strict=False)), pairs  # issue #135
+
+
+def test_runner_crash_pushes_error_frame_and_closes_4500() -> None:
+    """issue #39：runner 崩溃后已连接的 WS 收到 RUNNER_CRASHED 终止帧并以 4500 关闭，
+    不再无声断流；崩溃后新连接同样立刻拿到终止帧。文案不带异常文本。"""
+    store = InMemoryEventStore()
+    app = make_app(store=store, timeouts=RunnerTimeouts(speech_sec=0.2, action_sec=0.2))
+    with TestClient(app) as client:
+        login_as(client, "host")
+        created = client.post(
+            "/api/v1/games", json={"preset": "std_9_kill_side", "config_override": {"seed": 3}}
+        ).json()
+        gid = created["game_id"]
+        # 真人占一座且不行动：对局靠超时推进，给我们连 WS 的时间
+        client.post(
+            f"/api/v1/games/{gid}/join",
+            json={"display_name": "Idle"},
+            headers=_auth(created["host_token"]),
+        )
+        client.post(f"/api/v1/games/{gid}/start", json={}, headers=_auth(created["host_token"]))
+        handle = client.app.state.games.get(gid)  # type: ignore[attr-defined]
+
+        def boom(*_a: Any, **_k: Any) -> None:
+            raise RuntimeError("secret internal detail")
+
+        frames: list[dict[str, Any]] = []
+        with client.websocket_connect(
+            f"/api/v1/ws?game_id={gid}&share={created['share_token']}"
+        ) as ws:
+            frames.append(ws.receive_json())  # 至少拿到一帧补发，确认订阅已建立
+            store.append = boom  # type: ignore[method-assign]  # 下一次落事件即崩溃
+            with pytest.raises(WebSocketDisconnect) as exc:
+                while True:
+                    frames.append(ws.receive_json())
+            assert exc.value.code == 4500
+        crash = [f for f in frames if f.get("code") == "RUNNER_CRASHED"]
+        assert len(crash) == 1 and crash[0]["type"] == "error"
+        assert "secret" not in crash[0]["detail"]
+        assert frames[-1] is crash[0]  # 终止帧之后没有别的帧
+        assert handle.task.done() and handle.task.exception() is not None
+        # 崩溃后再连：补发历史后立刻终止帧 + 4500
+        with (
+            pytest.raises(WebSocketDisconnect) as exc2,
+            client.websocket_connect(
+                f"/api/v1/ws?game_id={gid}&share={created['share_token']}"
+            ) as ws2,
+        ):
+            last: dict[str, Any] = {}
+            while True:
+                last = ws2.receive_json()
+        assert exc2.value.code == 4500 and last.get("code") == "RUNNER_CRASHED"

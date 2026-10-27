@@ -196,6 +196,19 @@ describe("useLiveEvents", () => {
     ]);
   });
 
+  it("RUNNER_CRASHED 错误帧 → 连接错误态 + 横幅，随后的 close(4500) 不重连（issue #39）", () => {
+    renderHook(() => useLiveEvents({ gameId: "g1", auth: { token: "tok" }, enabled: true }));
+    const socket = FakeWebSocket.instances[0]!;
+    socket.onopen?.();
+    socket.emit({ type: "error", code: "RUNNER_CRASHED", detail: "对局运行异常，已停摆（详情见服务端日志）" });
+    expect(useGameStore.getState().connection).toBe("error");
+    expect(useGameStore.getState().error).toContain("对局运行异常");
+    socket.close(4500);
+    vi.advanceTimersByTime(10_000);
+    expect(FakeWebSocket.instances).toHaveLength(1);
+    expect(useGameStore.getState().error).toBe(CLOSE_TEXT[4500]);
+  });
+
   it("收到 game_over 后 close 不重连", () => {
     renderHook(() => useLiveEvents({ gameId: "g1", auth: { token: "tok" }, enabled: true }));
     const socket = FakeWebSocket.instances[0]!;

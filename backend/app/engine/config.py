@@ -5,7 +5,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from enum import StrEnum
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -231,6 +233,40 @@ def build_preset(name: str) -> GameConfig:
     if name not in _PRESETS:
         raise ConfigError(f"未知 preset：{name}；可用：{sorted(_PRESETS)}")
     return _PRESETS[name]()
+
+
+def apply_override(config: GameConfig, override: Mapping[str, Any]) -> GameConfig:
+    """建局时的 config_override 深合并（issue #39）。
+
+    - 未知键（含嵌套子规则里的）→ ConfigError。之前 `model_copy(update=...)` 绕过校验、
+      `model_dump()` 丢弃未声明键，键名笔误静默无效。
+    - 嵌套子规则（sheriff / witch / guard …）只覆盖给出的字段，其余保留预设值。之前整个
+      子模型被替换成只含覆盖字段的字典，再校验时其余字段全部回落默认值。
+    """
+    base = config.model_dump()
+    _merge_checked(type(config), base, override, path="")
+    return type(config).model_validate(base)
+
+
+def _merge_checked(
+    model: type[BaseModel], base: dict[str, Any], override: Mapping[str, Any], path: str
+) -> None:
+    for key, value in override.items():
+        full = f"{path}{key}"
+        field = model.model_fields.get(key)
+        if field is None:
+            raise ConfigError(f"config_override 含未知键：{full}")
+        sub = _submodel(field.annotation)
+        if sub is not None and isinstance(value, Mapping) and isinstance(base.get(key), dict):
+            _merge_checked(sub, base[key], value, path=f"{full}.")
+        else:
+            base[key] = value
+
+
+def _submodel(annotation: Any) -> type[BaseModel] | None:
+    if isinstance(annotation, type) and issubclass(annotation, BaseModel):
+        return annotation
+    return None
 
 
 def validate_config(config: GameConfig) -> None:

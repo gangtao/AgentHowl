@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import Awaitable, Callable
 from typing import Any
@@ -33,6 +34,23 @@ def public_phase(phase: Phase) -> str:
 
 
 logger = logging.getLogger(__name__)
+
+
+# runner 崩溃的终止帧（issue #39）：REST 端点经 ensure_healthy 对崩溃局返 500，WS 连接此前
+# 只是无声断流。文案不带异常文本（与 REST 对非 GM 视角不泄露内部细节同口径），详情看服务端日志。
+RUNNER_CRASHED_FRAME: dict[str, Any] = {
+    "type": "error",
+    "code": "RUNNER_CRASHED",
+    "detail": "对局运行异常，已停摆（详情见服务端日志）",
+}
+WS_CLOSE_RUNNER_CRASHED = 4500
+
+
+def runner_crashed(task: asyncio.Task[Any] | None) -> bool:
+    """runner task 以异常结束（非取消）。"""
+    return (
+        task is not None and task.done() and not task.cancelled() and task.exception() is not None
+    )
 
 
 class ConnectionManager:
@@ -92,6 +110,21 @@ class ConnectionManager:
         self._frame_subs = [
             (v, cb) for v, cb in self._frame_subs if not (v == viewer and cb is callback)
         ]
+
+    async def broadcast_frame_all(self, frame: dict[str, Any]) -> None:
+        """不经可见性过滤投给全部帧订阅者：只用于与任何事件无关的终止通知
+        （runner 崩溃，issue #39）。坏订阅者同样摘除。"""
+        for viewer, cb in list(self._frame_subs):
+            try:
+                await cb(frame)
+            except Exception:
+                logger.warning(
+                    "帧订阅者回调异常，已摘除 viewer=%r type=%s",
+                    viewer,
+                    frame.get("type"),
+                    exc_info=True,
+                )
+                self.unsubscribe_frames(viewer, cb)
 
     async def broadcast_frame(self, frame: dict[str, Any], event: Event) -> None:
         """只投给能看到 event 的视角——与事件广播同一过滤点，不自造判断。"""
