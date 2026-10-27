@@ -85,6 +85,26 @@ export function buildAgentsPayload(
 }
 
 /**
+ * 座位选择 → `POST /games` 的 `agent_ids`（issue #123）：凡座位档案来自库里的写 `"{seat}": agent_id`，
+ * 填满档案写 `"*"`。键集合与 buildAgentsPayload 一致（后端要求有 id 必有档案）；
+ * 随机 bot / 我自己 / 库里查不到的 id 不写。不校验 memory_id——那是 buildAgentsPayload 的事。
+ */
+export function buildAgentIdsPayload(
+  assignment: SeatSlot[],
+  fill: string | null,
+  library: StoredAgent[],
+): Record<string, string> {
+  const byId = indexById(library);
+  const out: Record<string, string> = {};
+  for (const slot of assignment) {
+    if (slot.agentId === null || slot.agentId === ME) continue;
+    if (byId.has(slot.agentId)) out[String(slot.seat)] = slot.agentId;
+  }
+  if (fill !== null && byId.has(fill)) out["*"] = fill;
+  return out;
+}
+
+/**
  * 已被占用的记忆 → agentId ↦ 首个占用它的座位号。
  *
  * 座位 S 的下拉里，`conflicts.get(id)` 存在且 !== S 的档案要禁用并提示

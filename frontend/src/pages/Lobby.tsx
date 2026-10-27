@@ -1,7 +1,7 @@
 // Lobby 三步建局（设计稿 2a / 2d / 1b）：选 preset → 分配座位 → 创建并开始 → ShareDialog。
 //
 // 建局请求形状（规格 §7.2）：
-//   POST /games {preset, config_override: {seed?}, agents: {"0": AgentProfile, "*": AgentProfile}}
+//   POST /games {preset, config_override: {seed?}, agents: {"0": AgentProfile, "*": AgentProfile}, agent_ids: {"0": agent_id, "*": agent_id}}
 // 随机 bot 座位不写入 agents；memory_id 同局唯一由 UI 禁用保证，后端 400 仍原文展示。
 
 import { useEffect, useMemo, useState } from "react";
@@ -20,7 +20,7 @@ import AgentEditor from "../components/AgentEditor/AgentEditor";
 import PresetCard from "../components/PresetCard/PresetCard";
 import SeatAssignment from "../components/SeatAssignment/SeatAssignment";
 import ShareDialog from "../components/ShareDialog/ShareDialog";
-import { assignmentSummary, buildAgentsPayload, emptyAssignment, meSeat, type SeatSlot } from "../lib/seats";
+import { assignmentSummary, buildAgentIdsPayload, buildAgentsPayload, emptyAssignment, meSeat, type SeatSlot } from "../lib/seats";
 import { useAgentLibrary } from "../store/agents";
 import { useAuth } from "../store/auth";
 import { useProviders } from "../store/providers";
@@ -101,6 +101,10 @@ export default function Lobby(): JSX.Element {
     () => buildAgentsPayload(assignment, fillBlocked ? null : fill, items),
     [assignment, fill, fillBlocked, items],
   );
+  const agentIdsPayload = useMemo(
+    () => buildAgentIdsPayload(assignment, fillBlocked ? null : fill, items),
+    [assignment, fill, fillBlocked, items],
+  );
   const summary = assignmentSummary(assignment, fill);
 
   function assign(seat: number, agentId: string | null): void {
@@ -127,7 +131,13 @@ export default function Lobby(): JSX.Element {
     setCreateError(null);
     let gameId: string | null = null;
     try {
-      const body: CreateGameRequest = { preset: preset.name, agents: agentsPayload, voice, narration: voice && narration };
+      const body: CreateGameRequest = {
+        preset: preset.name,
+        agents: agentsPayload,
+        agent_ids: agentIdsPayload,
+        voice,
+        narration: voice && narration,
+      };
       const override: Record<string, unknown> = {};
       const seedTrimmed = seed.trim();
       if (seedTrimmed !== "") {
@@ -194,6 +204,7 @@ export default function Lobby(): JSX.Element {
   }
 
   const payloadKeys = Object.keys(agentsPayload).sort();
+  const idKeys = Object.keys(agentIdsPayload).sort();
 
   return (
     <div className={styles.page}>
@@ -267,6 +278,9 @@ export default function Lobby(): JSX.Element {
           </button>
           <span className={styles.payload}>
             agents: {payloadKeys.length === 0 ? "{}" : `{${payloadKeys.map((k) => `"${k}"`).join(", ")}}`}
+          </span>
+          <span className={styles.payload}>
+            agent_ids: {idKeys.length === 0 ? "{}" : `{${idKeys.map((k) => `"${k}"`).join(", ")}}`}
           </span>
         </div>
       </aside>
@@ -410,6 +424,10 @@ export default function Lobby(): JSX.Element {
               <div className={styles.reviewRow}>
                 <span className={styles.reviewKey}>agents</span>
                 <pre className={styles.json}>{JSON.stringify(agentsPayload, null, 2)}</pre>
+              </div>
+              <div className={styles.reviewRow}>
+                <span className={styles.reviewKey}>agent_ids</span>
+                <pre className={styles.json}>{JSON.stringify(agentIdsPayload, null, 2)}</pre>
               </div>
             </div>
             {fillBlocked && (

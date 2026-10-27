@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { EMPTY_RATING, type StoredAgent } from "../api/agents";
 import {
   assignmentSummary,
+  buildAgentIdsPayload,
   buildAgentsPayload,
   emptyAssignment,
   ME,
@@ -162,5 +163,24 @@ describe("「我自己」座位（issue #115）", () => {
     const summary = assignmentSummary(assignment, null);
     expect(summary).toEqual({ agentSeats: 1, restSeats: 1, filled: false, humanSeat: 1 });
     expect(memoryConflicts(assignment, LIBRARY).has(ME)).toBe(false);
+  });
+});
+
+describe("buildAgentIdsPayload（issue #123）", () => {
+  it("座位档案写座位键，fill 写 \"*\"；随机 bot / 我自己 / 库里查不到的 id 不写", () => {
+    const assignment: SeatSlot[] = [
+      { seat: 0, agentId: "a_owl" },
+      { seat: 1, agentId: null },
+      { seat: 2, agentId: ME },
+      { seat: 3, agentId: "a_ghost" },
+    ];
+    expect(buildAgentIdsPayload(assignment, "a_nice", LIBRARY)).toEqual({ "0": "a_owl", "*": "a_nice" });
+    expect(buildAgentIdsPayload(assignment, null, LIBRARY)).toEqual({ "0": "a_owl" });
+    expect(buildAgentIdsPayload([], null, LIBRARY)).toEqual({});
+  });
+
+  it("键集合与 buildAgentsPayload 一致（后端要求有 id 必有档案）", () => {
+    const ids = buildAgentIdsPayload(MOCKUP_ASSIGNMENT, "a_nice", LIBRARY);
+    expect(Object.keys(ids).sort()).toEqual(Object.keys(buildAgentsPayload(MOCKUP_ASSIGNMENT, "a_nice", LIBRARY)).sort());
   });
 });
