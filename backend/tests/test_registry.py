@@ -534,3 +534,41 @@ async def test_owner_seat_none_for_ownerless_game() -> None:
     handle = reg.create(cfg, allow_spectators=False)
     reg.join(handle, "Alice", "HUMAN", seat=0, user_id="u_x")
     assert handle.owner_seat() is None  # 无主局永不封锁
+
+
+async def test_start_expands_agent_ids_per_effective_agent_seat() -> None:
+    """issue #123：agent_ids 只对实际建成 Agent 端口的座位展开；真人座位不记；
+    座位专属内联档案（无 id）不得错拿 "*" 的 id。"""
+    from app.agent.profile import AgentProfile
+    from app.runtime.player_port import BotPlayerPort
+
+    store = InMemoryEventStore()
+    reg = GameRegistry(
+        store=store,
+        timeouts=RunnerTimeouts(speech_sec=5.0, action_sec=5.0),
+        agent_port_factory=lambda seat, h: BotPlayerPort(state_provider=h.live_state),
+    )
+    cfg = build_preset("std_9_kill_side").model_copy(update={"seed": 5})
+    agents = {
+        "0": AgentProfile(model="a"),
+        "2": AgentProfile(model="inline"),
+        "*": AgentProfile(model="b"),
+    }
+    handle = reg.create(
+        cfg, allow_spectators=False, agents=agents, agent_ids={"0": "a_zero", "*": "a_star"}
+    )
+    assert handle.agent_ids == {"0": "a_zero", "*": "a_star"}
+    reg.join(handle, "Alice", "HUMAN", seat=1)  # 真人占 1 号
+    reg.start(handle, fill_with_bots=True)
+    await asyncio.sleep(0)  # runner.run() 开头同步写 meta 首行
+    meta = store.load_meta(handle.game_id)
+    assert meta.agent_ids == {"0": "a_zero", **{str(s): "a_star" for s in range(3, 9)}}
+    assert "1" not in meta.agent_ids and "2" not in meta.agent_ids
+    assert handle.task is not None
+    handle.task.cancel()
+
+
+def test_create_without_agent_ids_defaults_empty() -> None:
+    reg = _registry()
+    cfg = build_preset("std_9_kill_side").model_copy(update={"seed": 5})
+    assert reg.create(cfg, allow_spectators=False).agent_ids == {}

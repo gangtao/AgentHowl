@@ -152,6 +152,7 @@ class GameRunner:
         speech_audio: SpeechAudioSink | None = None,
         narration_enabled: bool = False,
         owner_id: str | None = None,
+        agent_ids: dict[str, str] | None = None,
     ) -> None:
         self._store = store
         self._config = config
@@ -166,6 +167,8 @@ class GameRunner:
         self._speech_audio = speech_audio
         self._narration_enabled = narration_enabled
         self._owner_id = owner_id
+        # 座位 → 库内档案 id（issue #123）；只写进 meta，运行时不读
+        self._agent_ids: dict[str, str] = dict(agent_ids or {})
 
     @property
     def state(self) -> GameState:
@@ -182,6 +185,7 @@ class GameRunner:
             ),
             agents=self._agents,
             owner_id=self._owner_id,
+            agent_ids=self._agent_ids,
         )
         self._store.create_game(meta)
         res = create_game(self._config, self._game_id, roster=self._roster)

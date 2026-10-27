@@ -17,6 +17,8 @@ class CreateGameRequest(BaseModel):
     ai_model: str | None = None  # 设置后空位由 LLM Agent 填充（None=沿用 RandomBot）
     ai_model_speech: str | None = None  # 发言层模型（None=同 ai_model；PRD §8.3 分层路由）
     agents: dict[str, AgentProfile] = Field(default_factory=dict)  # 档案：座位号或 "*"（issue #56）
+    # 座位号或 "*" → 库内档案 agent_id（issue #123）：键须同时出现在 agents 里；只用于归因计分
+    agent_ids: dict[str, str] = Field(default_factory=dict)
     voice: bool = False  # 发言配音（issue #103）：需 TTS 服务可用
     narration: bool = False  # GM 旁白配音（issue #110）：需 voice=True
 

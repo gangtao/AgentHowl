@@ -357,3 +357,22 @@ def test_game_meta_owner_id_roundtrip_and_legacy_default(tmp_path: Path) -> None
         ).owner_id
         is None
     )
+
+
+def test_meta_agent_ids_roundtrip_and_default(tmp_path: Path) -> None:
+    """issue #123：agent_ids 随 meta 首行落盘；旧文件缺省 {}。"""
+    cfg = build_preset("std_9_kill_side").model_copy(update={"seed": 1})
+    roster = tuple(SeatName(seat=i, display_name=f"P{i}") for i in range(9))
+    store = JsonFileEventStore(tmp_path)
+    store.create_game(GameMeta(game_id="g_ids", config=cfg, roster=roster, agent_ids={"0": "a_x"}))
+    store.create_game(GameMeta(game_id="g_none", config=cfg, roster=roster))
+    reopened = JsonFileEventStore(tmp_path)
+    assert reopened.load_meta("g_ids").agent_ids == {"0": "a_x"}
+    assert reopened.load_meta("g_none").agent_ids == {}
+    # 旧文件：meta 记录里根本没有 agent_ids 键
+    raw = json.loads((tmp_path / "g_none.jsonl").read_text(encoding="utf-8").splitlines()[0])
+    del raw["data"]["agent_ids"]
+    (tmp_path / "g_old.jsonl").write_text(
+        json.dumps({**raw, "data": {**raw["data"], "game_id": "g_old"}}) + "\n", encoding="utf-8"
+    )
+    assert JsonFileEventStore(tmp_path).load_meta("g_old").agent_ids == {}
