@@ -76,7 +76,14 @@ class ConnectionManager:
             try:
                 await cb(visible)
             except Exception:
-                logger.warning("订阅者回调异常，已摘除 viewer=%r", viewer, exc_info=True)
+                # issue #42：摘除是为了不拖垮其余投递，但对 Agent 座位意味着记忆断流、此后只凭
+                # 观察行动——必须以 ERROR 级别留痕，WARNING 在默认日志级别下容易被淹没
+                logger.error(
+                    "订阅者回调异常，已摘除 viewer=%r：该视角此后收不到事件流"
+                    "（若是 Agent 座位，其记忆自此断流，只凭观察行动）",
+                    viewer,
+                    exc_info=True,
+                )
                 self.unsubscribe(viewer, cb)
         # 阶段帧（issue #128）：夜间 PHASE_CHANGED / ROUND_STARTED 均为 GM_ONLY，非 GM 视角经
         # visible_events 裁剪后永远看不到夜晚、round 也停在 0。这里只派生 (公开阶段名, round)，

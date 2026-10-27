@@ -87,6 +87,9 @@ def build_observation(state: GameState, seat: int) -> PlayerObservation:
 
         if me.role == RoleType.GUARD:
             private["last_guard_target"] = me.last_guard_target
+            # issue #42：候选列表按规则裁剪需要这两项（守卫能否自守 / 连守）
+            private["can_guard_self"] = state.config.guard.can_guard_self
+            private["can_repeat_guard"] = state.config.guard.can_guard_same_target_consecutively
 
     # 死后仍需要的私有信息：预言家在遗言 / 交徽时要用自己的查验结果，猎人在 HUNTER_SHOOT
     # 时本就已出局。曾整段挂在 alive 之下，预言家交徽时看不到验过谁。

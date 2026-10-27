@@ -376,3 +376,46 @@ def test_static_prompt_states_configurable_role_rules() -> None:
     assert "全程可自救" in static_system_prompt(always, seat=2, role=RoleType.WITCH)
     # 与规则无关的角色不多出规则行
     assert "本局" not in static_system_prompt(twelve, seat=2, role=RoleType.VILLAGER).split("\n")[2]
+
+
+def test_wolf_night_prompt_lists_teammates_once() -> None:
+    """issue #42：队友座位只在「狼队私有」段给出，「局势」的私有信息行不再重复打印。"""
+    up = build_wolf_night_prompt(_obs("NIGHT_WEREWOLF"), "", "", agent_seed=1)
+    situation = up.split("== 你的记忆 ==")[0]
+    assert "teammates" not in situation
+    assert up.count("[4, 7]") == 1 and "你的队友座位：[4, 7]" in up
+
+
+def test_guard_candidates_follow_rules() -> None:
+    """issue #42：守卫候选按本局规则裁剪：不能连守去掉上夜目标；可自守加上自己。"""
+    obs = _obs(
+        "NIGHT_GUARD",
+        my_role=RoleType.GUARD,
+        private={"last_guard_target": 3, "can_guard_self": True, "can_repeat_guard": False},
+    )
+    cands = candidates_for(DecisionKind.NIGHT, obs)
+    assert 3 not in cands and 0 in cands and 5 not in cands  # 5 号已死
+    up = build_prompt(DecisionKind.NIGHT, obs, "", agent_seed=1)
+    assert "上夜你守了 3 号" in up
+    obs2 = _obs(
+        "NIGHT_GUARD",
+        my_role=RoleType.GUARD,
+        private={"last_guard_target": 3, "can_guard_self": False, "can_repeat_guard": True},
+    )
+    cands2 = candidates_for(DecisionKind.NIGHT, obs2)
+    assert 3 in cands2 and 0 not in cands2
+    # 旧观察无这两个键：沿用旧行为（存活他人，不裁剪）
+    cands3 = candidates_for(
+        DecisionKind.NIGHT, _obs("NIGHT_GUARD", my_role=RoleType.GUARD, private={})
+    )
+    assert cands3 == [1, 2, 3, 4, 6, 7, 8]
+
+
+def test_witch_instruction_states_used_potions() -> None:
+    obs = _obs(
+        "NIGHT_WITCH",
+        my_role=RoleType.WITCH,
+        private={"antidote_available": False, "poison_available": True, "tonight_killed_seat": 2},
+    )
+    up = build_prompt(DecisionKind.NIGHT, obs, "", agent_seed=1)
+    assert "解药已用完" in up and "毒药已用完" not in up

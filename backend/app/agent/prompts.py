@@ -153,6 +153,17 @@ def candidates_for(kind: DecisionKind, obs: PlayerObservation) -> list[int]:
         return _alive_others(obs)  # LAST_WORDS 警徽处置：存活他人
     if kind is DecisionKind.SPEECH:
         return []
+    if kind is DecisionKind.NIGHT and obs.phase == "NIGHT_GUARD" and obs.my_role == RoleType.GUARD:
+        # issue #42：守卫候选按本局规则裁剪——不能连守则去掉上夜目标；可自守则加上自己。
+        # 之前 role-naive，非法选择只能靠引擎拒绝 + 重试兜底
+        priv = obs.private
+        cands = _alive_others(obs)
+        if priv.get("can_guard_self", False):
+            cands.append(obs.my_seat)
+        if not priv.get("can_repeat_guard", True):
+            last = priv.get("last_guard_target")
+            cands = [c for c in cands if c != last]
+        return cands
     return _alive_others(obs)
 
 
@@ -171,7 +182,9 @@ _WOLF_CONSENSUS_KEYS = frozenset(
 )
 
 
-def _render_observation(obs: PlayerObservation) -> str:
+def _render_observation(obs: PlayerObservation, *, exclude: frozenset[str] = frozenset()) -> str:
+    """局势段。exclude：已在别处结构化呈现、这里不再原样打印的私有键（issue #42：狼夜 prompt
+    的队友座位已在「狼队私有」段给出，不重复）。"""
     alive = [s["seat"] for s in obs.seats if s.get("alive")]
     lines = [
         f"第 {obs.round} 轮，阶段 {obs.phase}。存活座位：{alive}。",
@@ -181,7 +194,8 @@ def _render_observation(obs: PlayerObservation) -> str:
         lines.append(f"竞选子阶段：{obs.election_stage}；候选人：{obs.sheriff_candidates}。")
     if obs.badge_flow_claims:
         lines.append(f"公开警徽流声明：{obs.badge_flow_claims}。")
-    priv = {k: v for k, v in obs.private.items() if k not in _WOLF_CONSENSUS_KEYS}
+    hidden = _WOLF_CONSENSUS_KEYS | exclude
+    priv = {k: v for k, v in obs.private.items() if k not in hidden}
     if priv:
         lines.append(f"你的私有信息：{priv}。")
     return "\n".join(lines)
@@ -212,6 +226,17 @@ def _night_instruction(obs: PlayerObservation) -> str:
     """夜间行动指引；女巫补一段常规用药原则——批跑 6/6 局都用了解药、4 局在首夜，
     首夜没有任何身份信息，解药大概率救到普通村民而把真神暴露在第二刀下。"""
     text = "给出夜间/开枪行动：action_type 与 target_seat（可 skip）。"
+    priv = obs.private
+    if obs.phase == "NIGHT_GUARD" and obs.my_role == RoleType.GUARD:
+        last = priv.get("last_guard_target")
+        if last is not None and not priv.get("can_repeat_guard", True):
+            text += f"上夜你守了 {last} 号，本局不能连守同一人，候选里已去掉。"
+    if obs.phase == "NIGHT_WITCH" and obs.my_role == RoleType.WITCH:
+        # issue #42：药已用完的分支直接说明，不让模型提交必被拒的 save / poison
+        if priv.get("antidote_available") is False:
+            text += "解药已用完，不能 save。"
+        if priv.get("poison_available") is False:
+            text += "毒药已用完，不能 poison。"
     if obs.phase == "NIGHT_WITCH" and obs.my_role == RoleType.WITCH:
         text += (
             "用药原则：首夜信息为零，常规打法是不用解药（skip），留到刀口是已跳明且逻辑可信的"
@@ -391,7 +416,7 @@ def build_wolf_night_prompt(
         else ""
     )
     return (
-        f"== 局势 ==\n{_render_observation(obs)}\n\n"
+        f"== 局势 ==\n{_render_observation(obs, exclude=frozenset({'teammates'}))}\n\n"
         f"== 你的记忆 ==\n{memory_context or '（暂无）'}\n\n"
         f"== 狼队私有 ==\n你的队友座位：{teammates}。\n{_wolf_consensus_section(obs)}\n"
         f"{night_private_context or '（无历史私谋）'}\n\n"

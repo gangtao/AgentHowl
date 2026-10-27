@@ -529,3 +529,61 @@ async def test_badge_flow_rejection_resubmits_without_flow_and_without_llm_call(
     port.notify_result(None, 11, "evt_00011")
     third = await port.act(obs, time.time() + 60)
     assert isinstance(third, Speak) and third.badge_flow == (7, 4) and len(client.calls) == 2
+
+
+def _round_events(rounds: int):  # type: ignore[no-untyped-def]
+    from app.engine.events import Event as Ev
+    from app.engine.events import EventType, RoundStartedPayload, Visibility
+
+    return [
+        Ev(
+            seq=r,
+            game_id="g_a",
+            ts=float(r),
+            type=EventType.ROUND_STARTED,
+            actor_seat=None,
+            payload=RoundStartedPayload(round=r),
+            visibility=Visibility.PUBLIC,
+        )
+        for r in range(1, rounds + 1)
+    ]
+
+
+async def test_reflection_is_at_most_one_round_per_act() -> None:
+    """issue #42：三轮待反思时，一次 act 只反思一轮，不把整个窗口花在补课上。"""
+    from app.agent.memory import ReflectionResult
+
+    def script(rm: type[BaseModel], system: str, user: str) -> BaseModel:
+        if rm is ReflectionResult:
+            return ReflectionResult(summary="总结", qa=[])
+        return SpeechDecision(reasoning="r", content="ok")
+
+    port, client = _port(script)
+    await port.on_events(_round_events(4))  # 第 1–3 轮待反思，当前第 4 轮
+    assert port.memory.rounds_needing_reflection() == [1, 2, 3]
+    await port.act(_obs("DAY_SPEECH", round=4), time.time() + 60)
+    assert len(client.calls) == 2  # 一轮反思 + 决策
+    assert port.memory.rounds_needing_reflection() == [2, 3]
+    await port.act(_obs("DAY_SPEECH", round=4), time.time() + 60)
+    assert port.memory.rounds_needing_reflection() == [3]
+
+
+async def test_slow_reflection_does_not_eat_decision_window() -> None:
+    """issue #42：反思只拿「剩余 − 决策底线」那段预算；超时则跳过，决策照常给出。"""
+    import asyncio
+
+    def script(rm: type[BaseModel], system: str, user: str) -> BaseModel:
+        return SpeechDecision(reasoning="r", content="still ok")
+
+    cfg = AgentConfig(model="scripted", reflection_min_remaining_s=3.0, deadline_margin_s=0.5)
+    port, client = _port(script, agent_config=cfg)
+    await port.on_events(_round_events(2))
+
+    async def slow_reflect(*_a: object, **_k: object) -> None:
+        await asyncio.sleep(30)
+
+    port.memory.reflect = slow_reflect  # type: ignore[method-assign]
+    t0 = time.time()
+    action = await port.act(_obs("DAY_SPEECH", round=2), time.time() + 4.0)  # 预算片 ≈ 1s
+    assert isinstance(action, Speak) and action.content == "still ok"
+    assert time.time() - t0 < 3.0  # 没有等满 30s 的反思
