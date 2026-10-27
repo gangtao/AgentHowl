@@ -8,6 +8,7 @@ import AgentCard from "../components/AgentCard/AgentCard";
 import AgentEditor from "../components/AgentEditor/AgentEditor";
 import ConfirmDialog from "../components/ConfirmDialog/ConfirmDialog";
 import { toProfilePayload } from "../lib/seats";
+import { sortAgents, type AgentSort } from "../lib/rating";
 import { useAgentLibrary } from "../store/agents";
 import { useProviders } from "../store/providers";
 import styles from "./AgentLibrary.module.css";
@@ -38,6 +39,8 @@ export default function AgentLibrary(): JSX.Element {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [sort, setSort] = useState<AgentSort>("updated"); // 只在页面内存里，不持久化
+  const shown = sortAgents(items, sort);
   const fileRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
@@ -134,6 +137,24 @@ export default function AgentLibrary(): JSX.Element {
           </p>
         </div>
         <div className={styles.headActions}>
+          <div className={styles.sortGroup} role="group" aria-label="排序">
+            <button
+              type="button"
+              className={`btn btn-ghost ${sort === "updated" ? styles.sortOn : ""}`}
+              aria-pressed={sort === "updated"}
+              onClick={() => setSort("updated")}
+            >
+              最近更新
+            </button>
+            <button
+              type="button"
+              className={`btn btn-ghost ${sort === "rating" ? styles.sortOn : ""}`}
+              aria-pressed={sort === "rating"}
+              onClick={() => setSort("rating")}
+            >
+              积分
+            </button>
+          </div>
           <button type="button" className="btn btn-secondary" onClick={() => fileRef.current?.click()}>
             导入 JSON
           </button>
@@ -192,7 +213,7 @@ export default function AgentLibrary(): JSX.Element {
         </div>
       ) : (
         <div className={styles.grid}>
-          {items.map((a) => (
+          {shown.map((a) => (
             <AgentCard
               key={a.agent_id}
               stored={a}
