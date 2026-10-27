@@ -42,7 +42,8 @@ export default function History(): JSX.Element {
         <div>
           <h3 className={styles.title}>历史对局</h3>
           <p className="text-muted" style={{ fontSize: 13, margin: 0 }}>
-            {items.length} 局 · {finished} 局可回放 · {user?.role === "admin" ? "全部用户的对局" : "只显示你创建的对局"}
+            {items.length} 局 · {finished} 局可回放
+            {user !== null && (user.role === "admin" ? " · 全部用户的对局" : " · 只显示你创建的对局")}
           </p>
         </div>
         <div className={styles.headActions}>

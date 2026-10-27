@@ -2,6 +2,7 @@
 
 import { create } from "zustand";
 import * as api from "../api/auth";
+import { ApiError } from "../api/rest";
 import type { UserPublic } from "../api/auth";
 
 export type AuthStatus = "loading" | "anon" | "authed";
@@ -28,9 +29,11 @@ export const useAuth = create<AuthState>((set) => ({
       try {
         const user = await api.me();
         set({ user, status: "authed" });
-      } catch {
-        // 401 即匿名；网络 / 5xx 也按匿名处理（页面落到登录页，重试即可）
-        set({ user: null, status: "anon" });
+      } catch (e) {
+        // 401 即匿名。网络 / 5xx（issue #120）：已登录态保持不动（一次抖动不该把人踢到登录页），
+        // 启动加载期没有别的可展示才落到匿名
+        const unauthorized = e instanceof ApiError && e.status === 401;
+        set((s) => (unauthorized || s.status !== "authed" ? { user: null, status: "anon" } : {}));
       } finally {
         inflight = null;
       }

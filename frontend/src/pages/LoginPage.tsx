@@ -74,7 +74,8 @@ export default function LoginPage({ mode, next = "#/" }: LoginPageProps): JSX.El
       }
     } catch (err) {
       if (err instanceof ApiError && err.reason === "unverified") {
-        writeVerifyEmail(identifier);
+        // issue #120：identifier 可能是用户名，只有像邮箱才预填到验证页
+        writeVerifyEmail(identifier.includes("@") ? identifier.trim() : "");
         window.location.hash = "#/verify";
         return;
       }

@@ -66,3 +66,19 @@ describe("History 删除", () => {
     ).toBe(false);
   });
 });
+
+describe("History 副标题（issue #120）", () => {
+  it("user 尚未就绪时不按非 admin 显示归属文案", async () => {
+    const { useAuth } = await import("../store/auth");
+    useAuth.setState({ user: null, status: "loading" });
+    stubFetch();
+    render(<History />);
+    await waitFor(() => expect(screen.getByText(/局可回放/)).toBeInTheDocument());
+    expect(screen.queryByText(/只显示你创建的对局/)).toBeNull();
+    useAuth.setState({
+      user: { user_id: "u", username: "a", email: "a@x", role: "admin", status: "active", email_verified: true, created_at: "t" },
+      status: "authed",
+    });
+    await waitFor(() => expect(screen.getByText(/全部用户的对局/)).toBeInTheDocument());
+  });
+});
