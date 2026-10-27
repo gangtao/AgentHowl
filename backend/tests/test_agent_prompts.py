@@ -355,3 +355,24 @@ def test_badge_pass_candidates_are_alive_others_not_stale_election_roster() -> N
             _obs("SHERIFF_PK", pk_speech_pending=False, sheriff_candidates=[4, 0]),
         )
     ) == {4, 0}
+
+
+def test_static_prompt_states_configurable_role_rules() -> None:
+    """issue #63：女巫 / 守卫 / 狼人的本局可配置规则写进静态段，技能里「除非本局规则明确开放」
+    这类条件对模型才可判定。"""
+    nine = build_preset("std_9_kill_side")  # witch.self_rescue_first_night=True
+    assert "仅首夜可自救" in static_system_prompt(nine, seat=2, role=RoleType.WITCH)
+    twelve = build_preset("std_12_yn_hunter_guard")
+    sp_w = static_system_prompt(twelve, seat=2, role=RoleType.WITCH)
+    assert "不可自救" in sp_w and "同夜不能双开" in sp_w
+    sp_g = static_system_prompt(twelve, seat=2, role=RoleType.GUARD)
+    assert "不能连守同一人" in sp_g and "同守同救" in sp_g
+    sp_wolf = static_system_prompt(twelve, seat=2, role=RoleType.WEREWOLF)
+    assert "全员一致" in sp_wolf and "最多 2 轮" in sp_wolf
+    # 配置改了，文案跟着变
+    always = twelve.model_copy(
+        update={"witch": twelve.witch.model_copy(update={"self_rescue_always": True})}
+    )
+    assert "全程可自救" in static_system_prompt(always, seat=2, role=RoleType.WITCH)
+    # 与规则无关的角色不多出规则行
+    assert "本局" not in static_system_prompt(twelve, seat=2, role=RoleType.VILLAGER).split("\n")[2]
