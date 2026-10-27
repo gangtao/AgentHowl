@@ -63,6 +63,8 @@ from app.store.event_store import (
 
 logger = logging.getLogger(__name__)
 
+POSTGAME_START_WAIT_SEC = 130.0  # 开局前等上一局复盘落盘的上限（issue #70）
+
 router = APIRouter(prefix="/games", tags=["games"])
 tts_router = APIRouter(prefix="/tts", tags=["tts"])
 _bearer = HTTPBearer(auto_error=False)
@@ -180,6 +182,11 @@ async def start_endpoint(
 ) -> StartResponse:
     handle = games.get(game_id)
     require_kind(info, game_id, "HOST")
+    # issue #70：上一局同 memory_id 的复盘还没落盘时，开局会读到复盘前的经验文件。
+    # 有界等待（复盘是 ~120s 量级的 LLM 调用）；超时只告警，不阻断开局。
+    ids = games.memory_ids_for_start(handle)
+    if ids and not await games.wait_postgame(memory_ids=ids, timeout=POSTGAME_START_WAIT_SEC):
+        logger.warning("对局 %s 开局：同 memory_id 的上局复盘仍未完成，经验可能是旧的", game_id)
     games.start(handle, fill_with_bots=req.fill_with_bots)
     return StartResponse(ok=True, num_players=handle.config.num_players)
 

@@ -46,6 +46,8 @@ BYOK_REQUIRED_MSG = "普通用户的 Agent 档案必须指定自己的 Provider�
 
 logger = logging.getLogger(__name__)
 
+PostgameStatus = Literal["none", "pending", "done", "failed"]
+
 
 class GameHandle:
     """一局的活对象集合。"""
@@ -110,6 +112,23 @@ class GameHandle:
         if self.runner is None:
             raise LobbyError(f"对局 {self.game_id} 尚未开始")
         return self.runner.state
+
+    def postgame_status(self) -> PostgameStatus:
+        """局后复盘进度（issue #70）。none = 没有带 memory_id 的 Agent 座位或 runner 未正常终局；
+        pending = 已终局、复盘未完成（含 done-callback 尚未挂上任务的瞬间）；done / failed。"""
+        if not self.seat_memory_ids:
+            return "none"
+        t = self.postgame_task
+        if t is None:
+            run = self.task
+            if run is not None and run.done() and not run.cancelled() and run.exception() is None:
+                return "pending"
+            return "none"
+        if not t.done():
+            return "pending"
+        if t.cancelled() or t.exception() is not None:
+            return "failed"
+        return "done"
 
     def ensure_healthy(self) -> None:
         """runner task 崩溃则 fail-loud（api 映射 500）。"""
@@ -208,6 +227,37 @@ class GameRegistry:
             return self._games[game_id]
         except KeyError:
             raise LookupError(f"对局不存在：{game_id}") from None
+
+    # ---- 局后复盘任务的可观测与等待（issue #68 / #70） ----
+
+    def pending_postgame_tasks(
+        self, memory_ids: Collection[str] | None = None
+    ) -> list[asyncio.Task[dict[str, AgentExperience]]]:
+        """仍在跑的复盘任务；给 memory_ids 则只取与之有交集的对局。"""
+        out: list[asyncio.Task[dict[str, AgentExperience]]] = []
+        for h in self._games.values():
+            t = h.postgame_task
+            if t is None or t.done():
+                continue
+            if memory_ids is not None and not set(h.seat_memory_ids.values()) & set(memory_ids):
+                continue
+            out.append(t)
+        return out
+
+    async def wait_postgame(
+        self, *, memory_ids: Collection[str] | None = None, timeout: float
+    ) -> bool:
+        """有界等待复盘任务结束。返回是否全部完成；超时不取消任务，只是不再等。"""
+        tasks = self.pending_postgame_tasks(memory_ids)
+        if not tasks:
+            return True
+        _done, pending = await asyncio.wait(tasks, timeout=timeout)
+        return not pending
+
+    def memory_ids_for_start(self, handle: GameHandle) -> set[str]:
+        """开局前就能算出的本局 memory_id 集合（真人占座的档案不生效，与 start 同口径）。"""
+        ids = seat_memory_ids(handle.agents, handle.config.num_players, exclude=handle.ports.keys())
+        return set(ids.values())
 
     def remove(self, game_id: str) -> None:
         """摘掉 handle（issue #100）。只做注册表层面的移除，不停任务、不动事件文件——

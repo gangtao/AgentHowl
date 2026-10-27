@@ -5,7 +5,8 @@ from __future__ import annotations
 import logging
 import os
 import re
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -83,6 +84,27 @@ def _bootstrap_admin_from_env(users: UserStore) -> None:
         )
 
 
+logger = logging.getLogger(__name__)
+
+POSTGAME_SHUTDOWN_WAIT_SEC = 130.0  # 关停时等局后复盘落盘的上限（issue #68）
+
+
+@asynccontextmanager
+async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
+    yield
+    # issue #68：局后复盘（~120s 的 LLM 调用）只挂在 handle 上无人 await，reload / 滚动重启落在
+    # 复盘窗口时任务被取消、本局经验丢失。关停前有界等待，超时只告警
+    games: GameRegistry = app.state.games
+    pending = games.pending_postgame_tasks()
+    if not pending:
+        return
+    logger.info(
+        "关停：等待 %d 个局后复盘任务落盘（最多 %.0fs）", len(pending), POSTGAME_SHUTDOWN_WAIT_SEC
+    )
+    if not await games.wait_postgame(timeout=POSTGAME_SHUTDOWN_WAIT_SEC):
+        logger.warning("关停：仍有局后复盘未完成，本局经验可能丢失")
+
+
 def create_app(
     *,
     store: EventStore | None = None,
@@ -112,7 +134,7 @@ def create_app(
     rate_limiter: RateLimiter | None = None,
     cookie_secure: bool | None = None,
 ) -> FastAPI:
-    app = FastAPI(title="AgentHowl API", version="0.1.0")
+    app = FastAPI(title="AgentHowl API", version="0.1.0", lifespan=_lifespan)
     install_access_log_filter()
     # 内置目录允许缺失（打包场景，容忍过滤）；显式指定的外部目录原样传给 load，
     # 不存在则 fail-loud（终审 F3：此前 is_dir() 过滤会静默吞掉打错的路径）。
