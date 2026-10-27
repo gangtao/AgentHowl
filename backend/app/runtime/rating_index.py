@@ -2,7 +2,9 @@
 
 IO 层，持有 EventStore。不依赖终局钩子：snapshot() 每次遍历 list_games()，已结束且带
 agent_ids 的对局只 reduce 一次（结果不可变），其余不缓存。坏文件跳过 + warning，与 list_history
-一致。单进程 asyncio，snapshot() 同步、不 await，无竞态。
+一致。snapshot() 是同步函数，由 Starlette 线程池执行（agents 端点为同步 def），
+可能与事件循环及自身并发；缓存值不可变、重复计算结果相同，因此并发只多做一次计算，
+不影响正确性。
 """
 
 from __future__ import annotations
@@ -34,18 +36,18 @@ class RatingIndex:
             if not events or events[-1].type != EventType.GAME_OVER:
                 return None
             final = reduce_all(initial_state(meta), events)
+            last = events[-1]
+            winner = getattr(last.payload, "winner", None)
+            finished = FinishedGame(
+                game_id=game_id,
+                ended_at=last.meta.get("wall_ts") or str(last.ts),
+                winner=None if winner is None else str(winner),
+                seat_factions={p.seat: p.faction for p in final.players},
+                agent_ids={int(seat): aid for seat, aid in meta.agent_ids.items()},
+            )
         except Exception as exc:  # noqa: BLE001 —— 坏文件不拖垮积分表
-            logger.warning("对局 %s 读取失败，积分已跳过：%s", game_id, exc)
+            logger.warning("对局 %s 读取失败，积分已跳过：%s", game_id, exc, exc_info=True)
             return None
-        last = events[-1]
-        winner = getattr(last.payload, "winner", None)
-        finished = FinishedGame(
-            game_id=game_id,
-            ended_at=last.meta.get("wall_ts") or str(last.ts),
-            winner=None if winner is None else str(winner),
-            seat_factions={p.seat: p.faction for p in final.players},
-            agent_ids={int(seat): aid for seat, aid in meta.agent_ids.items()},
-        )
         self._cache[game_id] = finished
         return finished
 

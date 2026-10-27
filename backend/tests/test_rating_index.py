@@ -121,3 +121,13 @@ def test_corrupt_game_is_skipped_with_warning(caplog) -> None:
         snap = RatingIndex(store).snapshot()
     assert set(snap) == {"a_x"} and snap["a_x"].games == 1
     assert any("g_bad" in rec.getMessage() for rec in caplog.records)
+
+
+def test_non_numeric_seat_key_in_meta_is_skipped_with_warning(caplog) -> None:
+    store = InMemoryEventStore()
+    _finished(store, "g_ok", agent_ids={"0": "a_x"})
+    _finished(store, "g_bad", seed=4, agent_ids={"x": "a_bad"})
+    with caplog.at_level(logging.WARNING):
+        snap = RatingIndex(store).snapshot()
+    assert "a_bad" not in snap and set(snap) == {"a_x"}
+    assert any("g_bad" in rec.getMessage() for rec in caplog.records)

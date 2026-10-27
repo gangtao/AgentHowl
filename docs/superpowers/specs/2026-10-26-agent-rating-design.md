@@ -113,7 +113,7 @@ class RatingIndex:
   - 已结束且有 id → 与 `app/eval/metrics.py` 同一条路径用 `app.engine.events.reduce_all` 对事件 reduce 出 final state 取 `seat_factions`（`player.faction`），`winner` 取 `GAME_OVER` payload，`ended_at` 取该事件 `meta["wall_ts"]`（缺失时退回 `ts`），`agent_ids` 键转 int；写入缓存。
   - 坏文件（`StoreError` / `ValidationError`）跳过并 `logger.warning`，与 `list_history` 一致。
   - 聚合：`compute_ratings(cached + fresh)`，每次重算（纯函数、线性）。
-- 并发：单进程 asyncio，`snapshot()` 是同步函数、不 await，无竞态；缓存是普通 dict。
+- 并发：`snapshot()` 是同步函数，由 Starlette 线程池执行（agents 端点为同步 def），可能与事件循环及自身并发；缓存值不可变、重复计算结果相同，并发只多做一次计算，不影响正确性。
 - 装配：`app.main` 建 `RatingIndex(store)` 挂 `app.state.rating_index`，`api/deps.py` 提供 `get_rating_index`。测试用 `InMemoryEventStore` 即可。
 
 ### 3.4 API
