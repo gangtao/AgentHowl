@@ -53,6 +53,36 @@ def shared_fingerprints(a: AgentProfiles, b: AgentProfiles | None) -> set[str]:
     return fp_a & fp_b
 
 
+LABELS_FILE = "labels.json"
+
+
+def save_labels(out_dir: Path, labels: dict[str | None, str]) -> None:
+    """把 指纹 → 标签 写到日志目录（issue #73），--report-only 据此恢复 A/B 标签与 Δ 行。"""
+    doc = {
+        "bot": labels.get(None, RANDOM_BOT_LABEL),
+        "fingerprints": {fp: label for fp, label in labels.items() if fp is not None},
+    }
+    (out_dir / LABELS_FILE).write_text(
+        json.dumps(doc, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+
+
+def load_labels(report_dir: Path) -> dict[str | None, str]:
+    """读回 labels.json；没有或坏了 → 只认随机 bot（与旧行为一致，标签退化为档案摘要名）。"""
+    path = report_dir / LABELS_FILE
+    labels: dict[str | None, str] = {None: RANDOM_BOT_LABEL}
+    if not path.is_file():
+        return labels
+    try:
+        doc = json.loads(path.read_text(encoding="utf-8"))
+        labels[None] = str(doc.get("bot", RANDOM_BOT_LABEL))
+        for fp, label in dict(doc.get("fingerprints", {})).items():
+            labels[str(fp)] = str(label)
+    except (OSError, ValueError) as exc:
+        print(f"警告：{path} 读取失败，标签退化为档案摘要名：{exc}", file=sys.stderr)
+    return labels
+
+
 def label_map(
     a: AgentProfiles, b: AgentProfiles | None, label_a: str, label_b: str
 ) -> dict[str | None, str]:
@@ -145,7 +175,7 @@ def main(argv: list[str] | None = None) -> None:
         if not report_dir.is_dir():
             parser.error(f"--report-only 目录不存在：{report_dir}")
         store: EventStore = JsonFileEventStore(report_dir)
-        labels: dict[str | None, str] = {None: RANDOM_BOT_LABEL}
+        labels = load_labels(report_dir)  # issue #73：恢复跑局时落盘的 A/B 标签
         try:
             table, doc = report(store, labels)
         except StoreError as exc:  # 坏 JSONL 等：明确报错而非裸 traceback（F6 终审）
@@ -201,6 +231,7 @@ def main(argv: list[str] | None = None) -> None:
         )
     )
     labels = label_map(a, b, args.label_a, args.label_b)
+    save_labels(out_dir, labels)  # issue #73：--report-only 需要
     try:
         table, doc = report(store, labels)
     except StoreError as exc:  # 坏 JSONL 等：明确报错而非裸 traceback（F6 终审）

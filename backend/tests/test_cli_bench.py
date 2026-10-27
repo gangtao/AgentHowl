@@ -64,7 +64,11 @@ def test_main_zero_llm_writes_logs_reports_and_report_only_matches(tmp_path, cap
         ]
     )
     out = capsys.readouterr().out
-    assert sorted(p.name for p in out_dir.iterdir()) == ["bench-3.jsonl", "bench-4.jsonl"]
+    assert sorted(p.name for p in out_dir.iterdir()) == [
+        "bench-3.jsonl",
+        "bench-4.jsonl",
+        "labels.json",  # issue #73：标签映射随日志落盘
+    ]
     assert "seed=3 winner=" in out and "seed=4 winner=" in out
     table = _table(out)
     assert "随机 bot" in table and "Δ(" not in table
@@ -166,6 +170,12 @@ def test_main_ab_with_bot_ports_records_profiles_and_delta(tmp_path, capsys, mon
     for gid in ("bench-3", "bench-4"):
         events = store.load_events(gid)
         assert events and not any(e.meta.get("timeout") == "true" for e in events)
+    # issue #73：标签映射随日志落盘，--report-only 能恢复 A/B 标签与 Δ 行
+    labels_doc = json.loads((out_dir / "labels.json").read_text(encoding="utf-8"))
+    assert set(labels_doc["fingerprints"].values()) == {"A", "B"}
+    main(["--report-only", str(out_dir)])
+    lines2 = _table(capsys.readouterr().out).splitlines()
+    assert lines2[1:4] == lines[1:4]  # 与跑局时打印的 A / B / Δ 三行完全一致
 
 
 def test_main_argument_errors(tmp_path, capsys) -> None:
