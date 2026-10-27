@@ -79,3 +79,18 @@ def test_redact_strips_api_key_from_probe_error_messages() -> None:
     assert _redact(msg, None) == msg  # 无密钥：原样返回
     assert _redact(msg, "") == msg  # 空串：原样返回（避免 "" in msg 恒真的误替换）
     assert _redact("no secret here", "sk-topsecret") == "no secret here"  # 不含密钥：原样
+
+
+def test_resolve_model_does_not_double_prefix() -> None:
+    """issue #82：模型名已带本 provider 的 LiteLLM 前缀时原样返回；
+    openai_compatible 不做此判断（OpenRouter 等服务的模型 id 本身就形如 openai/gpt-4o）。"""
+    assert resolve_model("openai/gpt-4o", _p(kind="openai", api_base=None)) == "openai/gpt-4o"
+    assert resolve_model("ollama/qwen2.5:14b", _p()) == "ollama/qwen2.5:14b"
+    assert resolve_model("anthropic/claude-3-5-haiku", _p(kind="anthropic")) == (
+        "anthropic/claude-3-5-haiku"
+    )
+    # 别家前缀 / 带斜杠的模型 id 不受影响
+    assert resolve_model("hf.co/u/m", _p()) == "ollama/hf.co/u/m"
+    compat = _p(kind="openai_compatible", api_base="https://openrouter.ai/api/v1")
+    assert resolve_model("openai/gpt-4o", compat) == "openai/openai/gpt-4o"
+    assert resolve_model("meta-llama/llama-3-70b", compat) == "openai/meta-llama/llama-3-70b"

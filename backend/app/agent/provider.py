@@ -103,7 +103,12 @@ def resolve_model(model: str, provider: Provider | None) -> str:
     """provider 为空 → 原样（含前缀、走环境变量）；否则拼 LiteLLM 前缀。"""
     if provider is None:
         return model
-    return f"{_PREFIX[provider.kind]}/{model}"
+    prefix = _PREFIX[provider.kind]
+    # issue #82：已带本 provider 前缀的模型名不再二次拼接。openai_compatible 除外：
+    # 其模型 id 在自定义 api_base 下原样透传给服务端，本身可能形如 "openai/gpt-4o"（OpenRouter）。
+    if provider.kind != "openai_compatible" and model.startswith(f"{prefix}/"):
+        return model
+    return f"{prefix}/{model}"
 
 
 def redact_secret(text: str, key: str | None) -> str:
