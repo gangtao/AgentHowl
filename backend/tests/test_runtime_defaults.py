@@ -55,7 +55,14 @@ def _sweep(preset: str, seed: int, **cfg_override: object) -> set[Phase]:
                     assert d.target_seat not in checked
             if state.phase == Phase.NIGHT_WEREWOLF:
                 assert isinstance(d, NightAction)
-                if state.config.allow_wolf_empty_knife:
+                proposed = {t for t in state.wolf_proposals.values() if t is not None}
+                if not proposed and state.wolf_proposal_history:
+                    proposed = {t for _, t in state.wolf_proposal_history[-1] if t is not None}
+                if proposed:
+                    # issue #55：跟随队友本轮（或收敛重提前上一轮）的提案
+                    assert d.action_type == NightActionType.KILL
+                    assert d.target_seat in proposed
+                elif state.config.allow_wolf_empty_knife:
                     assert d.action_type == NightActionType.SKIP
                 else:
                     assert d.action_type == NightActionType.KILL
@@ -178,3 +185,64 @@ def test_default_in_campaign_speech_is_empty_speech() -> None:
         speech_idx=0,
     )
     assert default_action(st, 2) == Speak(actor_seat=2, content=TIMEOUT_SPEECH)
+
+
+def _to_wolf_night(preset: str, seed: int):  # type: ignore[no-untyped-def]
+    cfg = build_preset(preset).model_copy(update={"seed": seed})
+    state = create_game(cfg, game_id="g").state
+    while state.phase != Phase.NIGHT_WEREWOLF:
+        seat = sorted(expected_actors(state))[0]
+        state = step(state, RandomBot.choose_action(state, seat)).state
+    return state
+
+
+def test_wolf_timeout_default_follows_teammate_proposal() -> None:
+    """issue #55：队友已提刀口时，超时狼的默认行动是跟刀而非空刀
+    （全员一致规则下空刀 = 一票否决）。"""
+    state = _to_wolf_night("std_12_yn_hunter_idiot", seed=2)
+    wolves = sorted(expected_actors(state))
+    assert len(wolves) >= 2
+    first, second = wolves[0], wolves[1]
+    target = next(s for s in living_seats(state) if player_at(state, s).faction != Faction.WOLF)
+    state = step(
+        state, NightAction(actor_seat=first, action_type=NightActionType.KILL, target_seat=target)
+    ).state
+    d = default_action(state, second)
+    assert isinstance(d, NightAction)
+    assert d.action_type == NightActionType.KILL and d.target_seat == target
+    assert step(state, d).rejection is None
+    # 多数决：两票 A 一票 B → 跟 A；并列取小座位号
+    third = wolves[2] if len(wolves) > 2 else None
+    if third is not None:
+        other = next(
+            s
+            for s in living_seats(state)
+            if player_at(state, s).faction != Faction.WOLF and s != target
+        )
+        state2 = step(
+            state,
+            NightAction(actor_seat=second, action_type=NightActionType.KILL, target_seat=other),
+        ).state
+        d3 = default_action(state2, third)
+        assert isinstance(d3, NightAction) and d3.target_seat == min(target, other)
+
+
+def test_wolf_timeout_default_uses_last_round_when_revoting() -> None:
+    """收敛重提轮（提案已清空）：跟上一轮多数；上一轮全空刀 → 回落原默认（空刀）。"""
+    state = _to_wolf_night("std_12_yn_hunter_idiot", seed=2)
+    wolves = sorted(expected_actors(state))
+    a, b = wolves[0], wolves[1]
+    goods = [s for s in living_seats(state) if player_at(state, s).faction != Faction.WOLF]
+    revote = state.model_copy(
+        update={
+            "wolf_proposals": {},
+            "wolf_kill_round": 2,
+            "wolf_proposal_history": (((a, goods[0]), (b, goods[0]), (wolves[2], goods[1])),),
+        }
+    )
+    d = default_action(revote, a)
+    assert isinstance(d, NightAction)
+    assert d.action_type == NightActionType.KILL and d.target_seat == goods[0]
+    empty = revote.model_copy(update={"wolf_proposal_history": (((a, None), (b, None)),)})
+    d2 = default_action(empty, a)
+    assert isinstance(d2, NightAction) and d2.action_type == NightActionType.SKIP

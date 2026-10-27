@@ -24,6 +24,22 @@ TIMEOUT_SPEECH = "（超时，未发言）"
 REJECTED_SPEECH = "（连续提交非法行动，未发言）"
 
 
+def _teammate_target(state: GameState) -> int | None:
+    """狼队当前（或上一轮）提案里票数最多的非空刀口；并列取小座位号；没有非空提案 → None。
+    队友的提案已被引擎接受（同一夜同一存活集合），跟投必然合法。"""
+    current = [t for t in state.wolf_proposals.values() if t is not None]
+    pool = current
+    if not pool and state.wolf_proposal_history:
+        pool = [t for _, t in state.wolf_proposal_history[-1] if t is not None]
+    if not pool:
+        return None
+    counts: dict[int, int] = {}
+    for t in pool:
+        counts[t] = counts.get(t, 0) + 1
+    top = max(counts.values())
+    return min(t for t, c in counts.items() if c == top)
+
+
 def default_action(state: GameState, seat: int, *, speech: str = TIMEOUT_SPEECH) -> Action:
     """座位 seat 在当前窗口的默认行动（PRD §5.5 表）。`speech` 是发言窗口落默认时写入的占位正文
     （超时 / 连续非法行动文案不同，UI 不再把被拒误标成超时）。"""
@@ -48,6 +64,14 @@ def default_action(state: GameState, seat: int, *, speech: str = TIMEOUT_SPEECH)
         # 守卫=空守；女巫=不用药
         return NightAction(actor_seat=seat, action_type=NightActionType.SKIP)
     if ph == Phase.NIGHT_WEREWOLF:
+        # issue #55：超时 / 端口异常的狼跟随队友提案。默认空刀在 UNANIMOUS_OR_NO_KILL 下等于一票
+        # 否决（一匹狼掉线 = 整队空刀，收敛轮也救不回来）。本轮尚无队友提案时，取上一轮
+        # （收敛重提前）提案的多数；都没有才落原默认。
+        follow = _teammate_target(state)
+        if follow is not None:
+            return NightAction(
+                actor_seat=seat, action_type=NightActionType.KILL, target_seat=follow
+            )
         if state.config.allow_wolf_empty_knife:
             return NightAction(actor_seat=seat, action_type=NightActionType.SKIP)
         targets = [s for s in living_seats(state) if player_at(state, s).faction != Faction.WOLF]
