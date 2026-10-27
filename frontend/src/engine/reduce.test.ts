@@ -55,6 +55,19 @@ describe("reduce 与后端逐事件等价（金样）", () => {
     } as unknown as Event;
     expect(() => reduce(initialState(fx.meta), truncated)).toThrow(/缺少座位/);
   });
+  it("SHERIFF_VOTE_STARTED 收窄候选集合时记录旁观候选人（issue #50）", () => {
+    const fx = FIXTURES[0]!;
+    const base = { ...fx.events[0]!, type: "SHERIFF_VOTE_STARTED", visibility: "PUBLIC" } as Event;
+    let s = { ...initialState(fx.meta), sheriff_candidates: [1, 2, 5] };
+    // 首轮开票：候选集合不变，不记旁观者
+    s = reduce(s, { ...base, payload: { candidates: [1, 2, 5] } } as Event);
+    expect(s.sheriff_pk_bystanders).toEqual([]);
+    // 进 PK：收窄为平票者，5 号落选成旁观候选人
+    s = reduce(s, { ...base, payload: { candidates: [2, 1] } } as Event);
+    expect(s.sheriff_candidates).toEqual([2, 1]);
+    expect(s.sheriff_pk_bystanders).toEqual([5]);
+    expect(s.sheriff_votes).toEqual({});
+  });
   it("normalizeState 幂等", () => {
     const st = FIXTURES[0]!.states[10]!;
     expect(normalizeState(normalizeState(st))).toEqual(normalizeState(st));

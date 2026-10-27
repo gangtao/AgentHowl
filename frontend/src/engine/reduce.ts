@@ -119,6 +119,7 @@ export function initialState(meta: GameMeta): GameState {
     sheriff_votes: {},
     election_stage: "",
     sheriff_withdrawn: [],
+    sheriff_pk_bystanders: [],
     sheriff_confirmed: [],
     sheriff_speech_direction: null,
     badge_flow_claims: {},
@@ -356,7 +357,16 @@ function applyEvent(state: GameState, event: Event): Partial<GameState> {
 
     case "SHERIFF_VOTE_STARTED": {
       const svs = p as SheriffVoteStartedPayload;
-      return { sheriff_candidates: svs.candidates, sheriff_votes: {} };
+      // 候选集合被收窄（进 PK）时，落选者记为旁观候选人（issue #50，与后端 reducer 一致）
+      const dropped = state.sheriff_candidates.filter((s) => !svs.candidates.includes(s));
+      const narrowed =
+        state.sheriff_candidates.length > 0 &&
+        dropped.length > 0 &&
+        svs.candidates.every((s) => state.sheriff_candidates.includes(s));
+      const bystanders = narrowed
+        ? [...new Set([...state.sheriff_pk_bystanders, ...dropped])].sort((a, b) => a - b)
+        : state.sheriff_pk_bystanders;
+      return { sheriff_candidates: svs.candidates, sheriff_votes: {}, sheriff_pk_bystanders: bystanders };
     }
 
     case "SHERIFF_ELECTED": {

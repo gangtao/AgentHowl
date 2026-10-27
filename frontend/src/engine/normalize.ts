@@ -20,6 +20,7 @@ export function normalizeState(state: GameState): GameState {
     acted_seats: sortedNums(cloned.acted_seats),
     sheriff_declared: sortedNums(cloned.sheriff_declared),
     sheriff_withdrawn: sortedNums(cloned.sheriff_withdrawn),
+    sheriff_pk_bystanders: sortedNums(cloned.sheriff_pk_bystanders ?? []),
     sheriff_confirmed: sortedNums(cloned.sheriff_confirmed),
   };
 }

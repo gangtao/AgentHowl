@@ -84,10 +84,18 @@ class CampaignSpeechOrder(StrEnum):
     SEAT_ASC = "SEAT_ASC"  # 固定座号升序（无随机对照）
 
 
+class SheriffPkVoters(StrEnum):
+    """警上 PK 重投的投票人口径（issue #50）。"""
+
+    NON_CANDIDATES_ONLY = "NON_CANDIDATES_ONLY"  # PRD §3.1：首轮上警者（含未进 PK 的）都不投
+    ALL_NON_PK = "ALL_NON_PK"  # 未进 PK 的原候选人也可投（不少线上平台的村规）
+
+
 class SheriffRule(BaseModel):
     model_config = ConfigDict(frozen=True)
     enabled: bool = True
     vote_weight: float = 1.5
+    pk_voters: SheriffPkVoters = SheriffPkVoters.NON_CANDIDATES_ONLY
     election_before_first_death_announce: bool = True
     badge_flow_enabled: bool = True
     badge_flow_max_length: int = 2  # 警徽流最多声明几夜（「一般留两夜」为约定，可配置）
