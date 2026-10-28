@@ -21,7 +21,7 @@
 
 .sub {
   font-size: 11px;
-  color: var(--color-neutral-500);
+  color: var(--ah-text-muted);
 }
 
 .candidates {
@@ -42,7 +42,7 @@
 .candidateKicker {
   font-size: 10px;
   letter-spacing: 0.08em;
-  color: var(--color-neutral-400);
+  color: var(--ah-text-muted);
 }
 
 .candidateName {
@@ -52,7 +52,7 @@
 
 .candidateVotes {
   font-size: 11px;
-  color: var(--color-neutral-400);
+  color: var(--ah-text-muted);
 }
 
 .votes {
@@ -74,17 +74,17 @@
 }
 
 .arrow {
-  color: var(--color-neutral-600);
+  color: var(--ah-parch-muted);
 }
 
 .weight {
   font-size: 10.5px;
-  color: var(--color-neutral-500);
+  color: var(--ah-text-muted);
 }
 
 .kicker {
   font-size: 11px;
-  color: var(--color-neutral-500);
+  color: var(--ah-text-muted);
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
@@ -106,7 +106,7 @@
 .barTrack {
   height: 8px;
   border-radius: 4px;
-  background: var(--color-neutral-900);
+  background: var(--ah-night);
   overflow: hidden;
   display: block;
 }
@@ -119,25 +119,25 @@
 
 .barNum {
   text-align: right;
-  color: var(--color-neutral-300);
-  font-family: ui-monospace, Menlo, monospace;
+  color: var(--ah-text-dim);
+  font-family: var(--font-mono);
 }
 
 .footer {
   margin-top: auto;
   padding-top: var(--space-4);
-  border-top: 1px solid var(--color-divider);
+  border-top: 1px solid var(--ah-panel-edge);
 }
 
 .waiting {
   font-size: 12.5px;
-  color: var(--color-neutral-400);
+  color: var(--ah-text-muted);
 }
 
 .resultCard {
   padding: 10px 12px;
   border-radius: var(--radius-md);
-  background: var(--color-surface);
+  background: var(--ah-panel-glass);
   box-shadow: var(--shadow-sm);
   font-size: 13px;
   line-height: 1.5;
@@ -146,5 +146,5 @@
 .resultSub {
   display: block;
   font-size: 11.5px;
-  color: var(--color-neutral-500);
+  color: var(--ah-text-muted);
 }

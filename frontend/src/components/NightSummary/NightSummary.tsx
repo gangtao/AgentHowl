@@ -1,26 +1,22 @@
-// 右栏 · 本夜行动（设计稿 1c GM / 1h 观众）。
+// 右栏 · 本夜行动（设计稿 5c「本夜行动」）。
 // 零过滤：rows 就是 nightSummary(events, round) 的结果——观众收不到夜间事件，自然为空，
 // 空态即「夜晚进行中…」占位。
 
 import { ROLE_ZH } from "../../engine/phases";
 import type { NightSummaryRow } from "../../engine/select";
-import type { Viewer } from "../../store/game";
 import styles from "./NightSummary.module.css";
 
 export interface NightSummaryProps {
   rows: NightSummaryRow[];
   round: number;
-  viewer: Viewer;
 }
 
-export default function NightSummary({ rows, round, viewer }: NightSummaryProps): JSX.Element {
+export default function NightSummary({ rows, round }: NightSummaryProps): JSX.Element {
   return (
     <section className={styles.root}>
       <div className={styles.head}>
         <span className={styles.title}>{rows.length > 0 ? "本夜行动" : "夜晚"}</span>
-        <span className={styles.sub}>
-          第 {round} 夜{viewer === "GM" ? " · GM" : ""}
-        </span>
+        <span className={styles.sub}>第 {round} 夜</span>
       </div>
 
       {rows.length > 0 ? (
@@ -46,12 +42,8 @@ export default function NightSummary({ rows, round, viewer }: NightSummaryProps)
           <div>
             <div className={styles.spinner} />
             夜晚进行中…
-            {viewer === "SPECTATOR" && (
-              <>
-                <br />
-                <span className={styles.emptySub}>夜间行动仅上帝视角可见</span>
-              </>
-            )}
+            <br />
+            <span className={styles.emptySub}>夜间行动仅上帝与行动者可见</span>
           </div>
         </div>
       )}

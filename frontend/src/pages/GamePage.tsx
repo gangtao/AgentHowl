@@ -413,7 +413,7 @@ export default function GamePage({ gameId, token, share, viewer }: GamePageProps
   const winner = head?.winner ?? view.winner;
 
   const rightPanel = isNight(view.phase) ? (
-    <NightSummary rows={nightRows} round={view.round} viewer={resolvedViewer} />
+    <NightSummary rows={nightRows} round={view.round} />
   ) : view.phase === "SHERIFF_ELECTION" || view.phase === "SHERIFF_PK" ? (
     <ElectionPanel state={view} events={visibleEvents} />
   ) : view.phase === "VOTE" || view.phase === "VOTE_PK" || view.phase === "EXILE" ? (
