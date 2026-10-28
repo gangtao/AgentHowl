@@ -21,4 +21,8 @@ describe("ShareDialog", () => {
     expect(screen.getByRole("button", { name: "进入对局 →" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "进入上帝视角 →" })).toBeNull();
   });
+  it("标题统一为「传 · 分享对局」", () => {
+    render(<ShareDialog gameId="g_1" gmToken="G" shareToken="S" onEnter={vi.fn()} onLater={vi.fn()} />);
+    expect(screen.getByRole("dialog", { name: "传 · 分享对局" })).toBeInTheDocument();
+  });
 });
