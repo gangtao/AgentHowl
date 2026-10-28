@@ -66,3 +66,20 @@ describe("LoginPage", () => {
     await waitFor(() => expect(window.location.hash).toBe("#/verify"));
   });
 });
+
+describe("LoginPage 村口木牌（设计稿 1b）", () => {
+  afterEach(() => {
+    window.location.hash = "";
+  });
+
+  it.each([
+    ["login", "入村", "登录"],
+    ["register", "落户", "注册"],
+    ["verify", "对暗号", "验证"],
+  ] as const)("%s 模式：木牌标题「%s」，主按钮「%s」", (mode, heading, button) => {
+    render(<LoginPage mode={mode} />);
+    expect(screen.getByRole("heading", { name: heading })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: button })).toBeInTheDocument();
+    expect(screen.getByText("AgentHowl")).toBeInTheDocument();
+  });
+});
