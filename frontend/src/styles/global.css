@@ -220,6 +220,14 @@ samp {
 .btn-ghost:disabled {
   opacity: 0.45;
 }
+/* 羊皮纸上的描边按钮：墨色文字 + 羊皮纸描边 */
+.ah-parch .btn-ghost {
+  color: var(--ah-parch-link);
+  border-color: var(--ah-parch-edge);
+}
+.ah-parch .btn-ghost:hover {
+  background: rgba(120, 90, 40, 0.1);
+}
 
 /* 血色按钮（刀 / 遗言 / 毒） */
 .btn-danger {

@@ -64,7 +64,7 @@ export default function ShareDialog({
           )}
           {specLink !== null && (
             <div className="field">
-              <label htmlFor="share-spec">观众链接 · 仅公开信息，可匿名打开</label>
+              <label htmlFor="share-spec">观众链接</label>
               <div className={styles.row}>
                 <input
                   id="share-spec"

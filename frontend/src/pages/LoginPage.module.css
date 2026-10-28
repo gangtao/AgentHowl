@@ -7,7 +7,7 @@
   display: grid;
   justify-items: center;
   align-content: start;
-  padding: 160px 16px 300px;
+  padding: 300px 16px 200px;
   background: radial-gradient(ellipse at 50% 0%, #1c2440 0%, var(--ah-night) 60%);
 }
 
@@ -207,7 +207,7 @@
 
 @media (max-width: 600px) {
   .page {
-    padding-top: 120px;
+    padding-top: 200px;
   }
   .moon {
     width: 110px;
