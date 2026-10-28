@@ -1,4 +1,5 @@
-// SkillPicker（设计稿 2c 第 2 组）：GET /skills 的两列复选卡 + 「全部（*）」开关。
+// SkillPicker「二 · 技艺」（规格 §6，设计稿 4e）：GET /skills 的两列羊皮纸技能卡 + 「全部（*）」开关；
+// 选中卡 ■ + 篝火描边。
 // 注意：SkillInfo.roles 为空数组 = 适用全部角色（后端口径），不是「无角色」。
 
 import type { SkillInfo } from "../../api/agents";
@@ -33,7 +34,7 @@ export default function SkillPicker({ skills, value, onChange }: SkillPickerProp
   return (
     <div className={styles.root}>
       <div className={styles.head}>
-        <span className="card-kicker">2 · 技能 · 已选 {all ? skills.length : value.length}</span>
+        <span className={styles.kicker}>二 · 技艺 · 已选 {all ? skills.length : value.length}</span>
         <label className={styles.allToggle}>
           全部（*）
           <input
@@ -58,10 +59,14 @@ export default function SkillPicker({ skills, value, onChange }: SkillPickerProp
               >
                 <input
                   type="checkbox"
+                  className={styles.box}
                   checked={checked}
                   disabled={all}
                   onChange={() => toggle(s.name)}
                 />
+                <span className={styles.mark} aria-hidden="true">
+                  {checked ? "■" : "□"}
+                </span>
                 <span className={styles.itemText}>
                   <span className={styles.name}>{s.name}</span>
                   <span className={styles.desc}>
