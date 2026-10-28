@@ -78,7 +78,7 @@ export default function SeatAssignment({
             <select
               className={`input ${styles.fillSelect}`}
               value={fill ?? ""}
-              aria-label="填满其余座位"
+              aria-label="填满其余座位（列表）"
               onChange={(e) => onFill(e.target.value || null)}
             >
               <option value="">不填（随机 bot）</option>

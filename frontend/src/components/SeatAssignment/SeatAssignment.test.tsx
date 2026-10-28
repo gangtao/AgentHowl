@@ -63,7 +63,7 @@ describe("SeatAssignment", () => {
 
     fireEvent.change(screen.getByLabelText("0号 座位"), { target: { value: "a_fox" } });
     fireEvent.change(screen.getByLabelText("2号 座位"), { target: { value: "a_nice" } });
-    fireEvent.change(screen.getByLabelText("填满其余座位"), { target: { value: "a_nice" } });
+    fireEvent.change(screen.getByLabelText("填满其余座位（列表）"), { target: { value: "a_nice" } });
     fireEvent.click(screen.getByRole("button", { name: "dump" }));
 
     const payload = onPayload.mock.calls.at(-1)?.[0] as Record<string, { name?: string | null }>;
@@ -93,7 +93,7 @@ describe("SeatAssignment", () => {
 
   it("含 memory_id 的档案不能用于「填满其余座位」", () => {
     render(<Harness onPayload={vi.fn()} />);
-    const fillSelect = screen.getByLabelText("填满其余座位");
+    const fillSelect = screen.getByLabelText("填满其余座位（列表）");
     expect(within(fillSelect).getByRole("option", { name: /狐语/ })).toBeDisabled();
     expect(within(fillSelect).getByRole("option", { name: "老好人" })).not.toBeDisabled();
   });
