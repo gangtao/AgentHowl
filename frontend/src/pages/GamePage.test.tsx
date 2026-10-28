@@ -94,7 +94,7 @@ describe("GamePage 凭据模式（issue #114）", () => {
   it("401 → 显示登录提示", async () => {
     stubFetch(() => jsonResponse(401, { detail: "未登录" }));
     render(<GamePage gameId="g_x" viewer="GM" />);
-    expect(await screen.findByText("请登录，或使用建局者提供的分享链接")).toBeInTheDocument();
+    expect(await screen.findByText("村口有人守着")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "去登录" })).toHaveAttribute("href", "#/login");
   });
 });

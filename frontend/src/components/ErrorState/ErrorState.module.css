@@ -1,4 +1,4 @@
-/* 空 / 错误态样式（设计稿 1i）。 */
+/* 空 / 错误态（设计稿 4f）：夜空居中一块，上方插画（月亮 / 木牌「?」/ 篝火），mono 状态码、标题、说明。 */
 
 .root {
   height: 100%;
@@ -6,6 +6,7 @@
   place-items: center;
   text-align: center;
   padding: 24px;
+  background: radial-gradient(ellipse at 50% 30%, #1a1f30, var(--ah-night) 70%);
 }
 
 .box {
@@ -13,46 +14,77 @@
   flex-direction: column;
   gap: 6px;
   align-items: center;
-  max-width: 360px;
+  max-width: 420px;
+}
+
+.artMoon {
+  width: 70px;
+  height: 70px;
+  margin-bottom: 14px;
+  border-radius: 50%;
+  background: var(--ah-moon);
+  box-shadow: 0 0 40px 14px rgba(241, 234, 214, 0.15);
+}
+
+.artCard {
+  width: 64px;
+  height: 84px;
+  margin-bottom: 14px;
+  display: grid;
+  place-items: center;
+  border-radius: 5px;
+  background: linear-gradient(180deg, var(--ah-wood-hi), var(--ah-wood-lo));
+  border: 2px solid var(--ah-wood-edge);
+  font-family: var(--font-heading);
+  font-size: 30px;
+  color: var(--ah-parch-muted);
+}
+
+.artFire {
+  width: 48px;
+  height: 48px;
+  margin-bottom: 14px;
+  border-radius: 50%;
+  background: radial-gradient(circle, var(--ah-fire-hi) 0%, var(--ah-fire-lo) 40%, transparent 72%);
+  box-shadow: 0 0 40px 16px rgba(227, 166, 72, 0.2);
+  animation: ah-pulse 1.8s ease-in-out infinite;
 }
 
 .code {
-  font-family: ui-monospace, Menlo, monospace;
-  font-size: 11px;
-  color: var(--color-neutral-600);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--ah-parch-muted);
 }
 
 .title {
-  font-size: 18px;
-  font-weight: 500;
+  font-family: var(--font-heading);
+  font-size: 30px;
+  line-height: 1.2;
+  color: var(--ah-text-bright);
+  margin: 2px 0 4px;
 }
 
 .desc {
-  font-size: 12.5px;
-  color: var(--color-neutral-500);
-  line-height: 1.6;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--ah-text-muted);
 }
 
 .detail {
-  font-family: ui-monospace, Menlo, monospace;
+  font-family: var(--font-mono);
   font-size: 11.5px;
   line-height: 1.6;
-  color: var(--color-neutral-300);
+  text-align: left;
+  word-break: break-word;
+  max-width: 420px;
+  margin-top: 8px;
   padding: 8px 10px;
-  border-radius: var(--radius-sm);
-  background: var(--color-surface);
+  border-radius: 4px;
+  background: var(--ah-parch);
+  color: var(--ah-parch-ink-2);
+  border: 1px solid var(--ah-parch-edge);
 }
 
-.back {
-  margin-top: 10px;
-}
-
-.spinner {
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  border: 2px solid var(--color-neutral-800);
-  border-top-color: var(--color-accent);
-  animation: ah-spin 1.2s linear infinite;
-  margin-bottom: 6px;
+.action {
+  margin-top: 18px;
 }
