@@ -85,8 +85,8 @@ export function SpeechBubble({
       aria-label={`${seat}号 ${name} ${HEAD[kind]}`}
       style={{
         left: `${x}%`,
-        top: side === "below" ? `${anchor.y + 7}%` : undefined,
-        bottom: side === "above" ? `${100 - anchor.y + 7}%` : undefined,
+        top: side === "below" ? `${anchor.y + 9}%` : undefined,
+        bottom: side === "above" ? `${100 - anchor.y + 9}%` : undefined,
       }}
     >
       <span className={styles.bubbleArrow} aria-hidden="true" />

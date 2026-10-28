@@ -1,0 +1,14 @@
+{
+  "name": "agenthowl-e2e",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "对局页浏览器回归脚本（角色感知 play.mjs + 截图 screens.mjs）；独立于 frontend 主包安装。",
+  "scripts": {
+    "play": "node play.mjs",
+    "screens": "node screens.mjs"
+  },
+  "dependencies": {
+    "playwright-core": "^1.49.1"
+  }
+}

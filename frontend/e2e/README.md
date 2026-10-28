@@ -1,0 +1,22 @@
+# 对局页浏览器回归（e2e）
+
+两段 Playwright 脚本，独立于 `frontend` 主包安装（`cd frontend/e2e && npm i`），需要本地后端（`:8000`）与
+`npm run dev`（`:5173`，代理 `/api`）都在跑，以及一个测试账号。不进 CI；用于 UI 改版各 PR 的人工验收。
+
+| 脚本 | 作用 |
+|---|---|
+| `play.mjs` | 真人坐 0 号 + 随机 bot 打完一整局：登录 → 建局 → 按角色策略行动（狼刀 / 查验 / 救毒 / 守护 / 开枪 / 上警 / 投票 / 遗言 / 自爆）→ 赛后检查；每局输出一行 `SUMMARY` JSON，`finished: true` 且 `rejected` 为空即通过 |
+| `screens.mjs` | 用一局已结束的对局，以上帝 / 观众视角打开回放，拖到夜晚 / 竞选 / 发言 / 投票 / 终局截图，并截 1100 / 390 宽 |
+
+```bash
+cd frontend/e2e
+AH_BASE_URL=http://localhost:5173 AH_USER=e2e_player AH_PASS=… AH_SEED=2 RUN=wolf SPEECH_SEC=15 ACTION_SEC=15 node play.mjs
+AH_BASE_URL=http://localhost:5173 AH_USER=e2e_player AH_PASS=… AH_GAME=g_xxxxxxxx SHOT_DIR=../../docs/design/ui-gamified-2026-10-28 node screens.mjs
+```
+
+发牌只看 seed（`std_12_yn_hunter_idiot`，seat 0 的角色 → seed）：IDIOT 1 / WEREWOLF 2 / VILLAGER 3 / WITCH 4 / HUNTER 9 /
+SEER 22；`std_12_yn_hunter_guard` 同表但 seed 1 = GUARD；`std_9_*`：VILLAGER 1 / SEER 2 / HUNTER 4 / WEREWOLF 5 / WITCH 13。
+
+脚本只用页面上的控件行动（座位胶囊 / 桌上座位 / HUD 主按钮），WebSocket 帧只用来决定「点哪个」；
+`RUN_SHERIFF=1` 上警、`SELF_DESTRUCT=1` 第 2 轮自爆、`AH_SESSION` 可代替账号密码直接注入会话 cookie。
+Chromium 路径缺省取 `~/Library/Caches/ms-playwright/chromium-1148/...`，可用 `CHROMIUM` 覆盖。
