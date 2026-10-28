@@ -46,7 +46,9 @@ export default function ShareDialog({
       <div className="dialog" role="dialog" aria-modal="true" aria-label="传 · 分享对局">
         <div className="dialog-title">传 · 分享对局</div>
         <div className="dialog-body" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-          <p className={styles.lead}>观众链接 · 仅公开信息，可匿名打开 · 不含任何身份</p>
+          {specLink !== null && (
+            <p className={styles.lead}>观众链接 · 仅公开信息，可匿名打开 · 不含任何身份</p>
+          )}
           {gmLink !== null && (
             <div className="field">
               <label htmlFor="share-gm">上帝视角链接 · GM</label>

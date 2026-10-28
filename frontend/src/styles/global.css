@@ -460,11 +460,28 @@ select.input {
     0 20px 50px rgba(0, 0, 0, 0.5),
     inset 0 0 80px rgba(120, 90, 40, 0.12);
 }
+/* 羊皮纸容器内对全局类的前景色覆盖：夜色上的浅字在 #e9dcc2 上不可读，统一换成墨色系。
+   .ah-parch .input / .field > label / .btn-ghost 在各自段落里定义；后续新增 .tag-* / .radio 的覆盖也放这里。 */
 .ah-parch a {
   color: var(--ah-parch-link);
 }
 .ah-parch .text-muted {
   color: var(--ah-parch-muted);
+}
+.ah-parch .card-kicker {
+  color: var(--ah-parch-link);
+}
+.ah-parch .seg {
+  border-color: var(--ah-parch-edge);
+}
+.ah-parch .seg-opt {
+  color: var(--ah-parch-ink-2);
+}
+.ah-parch .seg-opt + .seg-opt {
+  border-left-color: var(--ah-parch-edge);
+}
+.ah-parch .seg-opt:not(:has(input:checked)):hover {
+  background: rgba(120, 90, 40, 0.1);
 }
 
 .ah-panel {

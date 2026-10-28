@@ -190,7 +190,7 @@
   gap: 8px;
   margin-top: 4px;
 }
-.actions .btn-primary {
+.actions :global(.btn-primary) {
   font-size: 15px;
   letter-spacing: 0.5em;
   text-indent: 0.5em;

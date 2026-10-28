@@ -46,4 +46,16 @@ describe("RoleToken（规格 §2.4）", () => {
     expect(container.querySelector("img")).toBeNull();
     expect(container.querySelectorAll("svg")).toHaveLength(1); // 退回居中徽记
   });
+
+  it("state=known 但 role=null → 仍按 unknown 渲染（规格 §2.4）", () => {
+    render(<RoleToken role={null} state="known" initial="B" size={48} />);
+    const root = screen.getByRole("img", { name: "身份未知" });
+    expect(root).toHaveAttribute("data-state", "unknown");
+    expect(root).not.toHaveAttribute("data-camp");
+  });
+
+  it.each(["parch", "outline"] as const)("%s 变体透传 data-variant", (variant) => {
+    render(<RoleToken role="VILLAGER" variant={variant} size={28} />);
+    expect(screen.getByRole("img", { name: "村民" })).toHaveAttribute("data-variant", variant);
+  });
 });

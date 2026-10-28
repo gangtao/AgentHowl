@@ -5,7 +5,13 @@ import Drawer from "./Drawer";
 describe("Drawer 壳（设计稿 4e）", () => {
   it("缺省羊皮纸、渲染 kicker 与 idTag", () => {
     render(
-      <Drawer title="编辑 Agent" kicker="招 募 告 示" idTag="a_1" onClose={vi.fn()} footer={<span>foot</span>}>
+      <Drawer
+        title="编辑 Agent"
+        kicker="招 募 告 示"
+        idTag="a_1"
+        onClose={vi.fn()}
+        footer={<span>foot</span>}
+      >
         body
       </Drawer>,
     );

@@ -51,7 +51,12 @@ function Shell({ role, art, glyph, code, title, desc, detail, action }: ShellPro
   );
 }
 
-export default function ErrorState({ kind, attempt, detail, playerHref }: ErrorStateProps): JSX.Element {
+export default function ErrorState({
+  kind,
+  attempt,
+  detail,
+  playerHref,
+}: ErrorStateProps): JSX.Element {
   if (kind === "4409") {
     return (
       <Shell
@@ -74,7 +79,9 @@ export default function ErrorState({ kind, attempt, detail, playerHref }: ErrorS
         art="fire"
         code={null}
         title="重连中"
-        desc={<>连接已断开，正在补发事件{attempt ? `（第 ${attempt} 次）` : ""}。指数退避 1s → 8s。</>}
+        desc={
+          <>连接已断开，正在补发事件{attempt ? `（第 ${attempt} 次）` : ""}。指数退避 1s → 8s。</>
+        }
         detail={detail}
         action={null}
       />

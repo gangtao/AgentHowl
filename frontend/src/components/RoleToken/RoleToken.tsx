@@ -47,7 +47,9 @@ export default function RoleToken({
   style,
 }: RoleTokenProps): JSX.Element {
   const [broken, setBroken] = useState(false);
-  const resolved: RoleTokenState = state ?? (role === null ? "unknown" : "known");
+  // role 为 null 时无论调用方传什么 state（dead 除外）都按 unknown：没有角色就没有徽记可画。
+  const resolved: RoleTokenState =
+    role === null && state !== "dead" ? "unknown" : (state ?? "known");
   const known = resolved === "known" && role !== null;
   const camp = known ? roleCamp(role) : null;
   const vars = camp === null ? null : CAMP_VARS[camp];
@@ -71,7 +73,12 @@ export default function RoleToken({
   } else if (showAvatar) {
     body = (
       <>
-        <img className={styles.avatar} src={avatarUrl(avatar)} alt="" onError={() => setBroken(true)} />
+        <img
+          className={styles.avatar}
+          src={avatarUrl(avatar)}
+          alt=""
+          onError={() => setBroken(true)}
+        />
         {known && (
           <span className={styles.stamp} aria-hidden="true">
             <Icon role={role} px={Math.round(size * 0.3 * 0.6)} />

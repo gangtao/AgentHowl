@@ -12,7 +12,7 @@
   align-items: center;
 }
 
-.row .input {
+.row :global(.input) {
   flex: 1;
   min-width: 0;
 }

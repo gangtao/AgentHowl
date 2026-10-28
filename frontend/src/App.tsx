@@ -78,7 +78,10 @@ export default function App(): JSX.Element {
     if (authRoute) {
       const next = readNext();
       clearNext();
-      window.location.hash = next.startsWith("#/login") || next.startsWith("#/register") || next.startsWith("#/verify") ? "#/" : next;
+      window.location.hash =
+        next.startsWith("#/login") || next.startsWith("#/register") || next.startsWith("#/verify")
+          ? "#/"
+          : next;
     } else {
       clearNext();
     }
@@ -138,7 +141,10 @@ export default function App(): JSX.Element {
             </a>
           ))}
           {user?.role === "admin" && (
-            <a href="#/admin" {...(hash.route === "admin" ? { "aria-current": "page" as const } : {})}>
+            <a
+              href="#/admin"
+              {...(hash.route === "admin" ? { "aria-current": "page" as const } : {})}
+            >
               用户
             </a>
           )}
