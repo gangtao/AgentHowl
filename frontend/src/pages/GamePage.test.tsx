@@ -423,3 +423,129 @@ describe("GamePage 终局结算页（规格 §4.8）", () => {
     expect(screen.getByRole("heading", { name: "狼人阵营胜" })).toBeInTheDocument();
   });
 });
+
+describe("GamePage 终审修复（PR ② 评审）", () => {
+  const playerState = {
+    viewer: 2,
+    game_id: "g_x",
+    state_version: 7,
+    my_seat: 2,
+    my_role: "WEREWOLF",
+    my_status: "ALIVE",
+    phase: "DAY_SPEECH",
+    round: 1,
+    seats: [0, 1, 2].map((seat) => ({
+      seat,
+      alive: true,
+      is_sheriff: false,
+      idiot_revealed: false,
+      display_name: `P${seat}`,
+    })),
+    sheriff_seat: null,
+    badge_flow_claims: {},
+    private: { teammates: [0] },
+    election_stage: "",
+    sheriff_candidates: [],
+    vote_candidates: [],
+    pk_speech_pending: false,
+    badge_only: false,
+    available_actions: [],
+  };
+  function stubPlayerFetch(state: unknown): void {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (rawUrl: string) => {
+        const url = rawUrl.split("?")[0] as string;
+        if (url.endsWith("/meta")) return jsonResponse(403, { detail: "对局未结束" });
+        if (url.endsWith("/state")) return jsonResponse(200, state);
+        return jsonResponse(200, {});
+      }),
+    );
+    vi.stubGlobal(
+      "WebSocket",
+      vi.fn(() => ({ readyState: 1, send() {}, close() {} })),
+    );
+  }
+
+  it("队友来自 /state 快照与 your_turn 的观察，提交成功清掉 prompt 后仍然可见（Important 1）", async () => {
+    stubPlayerFetch(playerState);
+    render(<GamePage gameId="g_x" token="P" />);
+    await screen.findByText("2号 · P2");
+    // 引导快照里就有 teammates：没有 prompt 也应显示队友
+    expect(screen.getByText("队友 0号")).toBeInTheDocument();
+    act(() =>
+      useTurn.getState().setPrompt({
+        observation: { ...playerState, private: { teammates: [0, 1] } } as never,
+        available_tools: ["speak", "get_state"] as never,
+        deadline_ts: Date.now() / 1000 + 60,
+      }),
+    );
+    expect(screen.getByText("队友 0号 · 1号")).toBeInTheDocument();
+    act(() => {
+      useTurn.getState().markPending();
+      useTurn
+        .getState()
+        .resolve({ ok: true, event_id: "e", state_version: 7, rejected_reason: null });
+    });
+    expect(useTurn.getState().prompt).toBeNull();
+    expect(screen.getByText("队友 0号 · 1号")).toBeInTheDocument();
+  });
+
+  it("夜间被刀的猎人收到确认窗口时身份牌显示「已出局」（Important 3）", async () => {
+    stubPlayerFetch({ ...playerState, my_role: "HUNTER", my_status: "DEAD", private: {} });
+    render(<GamePage gameId="g_x" token="P" />);
+    await screen.findByText("2号 · P2");
+    expect(screen.getByText("已出局")).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "已出局" })).toBeInTheDocument();
+  });
+
+  it("回放：配音正在读第一轮某句时，气泡显示的是游标处那句而不是全局最后一句（Important 5）", async () => {
+    stubFetch(() => jsonResponse(200, meta));
+    vi.stubGlobal("WebSocket", vi.fn());
+    render(<GamePage gameId="g_x" token="t" viewer="GM" />);
+    await screen.findByText(new RegExp(`▶ 回放 · ${events.length} 条事件`));
+    const first = events.find((e) => e.type === "PLAYER_SPOKE") as Event;
+    const content = (first.payload as { content: string }).content;
+    act(() => useGameStore.getState().setCursor(first.seq));
+    act(() => useVoice.setState({ voicingSeq: first.seq, playing: { seq: first.seq, part: 0 } }));
+    // 第一句发言可能是竞选发言：气泡头行按阶段写「发言中 / 竞选发言 / 遗言」
+    const bubble = await screen.findByRole("status", {
+      name: new RegExp(`^${first.actor_seat}号 .* (发言中|竞选发言|遗言)`),
+    });
+    expect(bubble).toHaveTextContent(content.slice(0, 20));
+    useVoice.getState().clear();
+  });
+
+  it("玩家直播收尾后拖动绳索条回中段 → 结算页让位（Important 6）", async () => {
+    stubPlayerFetch(playerState);
+    render(<GamePage gameId="g_x" token="P" />);
+    await screen.findByText("2号 · P2");
+    act(() =>
+      useGameStore.getState().appendEvents([
+        {
+          seq: 1,
+          game_id: "g_x",
+          ts: 1,
+          type: "PHASE_CHANGED",
+          actor_seat: null,
+          payload: { to: "DAY_SPEECH" },
+          visibility: "PUBLIC",
+          meta: {},
+        },
+        {
+          seq: 2,
+          game_id: "g_x",
+          ts: 2,
+          type: "GAME_OVER",
+          actor_seat: null,
+          payload: { winner: "WOLF" },
+          visibility: "PUBLIC",
+          meta: {},
+        },
+      ] as unknown as Event[]),
+    );
+    expect(await screen.findByRole("region", { name: "游戏结束" })).toBeInTheDocument();
+    act(() => useGameStore.getState().setCursor(1));
+    expect(screen.queryByRole("region", { name: "游戏结束" })).toBeNull();
+  });
+});

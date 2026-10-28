@@ -554,4 +554,34 @@ describe("ActionBar · HUD 受控模式（UI 改版 PR ②）", () => {
     expect(screen.getByRole("button", { name: "开枪 · 1号" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "不开枪" })).toBeInTheDocument();
   });
+
+  it("受控：先点「弃票」再从桌上选座位 → 弃票取消，主按钮变「确认投票 · N号」（Important 2）", () => {
+    const onSelectTarget = vi.fn();
+    const { rerender } = render(
+      <ActionBar
+        {...base}
+        prompt={prompt(["vote"])}
+        onSubmit={vi.fn()}
+        layout="hud"
+        selectedTarget={null}
+        onSelectTarget={onSelectTarget}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "弃票" }));
+    expect(screen.getByRole("button", { name: "确认 · 弃票" })).toBeInTheDocument();
+    // 桌上点了 1 号：GamePage 把 selectedTarget 改成 1
+    rerender(
+      <ActionBar
+        {...base}
+        prompt={prompt(["vote"])}
+        onSubmit={vi.fn()}
+        layout="hud"
+        selectedTarget={1}
+        onSelectTarget={onSelectTarget}
+      />,
+    );
+    expect(screen.getByRole("button", { name: "确认投票 · 1号" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "弃票" })).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByRole("button", { name: "1号" })).toHaveAttribute("aria-pressed", "true");
+  });
 });

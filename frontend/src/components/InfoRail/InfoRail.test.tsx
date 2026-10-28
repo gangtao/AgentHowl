@@ -104,4 +104,17 @@ describe("NightFlow", () => {
     expect(screen.getByText(/狼人/)).toBeInTheDocument();
     expect(screen.getByText(/预言家 · 行动中/)).toBeInTheDocument();
   });
+
+  it("公开 config 没有 roles / night_order（观众 / 玩家快照）→ 不渲染空的夜晚流程卡（Important 4）", () => {
+    const { night_order: _drop, ...rest } = blank.config as Record<string, unknown>;
+    void _drop;
+    const st = {
+      ...blank,
+      phase: "NIGHT" as const,
+      config: { ...rest, roles: [] } as GameState["config"],
+    };
+    render(<InfoRail {...base} state={st} cards={["nightFlow", "news"]} />);
+    expect(screen.queryByText("夜晚流程")).toBeNull();
+    expect(screen.getByText("村镇公告")).toBeInTheDocument();
+  });
 });

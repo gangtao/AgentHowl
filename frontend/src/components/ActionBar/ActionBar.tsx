@@ -216,6 +216,10 @@ export default function ActionBar({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [version]);
   if (left !== null && left > limitRef.current) limitRef.current = left;
+  // 受控模式：桌上点了座位（selectedTarget 非空）就取消「弃票」，否则桌面高亮与主按钮会互相矛盾（终审 Important 2）。
+  useEffect(() => {
+    if (controlled && selectedTarget !== null && selectedTarget !== undefined) setAbstain(false);
+  }, [controlled, selectedTarget]);
 
   const obs = prompt?.observation ?? null;
   const options = obs !== null && active === "night_action" ? nightOptions(obs) : [];

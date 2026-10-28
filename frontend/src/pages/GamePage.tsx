@@ -23,6 +23,7 @@ import {
   viewerFrom,
 } from "../api/rest";
 import type { AudioPartInfo, GameAuth } from "../api/rest";
+import type { PlayerObservation, YourTurn } from "../api/player";
 import type { ViewerHint } from "../api/tokens";
 import { useLiveEvents } from "../api/ws";
 import { replayControls } from "../lib/replayControls";
@@ -107,6 +108,9 @@ export default function GamePage({ gameId, token, share, viewer }: GamePageProps
   const [resolvedViewer, setResolvedViewer] = useState<Viewer | null>(null);
   // 玩家视角的身份：来自 /state 的 PlayerObservation.my_role（Task 10 的 ActionBar 也会更新它）。
   const [myRole, setMyRole] = useState<RoleType | null>(null);
+  // 最近一次服务端观察（/state 快照或 your_turn）：队友 / 药瓶 / 存亡等私有信息从这里读，而不是从提交后
+  // 就被清空的 turnPrompt——否则狼人一提交刀口队友就「消失」（终审 Important 1 / 3）。
+  const [lastObs, setLastObs] = useState<PlayerObservation | null>(null);
   const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const switchedRef = useRef(false);
 
@@ -202,6 +206,7 @@ export default function GamePage({ gameId, token, share, viewer }: GamePageProps
         setResolvedViewer(v);
         if (typeof v === "number" && typeof snapshot.my_role === "string") {
           setMyRole(snapshot.my_role as RoleType);
+          setLastObs(snapshot as unknown as PlayerObservation);
         }
         useGameStore.getState().load(meta, { gameId, token: token ?? "", viewer: v, mode: "live" });
         setErrorKind(null);
@@ -260,6 +265,7 @@ export default function GamePage({ gameId, token, share, viewer }: GamePageProps
       setReady(false);
       setResolvedViewer(null);
       setMyRole(null);
+      setLastObs(null);
       setManifest({});
       // 同上：直播卸载也要停播 + 清 available（fix round 3）。
       useVoice.getState().clear(true);
@@ -341,8 +347,18 @@ export default function GamePage({ gameId, token, share, viewer }: GamePageProps
   const isPlayer = typeof resolvedViewer === "number";
   // 身份以最新 your_turn 为准（/state 只在引导时读一次）
   useEffect(() => {
-    if (turnPrompt !== null) setMyRole(turnPrompt.observation.my_role);
+    if (turnPrompt !== null) {
+      setMyRole(turnPrompt.observation.my_role);
+      setLastObs(turnPrompt.observation);
+    }
   }, [turnPrompt]);
+  /** 给 stageContent 用的观察（药瓶）：有 prompt 用 prompt，否则用最近一次观察。 */
+  const obsPrompt = useMemo<YourTurn | null>(
+    () =>
+      turnPrompt ??
+      (lastObs === null ? null : { observation: lastObs, available_tools: [], deadline_ts: 0 }),
+    [turnPrompt, lastObs],
+  );
 
   // ---- 派生视图 ----
   // viewState() 内部按 (cursor, events.length) 记忆化，同一状态下多次调用返回同一对象，
@@ -353,6 +369,8 @@ export default function GamePage({ gameId, token, share, viewer }: GamePageProps
     [events, cursor],
   );
   const items = useMemo(() => speechItems(events), [events]);
+  // 气泡只看游标之前的发言：回放时「最后一句」必须是游标处的，不是全局最后一条（终审 Important 5）。
+  const bubbleItems = useMemo(() => speechItems(visibleEvents), [visibleEvents]);
   const segments = useMemo(() => roundSegments(events), [events]);
   const totalSeq = events.length > 0 ? (events[events.length - 1] as Event).seq : 0;
   const authStatus = useAuth((s) => s.status);
@@ -407,12 +425,12 @@ export default function GamePage({ gameId, token, share, viewer }: GamePageProps
   const knownRoles = useMemo<Record<number, RoleType>>(() => {
     const out: Record<number, RoleType> = {};
     if (isPlayer && myRole !== null) out[resolvedViewer as number] = myRole;
-    const mates = turnPrompt?.observation.private.teammates;
+    const mates = lastObs?.private.teammates;
     if (Array.isArray(mates)) {
       for (const m of mates) if (typeof m === "number") out[m] = "WEREWOLF";
     }
     return out;
-  }, [isPlayer, myRole, resolvedViewer, turnPrompt]);
+  }, [isPlayer, myRole, resolvedViewer, lastObs]);
 
   // 预言家已验签：state.seer_log 有什么就标什么（观众 / 非预言家的 state 里没有）。
   const marks = useMemo<Record<number, "好人" | "狼人">>(() => {
@@ -480,16 +498,16 @@ export default function GamePage({ gameId, token, share, viewer }: GamePageProps
         : stageContent({
             state: view,
             events: visibleEvents,
-            prompt: turnPrompt,
+            prompt: obsPrompt,
             selectedTarget,
             mode,
             myRole,
           }),
-    [view, visibleEvents, turnPrompt, selectedTarget, mode, myRole],
+    [view, visibleEvents, obsPrompt, selectedTarget, mode, myRole],
   );
 
   const potions = useMemo<{ antidote: boolean; poison: boolean } | null>(() => {
-    const priv = turnPrompt?.observation.private;
+    const priv = lastObs?.private;
     if (
       priv !== undefined &&
       typeof priv.antidote_available === "boolean" &&
@@ -498,7 +516,7 @@ export default function GamePage({ gameId, token, share, viewer }: GamePageProps
       return { antidote: priv.antidote_available, poison: priv.poison_available };
     }
     return null;
-  }, [turnPrompt]);
+  }, [lastObs]);
 
   const hasDeaths = useMemo(
     () => (view === null ? false : graveyard(visibleEvents, view).length > 0),
@@ -543,8 +561,8 @@ export default function GamePage({ gameId, token, share, viewer }: GamePageProps
   const night = isNight(view.phase);
   const atEnd = cursor === null || cursor === totalSeq;
   // 结算页：直播尾声，或回放游标停在末尾（规格 §4.8）；回放拖到中途不覆盖。
-  const showOver =
-    over && (mode === "live" || atEnd) && (view.phase === "GAME_OVER" || view.winner !== null);
+  // 直播时 cursor 为 null → atEnd 为真；拖了游标就看游标处的 state 是否已到终局。
+  const showOver = over && atEnd && (view.phase === "GAME_OVER" || view.winner !== null);
   const blood =
     view.phase === "LAST_WORDS" || view.phase === "VOTE_PK" || (showOver && winner === "WOLF");
   const amber = view.phase === "HUNTER_SHOOT";
@@ -573,7 +591,7 @@ export default function GamePage({ gameId, token, share, viewer }: GamePageProps
     bubbleSpeaker === null
       ? null
       : {
-          items,
+          items: bubbleItems,
           speaker: bubbleSpeaker,
           kind: bubbleKind,
           deadline:
@@ -632,9 +650,9 @@ export default function GamePage({ gameId, token, share, viewer }: GamePageProps
           seat={resolvedViewer as number}
           name={me?.display_name ?? ""}
           role={myRole}
-          alive={me?.alive ?? true}
+          alive={(me?.alive ?? true) && lastObs?.my_status !== "DEAD"}
           avatar={avatars[resolvedViewer as number] ?? null}
-          lines={identityLines(myRole, turnPrompt?.observation ?? null, view)}
+          lines={identityLines(myRole, lastObs, view)}
         />
         <ActionBar
           layout="hud"

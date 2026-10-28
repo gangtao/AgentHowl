@@ -24,8 +24,10 @@ function nightOrder(state: GameState): RoleType[] {
   return FALLBACK_ORDER.filter((r) => present.has(r));
 }
 
-export function NightFlow({ state }: { state: GameState }): JSX.Element {
+export function NightFlow({ state }: { state: GameState }): JSX.Element | null {
   const order = nightOrder(state);
+  // 观众 / 玩家快照的公开 config 没有 roles / night_order：没有可列的角色就整张省略（终审 Important 4）。
+  if (order.length === 0) return null;
   const folded = state.phase === "NIGHT";
   const idx = order.findIndex((r) => PHASE_OF[r] === state.phase);
   return (
