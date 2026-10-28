@@ -17,6 +17,8 @@ export interface TableSpeech {
   limit?: number | null;
   now?: () => number;
   voicing: boolean;
+  /** 发言者是本人。 */
+  mine: boolean;
 }
 
 export interface GameTableProps {
@@ -124,6 +126,7 @@ export default function GameTable({
             limit={speech.limit ?? null}
             {...(speech.now ? { now: speech.now } : {})}
             voicing={speech.voicing}
+            mine={speech.mine}
             anchor={{ x: speakerSeat.x, y: speakerSeat.y }}
           />
         )}

@@ -78,3 +78,19 @@
     display: none;
   }
 }
+
+@media (max-width: 900px) {
+  .root {
+    height: auto;
+    min-height: 48px;
+    flex-wrap: wrap;
+    padding: 6px 12px;
+    row-gap: 4px;
+  }
+  .status[data-tone='over'] {
+    font-size: 14px;
+  }
+  .spacer {
+    flex: 1 1 0;
+  }
+}

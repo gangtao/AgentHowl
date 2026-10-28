@@ -17,6 +17,8 @@ export interface PhaseBarProps {
   totalSeq: number;
   /** 这局是否已结束（head 到终局或回放模式）。 */
   over: boolean;
+  /** 最终胜方（来自 head，而不是回放游标处的 state）。 */
+  winner: string | null;
   /** 右侧插槽。 */
   extra?: ReactNode;
 }
@@ -33,11 +35,12 @@ export default function PhaseBar({
   connection,
   totalSeq,
   over,
+  winner,
   extra,
 }: PhaseBarProps): JSX.Element {
-  const status = statusText(state, mode, connection, totalSeq, over);
+  const status = statusText(winner, mode, connection, totalSeq, over);
   // 终局之后仍要告诉用户现在是回放还是直播（设计稿 5c：居中「游戏结束」，右侧「▶ 回放 · N 条事件」）。
-  const secondary = over ? statusText(state, mode, connection, totalSeq, false) : null;
+  const secondary = over ? statusText(winner, mode, connection, totalSeq, false) : null;
   return (
     <header className={styles.root}>
       <span className={styles.brand}>AgentHowl</span>

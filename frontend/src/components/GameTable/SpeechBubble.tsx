@@ -20,6 +20,8 @@ export interface SpeechBubbleProps {
   now?: () => number;
   /** 这句正在配音播放。 */
   voicing: boolean;
+  /** 发言者是本人（占位文案「轮到你发言…」只对本人说）。 */
+  mine?: boolean;
   /** 座位百分比坐标，决定气泡在座位的上方还是下方。 */
   anchor: { x: number; y: number };
 }
@@ -65,6 +67,7 @@ export function SpeechBubble({
   now = defaultNow,
   voicing,
   anchor,
+  mine = false,
 }: SpeechBubbleProps): JSX.Element {
   const left = useLeft(deadline, now);
   const side = anchor.y < 50 ? "below" : "above";
@@ -103,7 +106,7 @@ export function SpeechBubble({
             {voicing && <span className={styles.caret}>▍</span>}
           </>
         ) : (
-          <span className={styles.placeholder}>{PLACEHOLDER[kind]}</span>
+          <span className={styles.placeholder}>{mine ? PLACEHOLDER[kind] : "正在组织语言…"}</span>
         )}
       </div>
       {voicing && (

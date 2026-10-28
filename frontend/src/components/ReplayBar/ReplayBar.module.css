@@ -256,3 +256,23 @@
   color: #5a5f6a;
   font-size: 11px;
 }
+
+@media (max-width: 900px) {
+  .root {
+    height: auto;
+    flex-wrap: wrap;
+    gap: 8px 10px;
+    padding: 8px 12px;
+  }
+  .track {
+    flex: 1 1 100%;
+    order: -1;
+    margin-top: 6px;
+  }
+  .hint {
+    display: none;
+  }
+  .seq {
+    font-size: 12px;
+  }
+}

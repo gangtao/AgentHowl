@@ -116,16 +116,16 @@ export function plaqueLines(
   return { title, sub };
 }
 
+/** 顶栏居中状态：winner 是这局的最终胜方（head），不是回放游标处 state 的 winner。 */
 export function statusText(
-  state: GameState,
+  winner: string | null,
   mode: PlaybackMode,
   connection: ConnectionState,
   totalSeq: number,
   over: boolean,
 ): { text: string; tone: "live" | "replay" | "over" | "warn" } {
   if (over) {
-    const w = state.winner;
-    const label = w !== null ? `${WINNER_ZH[w] ?? w}胜` : "平局";
+    const label = winner !== null ? `${WINNER_ZH[winner] ?? winner}胜` : "平局";
     return { text: `游戏结束：${label}`, tone: "over" };
   }
   if (mode === "replay") return { text: `▶ 回放 · ${totalSeq} 条事件`, tone: "replay" };

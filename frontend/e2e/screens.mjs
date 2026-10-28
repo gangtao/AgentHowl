@@ -67,6 +67,12 @@ async function captureReplay(page, prefix) {
     await page.screenshot({ path: `${OUT}/${prefix}-${name}.png` });
     log(prefix, name, "seq", seq);
   }
+  // 事件流抽屉（在拖到末尾之前：结算页覆盖舞台后页签点不到）
+  await page.click('button[aria-controls="event-drawer"]');
+  await page.waitForTimeout(500);
+  await page.screenshot({ path: `${OUT}/${prefix}-drawer.png` });
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(200);
   // 末尾：结算页
   const max = Number(await page.locator('[aria-label="回放进度"]').getAttribute("max"));
   await page.evaluate((v) => {
@@ -76,11 +82,6 @@ async function captureReplay(page, prefix) {
   }, max);
   await page.waitForTimeout(800);
   await page.screenshot({ path: `${OUT}/${prefix}-over.png` });
-  // 事件流抽屉
-  await page.click('button[aria-controls="event-drawer"]');
-  await page.waitForTimeout(500);
-  await page.screenshot({ path: `${OUT}/${prefix}-drawer.png` });
-  await page.keyboard.press("Escape");
 }
 
 // ---- 上帝（建局者登录态）----

@@ -148,3 +148,13 @@
     min-height: 0;
   }
 }
+
+/* 390 宽：顶栏可换行、桌子区留出座位外扩的空间 */
+@media (max-width: 900px) {
+  .root {
+    grid-template-rows: auto minmax(0, 1fr) auto;
+  }
+  .tableArea {
+    padding: 64px 32px 32px;
+  }
+}

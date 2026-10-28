@@ -12,7 +12,14 @@ const item: SpeechItem = {
   content: "我不确定，但我更在意一点",
 };
 
-const base = { seat: 0, name: "Gang", deadline: null, voicing: false, anchor: { x: 50, y: 9 } };
+const base = {
+  seat: 0,
+  name: "Gang",
+  deadline: null,
+  voicing: false,
+  anchor: { x: 50, y: 9 },
+  mine: true,
+};
 
 describe("SpeechBubble（规格 §4.3）", () => {
   it("有正文时显示 content 与「发言中」头行", () => {
@@ -28,6 +35,12 @@ describe("SpeechBubble（规格 §4.3）", () => {
   ] as const)("无 item 时按 kind 显示占位：%s", (kind, placeholder) => {
     render(<SpeechBubble {...base} item={null} kind={kind} />);
     expect(screen.getByText(placeholder)).toBeInTheDocument();
+  });
+
+  it("不是本人（旁听 / 上帝 / 观众）且尚无正文：占位「正在组织语言…」", () => {
+    render(<SpeechBubble {...base} mine={false} item={null} kind="speech" />);
+    expect(screen.getByText("正在组织语言…")).toBeInTheDocument();
+    expect(screen.queryByText("轮到你发言…")).toBeNull();
   });
 
   it("voicing 时显示「语音播报 · 正在朗读」与光标", () => {

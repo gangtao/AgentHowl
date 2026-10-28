@@ -581,6 +581,7 @@ export default function GamePage({ gameId, token, share, viewer }: GamePageProps
               ? turnPrompt.deadline_ts
               : null,
           limit: speechLimit,
+          mine: isPlayer && bubbleSpeaker === resolvedViewer,
           voicing:
             voicePlaying && typeof voicingActor === "number" && voicingActor === bubbleSpeaker,
         };
@@ -696,6 +697,7 @@ export default function GamePage({ gameId, token, share, viewer }: GamePageProps
         connection={connection}
         totalSeq={totalSeq}
         over={over}
+        winner={winner}
         extra={headerExtra}
       />
 
