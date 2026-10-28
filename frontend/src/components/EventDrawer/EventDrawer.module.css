@@ -1,0 +1,68 @@
+/* 事件流抽屉（设计稿 3a）：竖向页签贴舞台右缘，面板从右滑出覆盖右栏。 */
+
+.tab {
+  width: 28px;
+  min-height: 200px;
+  align-self: start;
+  margin-top: 56px;
+  padding: 10px 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  writing-mode: vertical-rl;
+  font: 11px var(--font-body);
+  letter-spacing: 1px;
+  color: var(--ah-text-muted);
+  background: var(--ah-panel);
+  border: 1px solid var(--ah-panel-edge);
+  border-right: 0;
+  border-radius: 6px 0 0 6px;
+  cursor: pointer;
+}
+.tab:hover,
+.tab[aria-expanded='true'] {
+  color: var(--ah-gold);
+  border-color: var(--ah-wood-edge);
+}
+:global([data-night]) .tab {
+  background: #10131f;
+  border-color: var(--ah-night-panel-edge);
+  color: var(--ah-night-muted);
+}
+
+.panel {
+  position: absolute;
+  top: 0;
+  right: 28px;
+  bottom: 0;
+  width: min(400px, calc(100vw - 28px));
+  z-index: 4;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  background: rgba(12, 15, 23, 0.97);
+  border-left: 1px solid var(--ah-panel-edge);
+  box-shadow: -20px 0 50px rgba(0, 0, 0, 0.6);
+}
+
+.top {
+  padding: 12px 12px 0;
+  max-height: 45%;
+  overflow-y: auto;
+  border-bottom: 1px solid var(--ah-panel-edge);
+}
+
+.body {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+@media (max-width: 900px) {
+  .tab {
+    margin-top: 12px;
+    min-height: 140px;
+  }
+  .panel {
+    width: calc(100vw - 28px);
+  }
+}

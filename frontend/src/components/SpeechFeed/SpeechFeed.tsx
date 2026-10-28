@@ -1,11 +1,12 @@
-// 发言流（设计稿 1c/1d/1g/1h）：底部对齐 + 自动滚动 + 「↓ 有 N 条新消息」+ 回放截断提示。
+// 发言流（规格 §4.6 事件流抽屉的内容）：底部对齐 + 自动滚动 + 「↓ 有 N 条新消息」+ 回放截断提示。
 // 零过滤：items 是 store 里已有事件的全量映射；cursor 之后的条目按回放语义截断（不是信息隔离）。
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import Avatar from "../Avatar/Avatar";
 import { ROLE_ZH } from "../../engine/phases";
+import { rolesKnown } from "../../engine/select";
 import type { SpeechItem } from "../../engine/select";
-import type { GameState } from "../../engine/types";
+import type { GameState, RoleType } from "../../engine/types";
+import RoleToken from "../RoleToken/RoleToken";
 import { seatColor } from "../seatColor";
 import styles from "./SpeechFeed.module.css";
 
@@ -18,6 +19,8 @@ export interface SpeechFeedProps {
   speakingSeat: number | null;
   /** 座位 → 头像 id（issue #102，缺省 {}）。 */
   avatars?: Record<number, string>;
+  /** 服务端观察给出的角色覆盖层（本人 / 狼队友），state 没角色时用它。 */
+  knownRoles?: Record<number, RoleType>;
 }
 
 /** 距底部多少像素以内算「贴着底」——超过则暂停自动滚动并显示新消息胶囊。 */
@@ -29,6 +32,7 @@ export default function SpeechFeed({
   state,
   speakingSeat,
   avatars = {},
+  knownRoles = {},
 }: SpeechFeedProps): JSX.Element {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const [stick, setStick] = useState(true);
@@ -40,6 +44,12 @@ export default function SpeechFeed({
   const hidden = items.length - shown.length;
   const nameOf = new Map(state.players.map((p) => [p.seat, p.display_name]));
   const colorOf = (seat: number | null): string => seatColor(state, seat);
+  const allKnown = rolesKnown(state);
+  const roleOf = (seat: number | null): RoleType | null => {
+    if (seat === null) return null;
+    if (allKnown) return state.players.find((p) => p.seat === seat)?.role ?? null;
+    return knownRoles[seat] ?? null;
+  };
 
   // 新条目到达：贴底则滚到底，否则按新增条数累计未读（WS 每帧最多批量刷 200 条，
   // 按批次 +1 会把「涌入 30 条」显示成「有 1 条新消息」）。游标往回拖导致条目变少时不累加。
@@ -105,13 +115,14 @@ export default function SpeechFeed({
                 key={it.seq}
                 className={`${styles.card} ${speaking ? styles.cardSpeaking : ""}`}
                 data-kind={it.kind}
+                data-visibility={it.type === "LAST_WORDS" ? "PUBLIC" : undefined}
               >
                 <div className={styles.who}>
-                  <Avatar
+                  <RoleToken
+                    role={roleOf(seat)}
+                    size={30}
+                    initial={seat !== null ? (nameOf.get(seat) ?? "").slice(0, 1) : "?"}
                     avatar={seat !== null ? (avatars[seat] ?? null) : null}
-                    name={seat !== null ? (nameOf.get(seat) ?? "") : ""}
-                    seat={seat}
-                    size={36}
                   />
                   <span className={styles.seat} style={{ color: colorOf(seat) }}>
                     {seat !== null ? `${seat}号` : "—"}

@@ -39,7 +39,7 @@ describe("SpeechFeed", () => {
       .map((it) => it.actor_seat as number);
     const seat = cardSeats[0] as number;
     const count = cardSeats.filter((s) => s === seat).length;
-    render(
+    const { container } = render(
       <SpeechFeed
         items={items}
         cursor={null}
@@ -48,6 +48,7 @@ describe("SpeechFeed", () => {
         avatars={{ [seat]: "3f9a1c0b7e2d4a66.png" }}
       />,
     );
-    expect(screen.getAllByRole("img")).toHaveLength(count);
+    // RoleToken 根节点本身是 role="img"，这里数的是真正的 <img>
+    expect(container.querySelectorAll("img")).toHaveLength(count);
   });
 });
