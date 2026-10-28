@@ -33,7 +33,7 @@ function hashName(name: string): number {
 export function nameGradient(name: string | null | undefined): { hi: string; lo: string } {
   const t = (name ?? "").trim();
   if (t === "") return { ...NAME_DEFAULT };
-  return { ...(NAME_PALETTE[hashName(t) % NAME_PALETTE.length] as { hi: string; lo: string }) };
+  return { ...(NAME_PALETTE[hashName(t) % NAME_PALETTE.length] ?? NAME_DEFAULT) };
 }
 
 /** 直接喂 `Avatar` 的 `color`（它写进 background）。 */
@@ -47,9 +47,9 @@ export function potionColors(kind: string): { hi: string; lo: string } {
   return { ...(POTION[kind] ?? POTION_DEFAULT) };
 }
 
-/** 胜方 → CSS 变量名；平局 / 未知 / 未结束 → null（不着色）。 */
+/** 胜方 → CSS 变量名（用在羊皮纸上：好人用深金 --ah-god-hi，浅金 --ah-god 对比度不够）；平局 / 未知 → null。 */
 export function winnerColorVar(winner: string | null): string | null {
-  if (winner === "GOOD") return "--ah-god";
+  if (winner === "GOOD") return "--ah-god-hi";
   if (winner === "WOLF") return "--ah-wolf";
   return null;
 }

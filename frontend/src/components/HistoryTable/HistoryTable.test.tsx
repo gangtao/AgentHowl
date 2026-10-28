@@ -179,9 +179,26 @@ describe("HistoryTable", () => {
       />,
     );
     expect(document.querySelector("table")).toHaveClass("table-parch");
-    expect(screen.getByText("好人胜")).toHaveStyle({ color: "var(--ah-god)" });
+    // 羊皮纸上用深金 --ah-god-hi（浅金 --ah-god 对比度只有 1.6:1）
+    expect(screen.getByText("好人胜")).toHaveStyle({ color: "var(--ah-god-hi)" });
     expect(screen.getByText("狼人胜")).toHaveStyle({ color: "var(--ah-wolf)" });
     // 两行 started_at null + 一行 winner null → 至少 3 个「—」
     expect(screen.getAllByText("—").length).toBeGreaterThanOrEqual(3);
+  });
+
+  it("直播中的状态签不用夜色用的 tag-accent-2（羊皮纸上不可读）；未知胜方原样不着色", () => {
+    render(
+      <HistoryTable
+        items={[
+          { ...base, game_id: "g_l", status: "live", started_at: null, ended_at: null, winner: null },
+          { ...base, game_id: "g_d", status: "finished", started_at: null, ended_at: null, winner: "DRAW" },
+        ]}
+      />,
+    );
+    const live = screen.getByText("直播中");
+    expect(live).toHaveClass("tag");
+    expect(live).not.toHaveClass("tag-accent-2");
+    const draw = screen.getByText("DRAW");
+    expect(draw.getAttribute("style")).toBeNull();
   });
 });

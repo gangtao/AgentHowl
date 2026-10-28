@@ -45,7 +45,7 @@ function statusLabel(row: GameSummary): string {
 /** 羊皮纸上的状态签：已结束木签、直播中篝火、中断描边。 */
 function statusTagClass(status: GameSummary["status"]): string {
   if (status === "finished") return "tag tag-wood";
-  if (status === "live") return "tag tag-accent-2";
+  if (status === "live") return `tag ${styles.tagLive}`;
   return `tag ${styles.tagAborted}`;
 }
 

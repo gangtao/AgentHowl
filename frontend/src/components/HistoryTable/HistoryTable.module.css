@@ -16,6 +16,12 @@
   color: var(--ah-parch-muted);
 }
 
+/* 直播中：篝火实底 + 墨字（全局 .tag-accent-2 是夜色上的浅金，羊皮纸上不可读） */
+.tagLive {
+  background: var(--ah-fire);
+  color: #2b1a08;
+}
+
 .tagAborted {
   border: 1px solid var(--ah-parch-muted);
   color: var(--ah-parch-ink-2);
@@ -49,6 +55,7 @@
   min-height: 0;
 }
 
+.hint + .act,
 .act + .act {
   margin-left: 8px;
 }

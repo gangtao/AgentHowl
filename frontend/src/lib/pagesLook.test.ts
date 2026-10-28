@@ -25,7 +25,7 @@ describe("potionColors / winnerColorVar", () => {
     expect(potionColors("mystery")).toEqual({ hi: "#a79f8c", lo: "#4a4238" });
   });
   it.each([
-    ["GOOD", "--ah-god"],
+    ["GOOD", "--ah-god-hi"],
     ["WOLF", "--ah-wolf"],
     ["DRAW", null],
     [null, null],

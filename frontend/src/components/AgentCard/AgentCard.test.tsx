@@ -59,6 +59,11 @@ describe("AgentCard 角色牌（规格 §6，设计稿 1k）", () => {
     expect(screen.getByText("12 局 · 胜率 58%")).toBeInTheDocument();
     expect(screen.getByText("bluff")).toBeInTheDocument();
     expect(screen.getByText("openai/gpt-5 · T=0.7")).toBeInTheDocument();
+    // 更新时间不再占一行，但仍在模型行的 title 里（名册默认按「最近更新」排序）
+    expect(screen.getByText("openai/gpt-5 · T=0.7")).toHaveAttribute(
+      "title",
+      expect.stringMatching(/更新于 2026-09-(19|20) \d\d:\d\d/),
+    );
     screen.getByRole("button", { name: "编辑" }).click();
     expect(onEdit).toHaveBeenCalled();
   });

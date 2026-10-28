@@ -122,4 +122,8 @@ describe("tokens.css / global.css（规格 §2）", () => {
     ".ah-parch .seg",
     ".ah-parch .btn-ghost",
   ])("羊皮纸容器内覆盖全局类前景色：%s", (sel) => expect(global).toContain(`${sel} {`));
+
+  it("可聚焦的 .seg-opt 按钮焦点环画在 .seg 的 overflow:hidden 之内", () => {
+    expect(global).toMatch(/\.seg-opt:focus-visible\s*{[^}]*outline-offset:\s*-2px/);
+  });
 });
