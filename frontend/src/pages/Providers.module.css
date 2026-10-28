@@ -1,10 +1,10 @@
-/* Providers 页（设计稿 3a / 3d）：两列卡片。 */
+/* Providers「炼金工坊」（规格 §6）：两列药剂木牌 + 虚线新建卡。 */
 
 .page {
   display: flex;
   flex-direction: column;
-  gap: var(--space-6);
-  padding: 36px var(--space-8) 32px 56px;
+  gap: var(--space-5);
+  padding: 36px 56px 32px;
   min-height: 0;
   overflow-y: auto;
 }
@@ -17,8 +17,15 @@
 }
 
 .title {
-  font-size: 22px;
-  margin: 0 0 4px;
+  margin: 0;
+  font-size: 30px;
+  color: var(--ah-text-bright);
+}
+
+.lead {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--ah-text-muted);
 }
 
 .headActions {
@@ -30,7 +37,26 @@
 .grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--space-4);
+  gap: 16px;
+}
+
+.addCard {
+  border: 2px dashed var(--ah-wood-edge);
+  border-radius: var(--radius-lg);
+  background: transparent;
+  display: grid;
+  place-items: center;
+  padding: 14px;
+  min-height: 72px;
+  color: var(--ah-text-muted);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.addCard:hover {
+  color: var(--ah-gold);
+  border-color: var(--ah-fire);
 }
 
 .error {
@@ -43,7 +69,7 @@
 
 .foot {
   font-size: 11.5px;
-  color: var(--color-neutral-500);
+  color: var(--ah-text-muted);
 }
 
 .empty {
@@ -59,22 +85,23 @@
   width: 72px;
   height: 72px;
   border-radius: 50%;
-  border: 1px dashed var(--color-neutral-700);
+  border: 1px dashed var(--ah-wood-edge);
   display: grid;
   place-items: center;
-  color: var(--color-neutral-600);
+  color: var(--ah-text-muted);
   font-size: 24px;
   margin-bottom: 6px;
 }
 
 .emptyTitle {
-  font-size: 16px;
-  font-weight: 500;
+  font-family: var(--font-heading);
+  font-size: 18px;
+  color: var(--ah-text-bright);
 }
 
 .emptyDesc {
   font-size: 12.5px;
-  color: var(--color-neutral-500);
+  color: var(--ah-text-muted);
   line-height: 1.6;
   max-width: 280px;
 }
