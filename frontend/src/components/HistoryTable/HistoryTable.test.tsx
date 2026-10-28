@@ -72,7 +72,14 @@ describe("HistoryTable", () => {
       <HistoryTable
         items={[
           finished,
-          { ...base, game_id: "g_l", status: "live", started_at: null, ended_at: null, winner: null },
+          {
+            ...base,
+            game_id: "g_l",
+            status: "live",
+            started_at: null,
+            ended_at: null,
+            winner: null,
+          },
           {
             ...base,
             game_id: "g_a",
@@ -97,7 +104,14 @@ describe("HistoryTable", () => {
     render(
       <HistoryTable
         items={[
-          { ...base, game_id: "g_f", status: "finished", started_at: null, ended_at: null, winner: null },
+          {
+            ...base,
+            game_id: "g_f",
+            status: "finished",
+            started_at: null,
+            ended_at: null,
+            winner: null,
+          },
         ]}
       />,
     );
@@ -131,5 +145,43 @@ describe("HistoryTable", () => {
     expect(btns[1]).toBeDisabled();
     fireEvent.click(btns[0]!);
     expect(onShare).toHaveBeenCalledWith(expect.objectContaining({ game_id: "g_f" }));
+  });
+
+  it("羊皮纸账本：table-parch；胜方按阵营着色，null 胜方「—」不着色；时间 null「—」", () => {
+    render(
+      <HistoryTable
+        items={[
+          {
+            ...base,
+            game_id: "g_g",
+            status: "finished",
+            started_at: "2026-10-02T03:00:00+00:00",
+            ended_at: null,
+            winner: "GOOD",
+          },
+          {
+            ...base,
+            game_id: "g_w",
+            status: "finished",
+            started_at: null,
+            ended_at: null,
+            winner: "WOLF",
+          },
+          {
+            ...base,
+            game_id: "g_n",
+            status: "aborted",
+            started_at: null,
+            ended_at: null,
+            winner: null,
+          },
+        ]}
+      />,
+    );
+    expect(document.querySelector("table")).toHaveClass("table-parch");
+    expect(screen.getByText("好人胜")).toHaveStyle({ color: "var(--ah-god)" });
+    expect(screen.getByText("狼人胜")).toHaveStyle({ color: "var(--ah-wolf)" });
+    // 两行 started_at null + 一行 winner null → 至少 3 个「—」
+    expect(screen.getAllByText("—").length).toBeGreaterThanOrEqual(3);
   });
 });

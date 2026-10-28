@@ -1,10 +1,10 @@
-/* 历史对局页（issue #98）：页面容器与 Providers 页同形。 */
+/* 历史对局页「村志」（规格 §6）：标题 heading 30px + 羊皮纸账本。 */
 
 .page {
   display: flex;
   flex-direction: column;
-  gap: var(--space-6);
-  padding: 36px var(--space-8) 32px 56px;
+  gap: var(--space-5);
+  padding: 36px 56px 32px;
   min-height: 0;
   overflow-y: auto;
 }
@@ -17,8 +17,15 @@
 }
 
 .title {
-  font-size: 22px;
-  margin: 0 0 4px;
+  margin: 0;
+  font-size: 30px;
+  color: var(--ah-text-bright);
+}
+
+.lead {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--ah-text-muted);
 }
 
 .headActions {
