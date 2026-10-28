@@ -1,4 +1,5 @@
-// 对局页（设计稿 1c/1d/1g/1h/1i/1j）：直播 + 回放同一页面，GM 与观众只差数据。
+// 对局页（规格 §4，设计稿 3a 全景圆桌）：直播 + 回放同一页面，GM / 观众 / 座位三种视角只差数据；
+// 视角只决定底部是 HUD 还是回放绳索条，以及顶栏标签——桌子 / 右栏 / 结算页的 props 里没有 viewer。
 //
 // 引导流程（规格 §6 + 后端实况）：
 //   凭据（issue #114）：token（Bearer）→ share（?share=）→ 都没有则靠登录 cookie（GM）。
@@ -26,10 +27,9 @@ import type { ViewerHint } from "../api/tokens";
 import { useLiveEvents } from "../api/ws";
 import { replayControls } from "../lib/replayControls";
 import { useVoice } from "../store/voice";
-import { ROLE_ZH, WINNER_ZH, isNight } from "../engine/phases";
+import { isNight } from "../engine/phases";
 import {
   currentSpeaker,
-  nightLinks,
   nightSummary,
   roundSegments,
   sheriffVoteTally,
@@ -37,23 +37,29 @@ import {
   voteTally,
 } from "../engine/select";
 import type { Event, Phase, RoleType } from "../engine/types";
+import { identityLines } from "../lib/identityLines";
+import { railCards } from "../lib/railCards";
+import { seatModel } from "../lib/seatModel";
+import { stageContent } from "../lib/stageContent";
+import { graveyard } from "../lib/village";
+import { useAuth } from "../store/auth";
 import { useGameStore } from "../store/game";
 import { useTurn } from "../store/turn";
 import type { Viewer } from "../store/game";
 import ActionBar from "../components/ActionBar/ActionBar";
-import ElectionPanel from "../components/ElectionPanel/ElectionPanel";
 import ErrorState from "../components/ErrorState/ErrorState";
 import type { ErrorKind } from "../components/ErrorState/ErrorState";
-import NightOverlay from "../components/NightOverlay/NightOverlay";
-import NightSummary from "../components/NightSummary/NightSummary";
+import EventDrawer from "../components/EventDrawer/EventDrawer";
+import GameOverScreen from "../components/GameOverScreen/GameOverScreen";
+import GameTable from "../components/GameTable/GameTable";
+import type { BubbleKind } from "../components/GameTable/SpeechBubble";
+import IdentityCard from "../components/IdentityCard/IdentityCard";
+import InfoRail from "../components/InfoRail/InfoRail";
 import PhaseBar from "../components/PhaseBar/PhaseBar";
-import PlayerStatusPanel from "../components/PlayerStatusPanel/PlayerStatusPanel";
+import PhasePlaque from "../components/PhasePlaque/PhasePlaque";
 import ReplayBar from "../components/ReplayBar/ReplayBar";
-import SeatCircle from "../components/SeatCircle/SeatCircle";
-import SpeakerSpotlight from "../components/SpeakerSpotlight/SpeakerSpotlight";
 import SpeechFeed from "../components/SpeechFeed/SpeechFeed";
 import VoiceToggle from "../components/VoiceToggle/VoiceToggle";
-import VotePanel from "../components/VotePanel/VotePanel";
 import styles from "./GamePage.module.css";
 import { metaFromState } from "./metaFromState";
 
@@ -164,7 +170,8 @@ export default function GamePage({ gameId, token, share, viewer }: GamePageProps
           setReady(true);
           getGameAvatars(gameId, auth)
             .then((m) => {
-              if (!cancelled) setAvatars(Object.fromEntries(Object.entries(m).map(([k, v]) => [Number(k), v])));
+              if (!cancelled)
+                setAvatars(Object.fromEntries(Object.entries(m).map(([k, v]) => [Number(k), v])));
             })
             .catch(() => {
               /* 头像拿不到只是没图：不阻断对局页 */
@@ -202,7 +209,8 @@ export default function GamePage({ gameId, token, share, viewer }: GamePageProps
         setReady(true);
         getGameAvatars(gameId, auth)
           .then((m) => {
-            if (!cancelled) setAvatars(Object.fromEntries(Object.entries(m).map(([k, v]) => [Number(k), v])));
+            if (!cancelled)
+              setAvatars(Object.fromEntries(Object.entries(m).map(([k, v]) => [Number(k), v])));
           })
           .catch(() => {
             /* 头像拿不到只是没图：不阻断对局页 */
@@ -286,7 +294,8 @@ export default function GamePage({ gameId, token, share, viewer }: GamePageProps
         setResolvedViewer(v);
         store.load(meta, { gameId, token: token ?? "", viewer: v, mode: "replay" });
         store.appendEvents(replayEvents);
-        const last = replayEvents.length > 0 ? (replayEvents[replayEvents.length - 1] as Event).seq : 0;
+        const last =
+          replayEvents.length > 0 ? (replayEvents[replayEvents.length - 1] as Event).seq : 0;
         store.setCursor(last);
       } catch {
         /* /meta 仍未开放或网络失败：保持直播画面（已有终局横幅），不打扰用户 */
@@ -346,13 +355,14 @@ export default function GamePage({ gameId, token, share, viewer }: GamePageProps
   const items = useMemo(() => speechItems(events), [events]);
   const segments = useMemo(() => roundSegments(events), [events]);
   const totalSeq = events.length > 0 ? (events[events.length - 1] as Event).seq : 0;
-  const atSeq = cursor ?? totalSeq;
+  const authStatus = useAuth((s) => s.status);
 
   const turnSpeaker =
     view !== null && SPEAKING_PHASES.has(view.phase) ? currentSpeaker(view) : null;
   // 正在出声的发言优先于"轮到谁"：引擎提交发言后立刻把发言权交给下一位，而音频还在播上一位，
-  // 高亮/聚光牌若只看 state 会跑到下一位身上（issue #103 用户反馈）。零过滤：seq 来自服务端帧。
+  // 高亮若只看 state 会跑到下一位身上（issue #103 用户反馈）。零过滤：seq 来自服务端帧。
   const voicingSeq = useVoice((s) => s.voicingSeq);
+  const voicePlaying = useVoice((s) => s.playing !== null);
   // 座位（发言/遗言事件）/ "GM"（其它任何事件，含带 actor_seat 的 HUNTER_SHOT 等进程事件，
   // issue #110）/ null（找不到事件 → 退回轮到谁）。只看事件类型与 actor_seat，不看 kind。
   const voicingActor = useMemo<number | "GM" | null>(() => {
@@ -365,7 +375,6 @@ export default function GamePage({ gameId, token, share, viewer }: GamePageProps
   let speaking: number | null = null;
   if (typeof voicingActor === "number") speaking = voicingActor;
   else if (voicingActor === null) speaking = turnSpeaker;
-  const spotlight: number | "GM" | null = voicingActor === "GM" ? "GM" : speaking;
 
   // 票数小标只在投票类阶段显示——否则会把上一轮遗留的票箱画在座位上。
   const votes = useMemo<Record<number, number>>(() => {
@@ -379,24 +388,145 @@ export default function GamePage({ gameId, token, share, viewer }: GamePageProps
     return Object.fromEntries(tally);
   }, [view, visibleEvents]);
 
-  // 零过滤：连线完全由事件派生——观众流没有 WOLF_KILL_* / SEER_CHECKED 等事件，nightLinks 自然返回 []。
-  const lines = useMemo(
-    () => (view !== null && isNight(view.phase) ? nightLinks(visibleEvents, view.round) : []),
-    [view, visibleEvents],
-  );
-
   const nightRows = useMemo(
     () => (view !== null ? nightSummary(visibleEvents, view.round) : []),
     [view, visibleEvents],
   );
 
+  // ---- 目标座位（受控）：桌上点座位与 HUD 胶囊等价 ----
+  const [selectedTarget, setSelectedTarget] = useState<number | null>(null);
+  const [selectable, setSelectable] = useState<number[] | null>(null);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const turnVersion = turnPrompt?.observation.state_version ?? -1;
+  useEffect(() => {
+    setSelectedTarget(null);
+  }, [turnVersion]);
+
+  // 角色覆盖层：reducer 要求 ROLES_ASSIGNED 全量，座位视角的 state 里没有角色；本人与狼队友
+  // 来自服务端观察（my_role / private.teammates）——是服务端给的数据，不是前端推断。
+  const knownRoles = useMemo<Record<number, RoleType>>(() => {
+    const out: Record<number, RoleType> = {};
+    if (isPlayer && myRole !== null) out[resolvedViewer as number] = myRole;
+    const mates = turnPrompt?.observation.private.teammates;
+    if (Array.isArray(mates)) {
+      for (const m of mates) if (typeof m === "number") out[m] = "WEREWOLF";
+    }
+    return out;
+  }, [isPlayer, myRole, resolvedViewer, turnPrompt]);
+
+  // 预言家已验签：state.seer_log 有什么就标什么（观众 / 非预言家的 state 里没有）。
+  const marks = useMemo<Record<number, "好人" | "狼人">>(() => {
+    if (view === null) return {};
+    const out: Record<number, "好人" | "狼人"> = {};
+    for (const entry of Object.values(view.seer_log).flat()) {
+      out[entry.seat] = entry.result === "WOLF" ? "狼人" : "好人";
+    }
+    return out;
+  }, [view]);
+
+  // 夜间红签：女巫夜的「被刀」、狼人夜的「目标 · N 票」。
+  const tags = useMemo<Record<number, string>>(() => {
+    if (view === null) return {};
+    const out: Record<number, string> = {};
+    if (view.phase === "NIGHT_WITCH" && view.pending_night.wolf_target !== null) {
+      out[view.pending_night.wolf_target] = "被刀";
+    }
+    if (view.phase === "NIGHT_WEREWOLF") {
+      const count = new Map<number, number>();
+      for (const t of Object.values(view.wolf_proposals)) {
+        if (t !== null) count.set(t, (count.get(t) ?? 0) + 1);
+      }
+      let best: [number, number] | null = null;
+      for (const [t, n] of count) if (best === null || n > best[1]) best = [t, n];
+      if (best !== null) out[best[0]] = `目标 · ${best[1]} 票`;
+    }
+    return out;
+  }, [view]);
+
+  const seats = useMemo(
+    () =>
+      view === null
+        ? []
+        : seatModel({
+            state: view,
+            me: isPlayer ? (resolvedViewer as number) : null,
+            knownRoles,
+            speaking,
+            votes,
+            marks,
+            tags,
+            selectable: isPlayer && turnPrompt !== null ? (selectable ?? []) : [],
+            selected: selectedTarget,
+          }),
+    [
+      view,
+      isPlayer,
+      resolvedViewer,
+      knownRoles,
+      speaking,
+      votes,
+      marks,
+      tags,
+      selectable,
+      turnPrompt,
+      selectedTarget,
+    ],
+  );
+
+  const center = useMemo(
+    () =>
+      view === null
+        ? ({ kind: "none" } as const)
+        : stageContent({
+            state: view,
+            events: visibleEvents,
+            prompt: turnPrompt,
+            selectedTarget,
+            mode,
+            myRole,
+          }),
+    [view, visibleEvents, turnPrompt, selectedTarget, mode, myRole],
+  );
+
+  const potions = useMemo<{ antidote: boolean; poison: boolean } | null>(() => {
+    const priv = turnPrompt?.observation.private;
+    if (
+      priv !== undefined &&
+      typeof priv.antidote_available === "boolean" &&
+      typeof priv.poison_available === "boolean"
+    ) {
+      return { antidote: priv.antidote_available, poison: priv.poison_available };
+    }
+    return null;
+  }, [turnPrompt]);
+
+  const hasDeaths = useMemo(
+    () => (view === null ? false : graveyard(visibleEvents, view).length > 0),
+    [view, visibleEvents],
+  );
+  const cards = useMemo(
+    () =>
+      view === null
+        ? []
+        : railCards({
+            state: view,
+            events: visibleEvents,
+            mode,
+            hasPotions: potions !== null,
+            hasDeaths,
+          }),
+    [view, visibleEvents, mode, potions, hasDeaths],
+  );
+
   if (errorKind !== null) {
-    return <ErrorState
+    return (
+      <ErrorState
         kind={errorKind}
         attempt={attempt}
         detail={detail}
         playerHref={gameId ? `#/g/${gameId}` : undefined}
-      />;
+      />
+    );
   }
   if (!ready || view === null || resolvedViewer === null) {
     return (
@@ -406,115 +536,122 @@ export default function GamePage({ gameId, token, share, viewer }: GamePageProps
     );
   }
 
-  // 终局横幅看的是「这局是否已经结束」（head / 回放），而不是回放游标当前停在哪一刻——
-  // 设计稿 1g 里游标停在 seq 143 时横幅照样显示最终结果 + 「回放显示到 seq N」。
+  // 「这局是否已经结束」看 head / 回放模式，而不是回放游标当前停在哪一刻。
   const finished = head !== null && (head.phase === "GAME_OVER" || head.winner !== null);
   const over = finished || mode === "replay";
   const winner = head?.winner ?? view.winner;
-
-  const rightPanel = isNight(view.phase) ? (
-    <NightSummary rows={nightRows} round={view.round} />
-  ) : view.phase === "SHERIFF_ELECTION" || view.phase === "SHERIFF_PK" ? (
-    <ElectionPanel state={view} events={visibleEvents} />
-  ) : view.phase === "VOTE" || view.phase === "VOTE_PK" || view.phase === "EXILE" ? (
-    <VotePanel state={view} events={visibleEvents} />
-  ) : (
-    <PlayerStatusPanel state={view} speakingSeat={speaking} />
-  );
+  const night = isNight(view.phase);
+  const atEnd = cursor === null || cursor === totalSeq;
+  // 结算页：直播尾声，或回放游标停在末尾（规格 §4.8）；回放拖到中途不覆盖。
+  const showOver =
+    over && (mode === "live" || atEnd) && (view.phase === "GAME_OVER" || view.winner !== null);
+  const blood =
+    view.phase === "LAST_WORDS" || view.phase === "VOTE_PK" || (showOver && winner === "WOLF");
+  const amber = view.phase === "HUNTER_SHOOT";
 
   const store = useGameStore.getState();
   // 游标拖动/翻页/暂停时打断仍在播的配音（fix round 2，见 lib/replayControls.ts 头注释）。
   const controls = replayControls(store, useVoice.getState());
 
-  return (
-    <div className={`${styles.root} ${over ? styles.rootOver : ""}`}>
-      <PhaseBar
-        state={view}
-        mode={mode}
-        viewer={resolvedViewer}
-        connection={connection}
-        totalSeq={totalSeq}
-        over={over}
-      />
+  const goGlobalReplay = (): void => {
+    const target = `#/g/${gameId ?? ""}`;
+    if (window.location.hash === target) window.location.reload();
+    else window.location.hash = target;
+  };
 
-      {over && (
-        <div className={styles.banner}>
-          <span className={styles.bannerRule}>═══</span>
-          <span>
-            游戏结束：
-            <span className={styles.bannerWinner}>
-              {winner !== null ? `${WINNER_ZH[winner] ?? winner}胜` : "平局"}
-            </span>
-            <span className={styles.bannerCode}>（{winner ?? "平局"}）</span>
-          </span>
-          <span className={styles.bannerRule}>═══</span>
-          <span className={styles.bannerSub}>回放显示到 seq {atSeq}</span>
-        </div>
+  // 发言气泡：跟着「正在出声 / 轮到谁」的座位走
+  const bubbleKind: BubbleKind =
+    view.phase === "LAST_WORDS"
+      ? "last_words"
+      : view.phase === "SHERIFF_ELECTION" || view.phase === "SHERIFF_PK"
+        ? "campaign"
+        : "speech";
+  const speechLimit =
+    typeof view.config.speech_time_limit === "number" ? view.config.speech_time_limit : null;
+  const bubbleSpeaker = center.kind === "bubble" ? (speaking ?? center.speaker) : null;
+  const speech =
+    bubbleSpeaker === null
+      ? null
+      : {
+          items,
+          speaker: bubbleSpeaker,
+          kind: bubbleKind,
+          deadline:
+            isPlayer && turnPrompt !== null && bubbleSpeaker === resolvedViewer
+              ? turnPrompt.deadline_ts
+              : null,
+          limit: speechLimit,
+          voicing:
+            voicePlaying && typeof voicingActor === "number" && voicingActor === bubbleSpeaker,
+        };
+
+  const me = isPlayer ? view.players.find((p) => p.seat === resolvedViewer) : undefined;
+  const onStage =
+    isPlayer &&
+    ((view.phase === "VOTE_PK" && view.vote_candidates.includes(resolvedViewer as number)) ||
+      (view.phase === "SHERIFF_PK" && view.sheriff_candidates.includes(resolvedViewer as number)));
+  const idleText = night ? "天黑请闭眼" : onStage ? "等待裁决" : "旁听中";
+
+  const rail = (
+    <InfoRail
+      cards={cards}
+      state={view}
+      events={visibleEvents}
+      speakingSeat={speaking}
+      nightRows={nightRows}
+      potions={potions}
+      knownRoles={knownRoles}
+    />
+  );
+
+  const headerExtra = (
+    <>
+      {isPlayer && <VoiceToggle />}
+      {isPlayer && over && (
+        <button type="button" className="btn btn-ghost" onClick={goGlobalReplay}>
+          查看全局回放
+        </button>
       )}
+      {share && authStatus === "anon" && (
+        <a className="btn btn-ghost" href="#/login">
+          登录
+        </a>
+      )}
+    </>
+  );
 
-      <div className={styles.body}>
-        <div className={styles.left}>
-          <VoiceToggle />
-          <SeatCircle
-            state={view}
-            speaking={speaking}
-            votes={votes}
-            nightLines={lines}
-            avatars={avatars}
-            me={isPlayer ? resolvedViewer : null}
-          />
-          {/* 发言者聚光牌占座位环下方的空白区（issue #102 追加） */}
-          <SpeakerSpotlight state={view} seat={spotlight} avatars={avatars} />
-        </div>
-
-        <div className={styles.center}>
-          {isPlayer && (
-            <div className={styles.playerBar}>
-              <span>
-                我是 {resolvedViewer}号{myRole !== null ? ` · ${ROLE_ZH[myRole]}` : ""}
-              </span>
-              {over && (
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  onClick={() => {
-                    const target = `#/g/${gameId ?? ""}`;
-                    if (window.location.hash === target) window.location.reload();
-                    else window.location.hash = target;
-                  }}
-                >
-                  查看全局回放
-                </button>
-              )}
-            </div>
-          )}
-          <SpeechFeed
-            items={items}
-            cursor={cursor}
-            state={view}
-            speakingSeat={speaking}
-            avatars={avatars}
-          />
-          {isPlayer && !over && (
-            <ActionBar
-              prompt={turnPrompt}
-              pending={turnPending}
-              accepted={turnAccepted}
-              lastResult={turnResult}
-              lastError={turnError}
-              onSubmit={(call) => {
-                if (!live.send(call)) useTurn.getState().fail("连接未就绪，请稍后重试");
-              }}
-            />
-          )}
-          <NightOverlay phase={view.phase} viewer={resolvedViewer} acting={isPlayer && turnPrompt !== null} />
-        </div>
-
-        <div className={styles.right}>{rightPanel}</div>
+  const bottom =
+    isPlayer && !over ? (
+      <div
+        className={styles.hud}
+        data-blood={blood ? "true" : undefined}
+        data-amber={amber ? "true" : undefined}
+      >
+        <IdentityCard
+          seat={resolvedViewer as number}
+          name={me?.display_name ?? ""}
+          role={myRole}
+          alive={me?.alive ?? true}
+          avatar={avatars[resolvedViewer as number] ?? null}
+          lines={identityLines(myRole, turnPrompt?.observation ?? null, view)}
+        />
+        <ActionBar
+          layout="hud"
+          prompt={turnPrompt}
+          pending={turnPending}
+          accepted={turnAccepted}
+          lastResult={turnResult}
+          lastError={turnError}
+          selectedTarget={selectedTarget}
+          onSelectTarget={setSelectedTarget}
+          onSelectableChange={setSelectable}
+          idleText={idleText}
+          onSubmit={(call) => {
+            if (!live.send(call)) useTurn.getState().fail("连接未就绪，请稍后重试");
+          }}
+        />
       </div>
-
-      {storeError !== null && <div className={styles.error}>{storeError}</div>}
-
+    ) : (
       <ReplayBar
         cursor={cursor}
         total={totalSeq}
@@ -528,7 +665,84 @@ export default function GamePage({ gameId, token, share, viewer }: GamePageProps
         onSpeed={controls.onSpeed}
         onStep={controls.onStep}
         onLive={controls.onLive}
+        leading={!isPlayer ? <VoiceToggle /> : undefined}
+        trailing={
+          share ? (
+            <button
+              type="button"
+              className="btn btn-ghost"
+              onClick={() => {
+                void navigator.clipboard?.writeText(window.location.href).catch(() => undefined);
+              }}
+            >
+              复制分享链接
+            </button>
+          ) : undefined
+        }
       />
+    );
+
+  return (
+    <div
+      className={styles.root}
+      data-night={night ? "true" : undefined}
+      data-blood={blood ? "true" : undefined}
+      data-amber={amber ? "true" : undefined}
+    >
+      <PhaseBar
+        state={view}
+        mode={mode}
+        viewer={resolvedViewer}
+        connection={connection}
+        totalSeq={totalSeq}
+        over={over}
+        extra={headerExtra}
+      />
+
+      <div className={styles.stage}>
+        <div className={styles.tableArea}>
+          <div className={styles.plaque}>
+            <PhasePlaque state={view} events={visibleEvents} cursor={cursor} total={totalSeq} />
+          </div>
+          <GameTable
+            seats={seats}
+            night={night}
+            center={center}
+            speech={speech}
+            avatars={avatars}
+            onSelectSeat={setSelectedTarget}
+          />
+        </div>
+        <div className={styles.rail}>{rail}</div>
+        <EventDrawer
+          open={drawerOpen}
+          onToggle={() => setDrawerOpen((v) => !v)}
+          tabLabel="事件流 · 发言回顾"
+          top={<div className={styles.drawerRail}>{rail}</div>}
+        >
+          <SpeechFeed
+            items={items}
+            cursor={cursor}
+            state={view}
+            speakingSeat={speaking}
+            avatars={avatars}
+            knownRoles={knownRoles}
+          />
+        </EventDrawer>
+        {showOver && (
+          <GameOverScreen
+            state={view}
+            events={visibleEvents}
+            total={totalSeq}
+            knownRoles={knownRoles}
+            {...(isPlayer ? { onReplay: goGlobalReplay } : {})}
+          />
+        )}
+      </div>
+
+      {storeError !== null && <div className={styles.error}>{storeError}</div>}
+
+      {bottom}
     </div>
   );
 }
