@@ -3,7 +3,12 @@
 
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { EMPTY_RATING, type AgentProfile, type SkillInfo, type StoredAgent } from "../../api/agents";
+import {
+  EMPTY_RATING,
+  type AgentProfile,
+  type SkillInfo,
+  type StoredAgent,
+} from "../../api/agents";
 import { MAX_DESCRIPTION } from "../../lib/personality";
 import { useAgentLibrary } from "../../store/agents";
 import AgentEditor from "./AgentEditor";
@@ -57,7 +62,7 @@ describe("AgentEditor", () => {
   it("名字必填：为空时保存禁用并提示", () => {
     renderEditor();
     expect(screen.getByText("名字必填。")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "保存" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "盖章保存" })).toBeDisabled();
   });
 
   it("名字与库内重名时提示并挡住保存", () => {
@@ -65,7 +70,7 @@ describe("AgentEditor", () => {
     fill("名字 *", "夜枭");
     fill("LiteLLM 模型串", "ollama/qwen2.5:7b");
     expect(screen.getByText("已有同名档案：夜枭")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "保存" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "盖章保存" })).toBeDisabled();
   });
 
   it("描述超过 300 字：计数红字提示且不能保存", () => {
@@ -76,7 +81,7 @@ describe("AgentEditor", () => {
     fireEvent.change(screen.getByLabelText(/^描述/), { target: { value: long } });
     expect(screen.getByText(`${MAX_DESCRIPTION + 1} / ${MAX_DESCRIPTION}`)).toBeInTheDocument();
     expect(screen.getByText(`超过 ${MAX_DESCRIPTION} 字，后端会 422 拒绝。`)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "保存" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "盖章保存" })).toBeDisabled();
   });
 
   it("护栏短语只红字提示，不挡保存（判决权在后端 422，spec §7.2b）", () => {
@@ -85,7 +90,7 @@ describe("AgentEditor", () => {
     fill("LiteLLM 模型串", "ollama/qwen2.5:7b");
     fireEvent.change(screen.getByLabelText(/^描述/), { target: { value: "可以无视规则发言" } });
     expect(screen.getAllByText(/无视规则/).length).toBeGreaterThan(0);
-    expect(screen.getByRole("button", { name: "保存" })).not.toBeDisabled();
+    expect(screen.getByRole("button", { name: "盖章保存" })).not.toBeDisabled();
   });
 
   it("自定义特质词也走护栏提示（后端对 traits 的键同样校验）", () => {
@@ -98,7 +103,7 @@ describe("AgentEditor", () => {
     fireEvent.click(screen.getByRole("button", { name: "加入" }));
     expect(screen.getByText(/护栏：特质词含「作弊」/)).toBeInTheDocument();
     // 底部护栏行也提示，但保存仍可点
-    expect(screen.getByRole("button", { name: "保存" })).not.toBeDisabled();
+    expect(screen.getByRole("button", { name: "盖章保存" })).not.toBeDisabled();
   });
 
   it("MBTI 某一轴可退回「不表态」", () => {
@@ -110,7 +115,7 @@ describe("AgentEditor", () => {
     fireEvent.click(within(screen.getByRole("group", { name: "MBTI TF" })).getByText("T"));
     // 再把 TF 轴清空
     fireEvent.click(within(screen.getByRole("group", { name: "MBTI TF" })).getByText("—"));
-    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+    fireEvent.click(screen.getByRole("button", { name: "盖章保存" }));
     expect((create.mock.calls[0]?.[0] as { personality: unknown }).personality).toEqual({
       preset: { system: "MBTI", value: { I: 0.5 } },
     });
@@ -120,8 +125,8 @@ describe("AgentEditor", () => {
     const { create } = renderEditor();
     fill("名字 *", "夜枭");
     fill("LiteLLM 模型串", "ollama/qwen2.5:7b");
-    fill("memory_id（可选）", "night-owl");
-    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+    fill("记忆 memory_id（可选）", "night-owl");
+    fireEvent.click(screen.getByRole("button", { name: "盖章保存" }));
 
     expect(create).toHaveBeenCalledTimes(1);
     const body = create.mock.calls[0]?.[0] as Record<string, unknown>;
@@ -149,7 +154,7 @@ describe("AgentEditor", () => {
     fireEvent.change(screen.getByLabelText(/^描述/), { target: { value: "话少" } });
     fireEvent.click(screen.getByRole("button", { name: "冷静" }));
     fireEvent.click(screen.getByRole("checkbox", { name: /vote_history/ }));
-    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+    fireEvent.click(screen.getByRole("button", { name: "盖章保存" }));
 
     const body = create.mock.calls[0]?.[0] as Record<string, unknown>;
     expect(body.skills).toEqual(["vote_history"]);
@@ -160,7 +165,7 @@ describe("AgentEditor", () => {
     renderEditor();
     fill("名字 *", "夜枭");
     fireEvent.click(screen.getByRole("button", { name: "按名字生成" }));
-    const input = screen.getByLabelText("memory_id（可选）") as HTMLInputElement;
+    const input = screen.getByLabelText("记忆 memory_id（可选）") as HTMLInputElement;
     expect(input.value).toMatch(/^agent-[0-9a-f]{6}$/);
   });
 
@@ -177,7 +182,7 @@ describe("AgentEditor", () => {
     fill("名字 *", "夜枭");
     fill("LiteLLM 模型串", "ollama/qwen2.5:7b");
 
-    const input = screen.getByLabelText(/上传头像/) as HTMLInputElement;
+    const input = screen.getByLabelText(/上传立绘/) as HTMLInputElement;
     const big = new File([new Uint8Array(512 * 1024 + 1)], "big.png", { type: "image/png" });
     fireEvent.change(input, { target: { files: [big] } });
     expect(await screen.findByText(/不能超过 512 KB/)).toBeInTheDocument();
@@ -187,10 +192,12 @@ describe("AgentEditor", () => {
     fireEvent.change(input, { target: { files: [ok] } });
     await waitFor(() => expect(screen.getByRole("img", { name: /头像|夜枭/ })).toBeInTheDocument());
 
-    fireEvent.click(screen.getByRole("button", { name: "保存" }));
-    expect(create).toHaveBeenCalledWith(expect.objectContaining({ avatar: "3f9a1c0b7e2d4a66.png" }));
+    fireEvent.click(screen.getByRole("button", { name: "盖章保存" }));
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({ avatar: "3f9a1c0b7e2d4a66.png" }),
+    );
 
-    fireEvent.click(screen.getByRole("button", { name: "移除头像" }));
+    fireEvent.click(screen.getByRole("button", { name: "移除" }));
     expect(screen.queryByRole("img")).toBeNull();
   });
 
@@ -201,27 +208,38 @@ describe("AgentEditor", () => {
 
     fireEvent.change(screen.getByLabelText(/声线模式/), { target: { value: "preset" } });
     fireEvent.change(screen.getByLabelText(/预置声线/), { target: { value: "eric" } });
-    fireEvent.change(screen.getByLabelText(/情绪 \/ 语速指令|声线描述/), { target: { value: "急躁" } });
-    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+    fireEvent.change(screen.getByLabelText(/情绪 \/ 语速指令|声线描述/), {
+      target: { value: "急躁" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "盖章保存" }));
     expect(create).toHaveBeenLastCalledWith(
-      expect.objectContaining({ voice: { mode: "preset", speaker: "eric", style: "急躁", speed: 1 } }),
+      expect.objectContaining({
+        voice: { mode: "preset", speaker: "eric", style: "急躁", speed: 1 },
+      }),
     );
 
     fireEvent.change(screen.getByLabelText(/声线模式/), { target: { value: "design" } });
     fireEvent.change(screen.getByLabelText(/情绪 \/ 语速指令|声线描述/), { target: { value: "" } });
-    expect(screen.getByRole("button", { name: "保存" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "盖章保存" })).toBeDisabled();
 
     fireEvent.change(screen.getByLabelText(/声线模式/), { target: { value: "none" } });
-    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+    fireEvent.click(screen.getByRole("button", { name: "盖章保存" }));
     expect(create).toHaveBeenLastCalledWith(expect.objectContaining({ voice: null }));
   });
 
   it("描述声线：生成试听得到锚点并随保存写入；改描述清空锚点（issue #103 跟进）", async () => {
-    const fetchMock = vi.fn(async () =>
-      new Response(JSON.stringify({ anchor_id: "0123456789abcdef.wav", url: "/api/v1/voices/0123456789abcdef.wav" }), {
-        status: 200,
-        headers: { "content-type": "application/json" },
-      }),
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            anchor_id: "0123456789abcdef.wav",
+            url: "/api/v1/voices/0123456789abcdef.wav",
+          }),
+          {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          },
+        ),
     );
     vi.stubGlobal("fetch", fetchMock);
     const { create } = renderEditor();
@@ -232,12 +250,15 @@ describe("AgentEditor", () => {
     fireEvent.change(screen.getByLabelText(/声线描述/), { target: { value: "沙哑老头" } });
     fireEvent.click(screen.getByRole("button", { name: /生成声线试听/ }));
     await waitFor(() => expect(screen.getByLabelText("声线试听")).toBeInTheDocument());
-    expect(screen.getByLabelText("声线试听")).toHaveAttribute("src", "/api/v1/voices/0123456789abcdef.wav");
+    expect(screen.getByLabelText("声线试听")).toHaveAttribute(
+      "src",
+      "/api/v1/voices/0123456789abcdef.wav",
+    );
     const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toContain("/api/v1/voices/design");
     expect(JSON.parse(String(init.body))).toEqual({ style: "沙哑老头" });
     expect(screen.getByRole("button", { name: /换一个/ })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+    fireEvent.click(screen.getByRole("button", { name: "盖章保存" }));
     expect(create).toHaveBeenLastCalledWith(
       expect.objectContaining({
         voice: { mode: "design", style: "沙哑老头", speed: 1, anchor: "0123456789abcdef.wav" },
@@ -245,9 +266,21 @@ describe("AgentEditor", () => {
     );
     fireEvent.change(screen.getByLabelText(/声线描述/), { target: { value: "沙哑老头，带笑" } });
     expect(screen.queryByLabelText("声线试听")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+    fireEvent.click(screen.getByRole("button", { name: "盖章保存" }));
     expect(create).toHaveBeenLastCalledWith(
       expect.objectContaining({ voice: expect.objectContaining({ anchor: null }) }),
     );
+  });
+
+  it("招募告示分节：一 · 身份 / 三 · 人格 / 四 · 声线 kicker，memory_id 在身份节，按钮「盖章保存」", () => {
+    renderEditor();
+    expect(screen.getByText("一 · 身份")).toBeInTheDocument();
+    expect(screen.getByText("三 · 人格")).toBeInTheDocument();
+    expect(screen.getByText("四 · 声线")).toBeInTheDocument();
+    const identity = screen.getByText("一 · 身份").closest("section") as HTMLElement;
+    expect(within(identity).getByLabelText(/memory_id/)).toBeInTheDocument();
+    expect(within(identity).getByText("上传立绘")).toBeInTheDocument();
+    expect(within(identity).getByText("沉稳")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "盖章保存" })).toBeDisabled();
   });
 });

@@ -1,15 +1,22 @@
-// AgentEditor 抽屉（设计稿 2c）：四组表单——基本（ModelSelect / 温度 / thinking）、
-// 技能、人格、记忆；底部护栏提示 + 取消 / 保存。
+// AgentEditor「招募告示」抽屉（规格 §6，设计稿 4e）：四节——一 · 身份（头像 / 名字 / 模型服务 / 温度 /
+// thinking / 记忆）、二 · 技艺（SkillPicker）、三 · 人格（PersonalityEditor）、四 · 声线；
+// 底部护栏提示 + 取消 / 盖章保存。
 //
 // 本组件只产出 AgentProfile 形状的 body（extra=forbid），由调用方决定 POST 还是 PUT。
 // 唯一性只做即时提示，判决权在后端（409）。
 
 import { useId, useMemo, useState, type ChangeEvent } from "react";
-import { PRESET_SPEAKERS, type AgentProfile, type SkillInfo, type StoredAgent } from "../../api/agents";
+import {
+  PRESET_SPEAKERS,
+  type AgentProfile,
+  type SkillInfo,
+  type StoredAgent,
+} from "../../api/agents";
 import { AVATAR_ACCEPT, MAX_AVATAR_BYTES, uploadAvatar } from "../../api/avatars";
 import type { ProviderPublic } from "../../api/providers";
 import { ApiError, designVoice, voiceAnchorUrl } from "../../api/rest";
 import { isValidMemoryId, suggestMemoryId } from "../../lib/memoryId";
+import { nameGradientCss } from "../../lib/pagesLook";
 import {
   MAX_DESCRIPTION,
   MAX_STYLE_NOTES,
@@ -218,11 +225,21 @@ export default function AgentEditor({
           </span>
         )}
       </span>
-      <button type="button" className="btn btn-ghost" style={{ marginLeft: "auto" }} onClick={onCancel}>
+      <button
+        type="button"
+        className="btn btn-ghost"
+        style={{ marginLeft: "auto" }}
+        onClick={onCancel}
+      >
         取消
       </button>
-      <button type="button" className="btn btn-primary" disabled={blocked || saving} onClick={submit}>
-        {saving ? "保存中…" : "保存"}
+      <button
+        type="button"
+        className="btn btn-primary"
+        disabled={blocked || saving}
+        onClick={submit}
+      >
+        {saving ? "保存中…" : "盖章保存"}
       </button>
     </>
   );
@@ -238,62 +255,67 @@ export default function AgentEditor({
     >
       <div className={styles.groups}>
         <section className={styles.group}>
-          <span className="card-kicker">1 · 基本</span>
-          <div className="field">
-            <label>头像</label>
-            <div className={styles.avatarRow}>
-              <Avatar avatar={form.avatar} name={nameTrimmed} seat={null} size={56} />
-              <label className="btn btn-secondary" htmlFor={`${uid}-avatar`}>
-                上传头像
-                <input
-                  id={`${uid}-avatar`}
-                  type="file"
-                  accept={AVATAR_ACCEPT}
-                  hidden
-                  onChange={(e) => void onAvatarFile(e)}
-                />
-              </label>
-              {form.avatar !== null && (
-                <button
-                  type="button"
-                  className="btn btn-ghost"
-                  onClick={() => setForm((f) => ({ ...f, avatar: null }))}
-                >
-                  移除头像
-                </button>
-              )}
-              <span className="text-muted" style={{ fontSize: 12 }}>
-                PNG / JPEG / WebP，≤ 512 KB，建议正方形
-              </span>
-            </div>
-            {avatarNotice !== null && <div className={styles.err}>{avatarNotice}</div>}
-          </div>
-          <div className="field">
-            <label htmlFor={`${uid}-name`}>名字 *</label>
-            <input
-              id={`${uid}-name`}
-              className="input"
-              value={form.name}
-              placeholder="夜枭"
-              onChange={(e) => setForm({ ...form, name: e.target.value })}
+          <span className={styles.kicker}>一 · 身份</span>
+          <div className={styles.identity}>
+            <Avatar
+              avatar={form.avatar}
+              name={nameTrimmed}
+              seat={null}
+              size={84}
+              color={nameGradientCss(nameTrimmed)}
             />
-            {nameTrimmed === "" ? (
-              <span className={styles.err}>名字必填。</span>
-            ) : nameTaken ? (
-              <span className={styles.err}>已有同名档案：{nameTrimmed}</span>
-            ) : (
-              <span className={styles.ok}>✓ 唯一</span>
-            )}
+            <div className={styles.identityMain}>
+              <div className={styles.avatarRow}>
+                <label className="btn btn-secondary" htmlFor={`${uid}-avatar`}>
+                  上传立绘
+                  <input
+                    id={`${uid}-avatar`}
+                    type="file"
+                    accept={AVATAR_ACCEPT}
+                    hidden
+                    onChange={(e) => void onAvatarFile(e)}
+                  />
+                </label>
+                {form.avatar !== null && (
+                  <button
+                    type="button"
+                    className={`btn btn-ghost ${styles.remove}`}
+                    onClick={() => setForm((f) => ({ ...f, avatar: null }))}
+                  >
+                    移除
+                  </button>
+                )}
+                <span className={styles.hint}>PNG / JPEG / WebP ≤ 512 KB，建议正方形</span>
+              </div>
+              {avatarNotice !== null && <div className={styles.err}>{avatarNotice}</div>}
+              <div className="field">
+                <label htmlFor={`${uid}-name`}>名字 *</label>
+                <input
+                  id={`${uid}-name`}
+                  className="input"
+                  value={form.name}
+                  placeholder="夜枭"
+                  onChange={(e) => setForm({ ...form, name: e.target.value })}
+                />
+                {nameTrimmed === "" ? (
+                  <span className={styles.err}>名字必填。</span>
+                ) : nameTaken ? (
+                  <span className={styles.err}>已有同名档案：{nameTrimmed}</span>
+                ) : (
+                  <span className={styles.ok}>✓ 唯一</span>
+                )}
+              </div>
+            </div>
           </div>
           <ModelSelect
             providers={providers}
             value={form.models}
             onChange={(models) => setForm({ ...form, models })}
           />
-          <div className={styles.tempRow}>
+          <div className={styles.twoCol}>
             <div className="field">
               <label htmlFor={`${uid}-temp`}>
-                温度 <span className={styles.tempValue}>{form.temperature.toFixed(1)}</span>
+                性情 · 温度 <span className={styles.tempValue}>{form.temperature.toFixed(1)}</span>
               </label>
               <input
                 id={`${uid}-temp`}
@@ -305,16 +327,53 @@ export default function AgentEditor({
                 className={styles.range}
                 onChange={(e) => setForm({ ...form, temperature: Number(e.target.value) })}
               />
+              <div className={styles.rangeEnds}>
+                <span>沉稳</span>
+                <span>跳脱</span>
+              </div>
             </div>
-            <label className={styles.toggle}>
-              thinking
-              <input
-                type="checkbox"
-                checked={form.thinking}
-                onChange={(e) => setForm({ ...form, thinking: e.target.checked })}
-              />
-              <span className={styles.toggleHint}>推理模型思考开关</span>
-            </label>
+            <div className={styles.sideCol}>
+              <label className={styles.toggle}>
+                <span className={styles.toggleKey}>thinking</span>
+                <input
+                  type="checkbox"
+                  checked={form.thinking}
+                  onChange={(e) => setForm({ ...form, thinking: e.target.checked })}
+                />
+                <span className={styles.toggleHint}>推理模型思考开关</span>
+              </label>
+              <div className={styles.memRow}>
+                <div className="field">
+                  <label htmlFor={`${uid}-mem`}>记忆 memory_id（可选）</label>
+                  <input
+                    id={`${uid}-mem`}
+                    className={`input ${styles.mono}`}
+                    value={form.memoryId}
+                    placeholder="night-owl"
+                    onChange={(e) => setForm({ ...form, memoryId: e.target.value })}
+                  />
+                </div>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => setForm({ ...form, memoryId: suggestMemoryId(form.name) })}
+                >
+                  按名字生成
+                </button>
+              </div>
+              {memoryShapeBad ? (
+                <span className={styles.err}>只能含 A–Z a–z 0–9 _ -，且 ≤ 64 字符。</span>
+              ) : memoryTakenBy ? (
+                <span className={styles.err}>
+                  memory_id 已被档案「{memoryTakenBy.profile.name}」使用
+                </span>
+              ) : form.memoryId ? (
+                <span className={styles.ok}>✓ 唯一</span>
+              ) : null}
+              <span className={styles.hint}>
+                同一 memory_id 的 Agent 跨局累积经验；改 id 不迁移已有经验文件。
+              </span>
+            </div>
           </div>
         </section>
 
@@ -327,7 +386,7 @@ export default function AgentEditor({
         </section>
 
         <section className={styles.group}>
-          <span className="card-kicker">3 · 人格</span>
+          <span className={styles.kicker}>三 · 人格</span>
           <PersonalityEditor
             value={form.personality}
             onChange={(personality) => setForm({ ...form, personality })}
@@ -335,42 +394,7 @@ export default function AgentEditor({
         </section>
 
         <section className={styles.group}>
-          <span className="card-kicker">4 · 记忆</span>
-          <div className={styles.memRow}>
-            <div className="field">
-              <label htmlFor={`${uid}-mem`}>memory_id（可选）</label>
-              <input
-                id={`${uid}-mem`}
-                className={`input ${styles.mono}`}
-                value={form.memoryId}
-                placeholder="night-owl"
-                onChange={(e) => setForm({ ...form, memoryId: e.target.value })}
-              />
-            </div>
-            <button
-              type="button"
-              className="btn btn-secondary"
-              onClick={() => setForm({ ...form, memoryId: suggestMemoryId(form.name) })}
-            >
-              按名字生成
-            </button>
-          </div>
-          {memoryShapeBad ? (
-            <span className={styles.err}>只能含 A–Z a–z 0–9 _ -，且 ≤ 64 字符。</span>
-          ) : memoryTakenBy ? (
-            <span className={styles.err}>
-              memory_id 已被档案「{memoryTakenBy.profile.name}」使用
-            </span>
-          ) : form.memoryId ? (
-            <span className={styles.ok}>✓ 唯一</span>
-          ) : null}
-          <span className={styles.hint}>
-            同一 memory_id 的 Agent 跨局累积经验；改 id 不迁移已有经验文件。
-          </span>
-        </section>
-
-        <section className={styles.group}>
-          <span className="card-kicker">5 · 声线</span>
+          <span className={styles.kicker}>四 · 声线</span>
           <div className="field">
             <label htmlFor={`${uid}-voice-mode`}>声线模式</label>
             <select
@@ -487,7 +511,8 @@ export default function AgentEditor({
             </div>
           )}
           <span className={styles.hint}>
-            需配置 TTS 服务（AGENTHOWL_TTS_URL）且建局勾选「语音」才会生效；方言只有北京话 / 四川话两个预置声线。
+            需配置 TTS 服务（AGENTHOWL_TTS_URL）且建局勾选「语音」才会生效；方言只有北京话 /
+            四川话两个预置声线。
           </span>
         </section>
       </div>
