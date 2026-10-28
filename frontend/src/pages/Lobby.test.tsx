@@ -284,16 +284,23 @@ describe("Lobby 三步布局（UI 改版 PR ③）", () => {
     expect(screen.getByText("全 AI 对局 · 创建后进入上帝视角")).toBeInTheDocument();
   });
 
-  it("第 3 步顶部进度条高亮「③ 点燃篝火」，左栏步骤隐藏", async () => {
+  it("第 1 步左栏「建 局 三 步」；第 2 / 3 步换成顶部进度条并高亮当前步", async () => {
     stubLobbyFetch();
     useAuth.setState({ status: "authed", user: { username: "alice" } as never });
     render(<Lobby />);
+    await screen.findByText("标准 9 人局");
+    expect(screen.getByText("建 局 三 步")).toBeInTheDocument();
     await pickMeOnSeat3();
     expect(screen.queryByText("建 局 三 步")).toBeNull();
     const nav = screen.getByRole("navigation", { name: "建局进度" });
     expect(nav).toHaveTextContent("① 选择剧本");
     expect(nav.querySelector('[aria-current="step"]')).toHaveTextContent("③ 点燃篝火");
     fireEvent.click(screen.getByRole("button", { name: "← 上一步 · 分配座位" }));
+    expect(
+      screen.getByRole("navigation", { name: "建局进度" }).querySelector('[aria-current="step"]'),
+    ).toHaveTextContent("② 分配座位");
+    // 进度条可点回第 1 步
+    fireEvent.click(screen.getByRole("button", { name: "① 选择剧本" }));
     expect(screen.getByText("建 局 三 步")).toBeInTheDocument();
   });
 });

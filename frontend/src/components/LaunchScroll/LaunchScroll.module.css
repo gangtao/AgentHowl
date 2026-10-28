@@ -89,12 +89,18 @@
   gap: 10px;
 }
 
-.input {
+.inline > .muted {
+  white-space: nowrap;
+}
+
+/* 两个类选择器压过全局 .input 的 width: 100%。 */
+.table .nameInput {
   max-width: 260px;
 }
 
-.inputNum {
+.table .inputNum {
   width: 96px;
+  flex: none;
 }
 
 .error {

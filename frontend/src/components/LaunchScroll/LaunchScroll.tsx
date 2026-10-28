@@ -97,7 +97,7 @@ export default function LaunchScroll({
             <dt>我的显示名</dt>
             <dd>
               <input
-                className={`input ${styles.input}`}
+                className={`input ${styles.nameInput}`}
                 aria-label="我的显示名"
                 value={displayName}
                 placeholder={displayNamePlaceholder}

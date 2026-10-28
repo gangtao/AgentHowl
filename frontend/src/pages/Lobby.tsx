@@ -245,7 +245,7 @@ export default function Lobby(): JSX.Element {
 
   return (
     <div className={styles.page} data-step={step}>
-      {step !== 3 ? (
+      {step === 1 ? (
         <aside className={styles.steps}>
           <span className={styles.stepsTitle}>建 局 三 步</span>
           {STEPS.map((s) => (
@@ -268,11 +268,37 @@ export default function Lobby(): JSX.Element {
       ) : (
         <nav className={styles.progress} aria-label="建局进度">
           {PROGRESS.map((t, i) => (
-            <span key={t} aria-current={i === 2 ? "step" : undefined}>
+            <button
+              key={t}
+              type="button"
+              className={styles.progressStep}
+              aria-current={i + 1 === step ? "step" : undefined}
+              onClick={() => goStep(i + 1)}
+            >
               {t}
-            </span>
+            </button>
           ))}
         </nav>
+      )}
+
+      {step === 2 && (
+        <aside className={styles.agentCol}>
+          <div>
+            <h2 className={styles.title}>分配座位</h2>
+            <p className={styles.lead}>
+              从档案库把 Agent 放到座位上；留空即随机 bot。选「我自己」即亲自入座。
+            </p>
+          </div>
+          <AgentMiniList
+            library={items}
+            selected={pendingAgent}
+            onSelect={setPendingAgent}
+            onNewAgent={() => {
+              setNewAgentError(null);
+              setNewAgentOpen(true);
+            }}
+          />
+        </aside>
       )}
 
       <main className={styles.main}>
@@ -324,80 +350,67 @@ export default function Lobby(): JSX.Element {
 
         {step === 2 && (
           <>
-            <div>
+            <div className={styles.ringCol}>
+              {pendingAgent !== null && (
+                <span className={styles.pendingHint}>
+                  已选中「{items.find((a) => a.agent_id === pendingAgent)?.profile.name ?? ""}」·
+                  点一个座位放入
+                </span>
+              )}
+              <SeatRing
+                assignment={assignment}
+                library={items}
+                fill={fillBlocked ? null : fill}
+                pendingAgent={pendingAgent}
+                onAssign={(seat, id) => {
+                  assign(seat, id);
+                  setPendingAgent(null);
+                }}
+              />
+              <div className={styles.tools}>
+                <span className={styles.toolLabel}>工具：</span>
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  onClick={() => {
+                    setFill(null);
+                    setAssignment((prev) => prev.map((s) => ({ seat: s.seat, agentId: null })));
+                  }}
+                >
+                  全部随机 bot
+                </button>
+                <button type="button" className="btn btn-ghost" onClick={shuffle}>
+                  随机打乱
+                </button>
+                <label className={styles.fillLabel}>
+                  填满其余座位：
+                  <select
+                    className={`input ${styles.fillSelect}`}
+                    value={fill ?? ""}
+                    aria-label="填满其余座位"
+                    onChange={(e) => setFill(e.target.value || null)}
+                  >
+                    <option value="">不填</option>
+                    {items.map((a) => (
+                      <option
+                        key={a.agent_id}
+                        value={a.agent_id}
+                        disabled={a.profile.memory_id != null}
+                      >
+                        {a.profile.name}
+                        {a.profile.memory_id != null ? "（含 memory_id，不可填满）" : ""}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              {fillError !== null && <div className={styles.error}>{fillError}</div>}
+            </div>
+            <div className={styles.fallback}>
               <h2 className={styles.title}>分配座位</h2>
               <p className={styles.lead}>
                 从档案库把 Agent 放到座位上；留空即随机 bot。选「我自己」即亲自入座。
               </p>
-            </div>
-            <div className={styles.assignGrid}>
-              <AgentMiniList
-                library={items}
-                selected={pendingAgent}
-                onSelect={setPendingAgent}
-                onNewAgent={() => {
-                  setNewAgentError(null);
-                  setNewAgentOpen(true);
-                }}
-              />
-              <div className={styles.ringCol}>
-                {pendingAgent !== null && (
-                  <span className={styles.pendingHint}>
-                    已选中「{items.find((a) => a.agent_id === pendingAgent)?.profile.name ?? ""}」·
-                    点一个座位放入
-                  </span>
-                )}
-                <SeatRing
-                  assignment={assignment}
-                  library={items}
-                  fill={fillBlocked ? null : fill}
-                  pendingAgent={pendingAgent}
-                  onAssign={(seat, id) => {
-                    assign(seat, id);
-                    setPendingAgent(null);
-                  }}
-                />
-                <div className={styles.tools}>
-                  <span className={styles.toolLabel}>工具：</span>
-                  <button
-                    type="button"
-                    className="btn btn-ghost"
-                    onClick={() => {
-                      setFill(null);
-                      setAssignment((prev) => prev.map((s) => ({ seat: s.seat, agentId: null })));
-                    }}
-                  >
-                    全部随机 bot
-                  </button>
-                  <button type="button" className="btn btn-ghost" onClick={shuffle}>
-                    随机打乱
-                  </button>
-                  <label className={styles.fillLabel}>
-                    填满其余座位：
-                    <select
-                      className={`input ${styles.fillSelect}`}
-                      value={fill ?? ""}
-                      aria-label="填满其余座位"
-                      onChange={(e) => setFill(e.target.value || null)}
-                    >
-                      <option value="">不填</option>
-                      {items.map((a) => (
-                        <option
-                          key={a.agent_id}
-                          value={a.agent_id}
-                          disabled={a.profile.memory_id != null}
-                        >
-                          {a.profile.name}
-                          {a.profile.memory_id != null ? "（含 memory_id，不可填满）" : ""}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                </div>
-                {fillError !== null && <div className={styles.error}>{fillError}</div>}
-              </div>
-            </div>
-            <div className={styles.fallback}>
               <SeatAssignment
                 library={items}
                 assignment={assignment}

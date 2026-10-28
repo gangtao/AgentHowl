@@ -10,8 +10,11 @@
   align-items: start;
 }
 
-/* 第 2 步左栏并入内容区（360px 档案列 + 圆桌）；第 3 步顶部进度条跨两列。 */
-.page[data-step='2'],
+/* 第 2 步左栏是 360px 档案列（设计稿 1d）；第 3 步只剩卷轴 + 右栏卡；两步都用顶部横向进度（跨整行）。 */
+.page[data-step='2'] {
+  grid-template-columns: 360px minmax(0, 1fr) 300px;
+}
+
 .page[data-step='3'] {
   grid-template-columns: minmax(0, 1fr) 300px;
 }
@@ -92,18 +95,39 @@
   color: var(--ah-text-muted);
 }
 
-/* ---- 第 3 步顶部横向进度 ---- */
+/* ---- 第 2 / 3 步顶部横向进度（设计稿 4a） ---- */
 .progress {
   grid-column: 1 / -1;
   display: flex;
   justify-content: center;
   gap: 40px;
-  font-size: 13px;
-  color: var(--ah-text-muted);
+  margin-bottom: -12px;
 }
 
-.progress > [aria-current='step'] {
+.progressStep {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  font-size: 13px;
+  color: var(--ah-text-muted);
+  cursor: pointer;
+}
+
+.progressStep:hover {
+  color: var(--ah-text);
+}
+
+.progressStep[aria-current='step'] {
   color: var(--ah-gold);
+}
+
+/* ---- 第 2 步左栏：标题 + 搜索 + 迷你档案卡 ---- */
+.agentCol {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
 }
 
 /* ---- 内容区 ---- */
@@ -145,14 +169,7 @@
   margin-top: var(--space-2);
 }
 
-/* ---- 第 2 步：360px 档案列 + 圆桌 ---- */
-.assignGrid {
-  display: grid;
-  grid-template-columns: 360px minmax(0, 1fr);
-  gap: 36px;
-  align-items: start;
-}
-
+/* ---- 第 2 步：圆桌列 ---- */
 .ringCol {
   display: flex;
   flex-direction: column;
@@ -225,7 +242,8 @@
   }
 
   /* 圆桌 + 迷你档案卡让位给列表回退 */
-  .assignGrid {
+  .ringCol,
+  .agentCol {
     display: none;
   }
 
