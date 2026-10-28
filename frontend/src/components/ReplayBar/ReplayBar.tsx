@@ -1,6 +1,7 @@
-// 回放条（设计稿 1c/1g/1j）：轮次分段着色的轨道 + 播放控制 + 倍速 + 「回到直播」+ 键盘。
+// 回放绳索条（规格 §4.7，设计稿 5c / 7d）：轮次分段着色的麻绳轨道 + 播放控制 + 倍速 + 「回到直播」+ 键盘；
+// leading / trailing 两个插槽给观众端放「语音播报」与「复制分享链接」。
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { RoundSegment } from "../../engine/select";
 import styles from "./ReplayBar.module.css";
 
@@ -23,6 +24,10 @@ export interface ReplayBarProps {
   onSpeed(speed: number): void;
   onStep(delta: 1 | -1): void;
   onLive(): void;
+  /** 左侧插槽（观众：语音播报胶囊）。 */
+  leading?: ReactNode;
+  /** 右侧插槽（观众：复制分享链接）。 */
+  trailing?: ReactNode;
 }
 
 /** 键盘快捷键在输入控件上不生效（含 contentEditable）。 */
@@ -47,6 +52,8 @@ export default function ReplayBar({
   onSpeed,
   onStep,
   onLive,
+  leading,
+  trailing,
 }: ReplayBarProps): JSX.Element {
   const [speedOpen, setSpeedOpen] = useState(false);
   const at = cursor ?? total;
@@ -83,6 +90,7 @@ export default function ReplayBar({
 
   return (
     <div className={styles.root}>
+      {leading}
       <span className={styles.buttons}>
         <button
           type="button"
@@ -187,6 +195,7 @@ export default function ReplayBar({
       >
         回到直播
       </button>
+      {trailing}
       <span className={styles.hint}>空格 播放/暂停 · ←/→ 步进</span>
     </div>
   );

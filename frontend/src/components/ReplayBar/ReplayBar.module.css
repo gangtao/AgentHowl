@@ -8,8 +8,8 @@
   background: linear-gradient(
       to right,
       transparent,
-      var(--color-divider) 48px,
-      var(--color-divider) calc(100% - 48px),
+      var(--ah-panel-edge) 48px,
+      var(--ah-panel-edge) calc(100% - 48px),
       transparent
     )
     no-repeat top / 100% 1px;
@@ -18,7 +18,7 @@
 .buttons {
   display: inline-flex;
   gap: 2px;
-  color: var(--color-neutral-300);
+  color: var(--ah-text-dim);
   font-size: 13px;
   flex: none;
 }
@@ -29,8 +29,8 @@
 }
 
 .iconActive {
-  color: var(--color-accent);
-  border-color: var(--color-accent);
+  color: var(--ah-fire);
+  border-color: var(--ah-fire);
 }
 
 .track {
@@ -51,7 +51,7 @@
   display: flex;
   border-radius: 3px;
   overflow: hidden;
-  background: var(--color-neutral-900);
+  background: var(--ah-night);
 }
 
 .tickNight {
@@ -68,7 +68,7 @@
   top: 4px;
   height: 6px;
   border-radius: 3px;
-  background: color-mix(in srgb, var(--color-accent) 35%, transparent);
+  background: color-mix(in srgb, var(--ah-fire) 35%, transparent);
   pointer-events: none;
 }
 
@@ -78,15 +78,15 @@
   width: 14px;
   height: 14px;
   border-radius: 50%;
-  background: var(--color-accent);
-  box-shadow: 0 0 0 3px var(--color-bg);
+  background: var(--ah-fire);
+  box-shadow: 0 0 0 3px #0a0d14;
   pointer-events: none;
 }
 
 .knobActive {
   box-shadow:
-    0 0 0 3px var(--color-bg),
-    0 0 14px color-mix(in srgb, var(--color-accent) 70%, transparent);
+    0 0 0 3px #0a0d14,
+    0 0 14px color-mix(in srgb, var(--ah-fire) 70%, transparent);
 }
 
 /* 真正的交互控件：透明覆盖在轨道上，保留键盘与拖动能力。 */
@@ -100,9 +100,9 @@
 }
 
 .seq {
-  font-family: ui-monospace, Menlo, monospace;
+  font-family: var(--font-mono);
   font-size: 11.5px;
-  color: var(--color-neutral-300);
+  color: var(--ah-text-dim);
   flex: none;
 }
 
@@ -124,7 +124,7 @@
   flex-direction: column;
   padding: 4px;
   border-radius: var(--radius-md);
-  background: var(--color-bg);
+  background: #0a0d14;
   box-shadow: var(--shadow-md);
   z-index: 3;
 }
@@ -136,7 +136,7 @@
 }
 
 .speedOn {
-  color: var(--color-accent);
+  color: var(--ah-fire);
 }
 
 .live {
@@ -147,7 +147,7 @@
 
 .hint {
   font-size: 10.5px;
-  color: var(--color-neutral-600);
+  color: var(--ah-parch-muted);
   flex: none;
 }
 
@@ -160,4 +160,99 @@
   .hint {
     display: none;
   }
+}
+
+/* ---- 规格 §4.7 回放绳索（设计稿 5c / 7d）：覆盖上面的旧值 ---- */
+.root {
+  height: 72px;
+  gap: 14px;
+  padding: 0 24px;
+  background: #0a0d14;
+  border-top: 1px solid var(--ah-panel-edge);
+}
+.buttons {
+  gap: 10px;
+  font-size: 15px;
+  color: var(--ah-text-dim);
+}
+.icon {
+  width: 32px;
+  height: 32px;
+  border: 0;
+}
+.icon:hover {
+  color: var(--ah-gold);
+}
+.iconActive {
+  color: var(--ah-gold);
+  border: 0;
+}
+.track {
+  height: 24px;
+  margin-top: 10px;
+}
+.ticks {
+  top: 6px;
+  height: 12px;
+  border-radius: 6px;
+  background: repeating-linear-gradient(135deg, var(--ah-wood-edge) 0 6px, var(--ah-wood-hi) 6px 12px);
+}
+.tickNight,
+.tickDay {
+  background: transparent;
+  box-shadow: inset 0 -3px 0 var(--ah-tick-night);
+}
+.tickDay {
+  box-shadow: inset 0 -3px 0 var(--ah-tick-day);
+}
+.progress {
+  top: 6px;
+  height: 12px;
+  border-radius: 6px;
+  background: repeating-linear-gradient(135deg, var(--ah-fire-lo) 0 6px, #8a5a1e 6px 12px);
+}
+.knob {
+  top: 0;
+  width: 24px;
+  height: 24px;
+  background: radial-gradient(circle, #fff0b0, var(--ah-fire-hi) 40%, var(--ah-fire-lo));
+  box-shadow: 0 0 18px 5px rgba(227, 166, 72, 0.5);
+}
+.knobActive {
+  box-shadow: 0 0 22px 7px rgba(227, 166, 72, 0.7);
+}
+.seq {
+  font-size: 14px;
+  color: var(--ah-text);
+}
+.speed {
+  border: 1px solid var(--ah-wood-edge);
+  background: transparent;
+  box-shadow: none;
+  color: var(--ah-text);
+  padding: 6px 12px;
+  font-size: 13px;
+}
+.speedMenu {
+  background: var(--ah-panel);
+  border: 1px solid var(--ah-wood-edge);
+}
+.live {
+  background: transparent;
+  border: 1px solid var(--ah-fire);
+  color: var(--ah-fire);
+  box-shadow: none;
+  font-weight: 400;
+  padding: 6px 12px;
+  font-size: 13px;
+}
+.live:disabled {
+  background: transparent;
+  border: 1px solid var(--ah-wood-edge);
+  color: var(--ah-parch-muted);
+  opacity: 1;
+}
+.hint {
+  color: #5a5f6a;
+  font-size: 11px;
 }

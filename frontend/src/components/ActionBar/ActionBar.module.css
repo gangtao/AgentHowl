@@ -1,44 +1,51 @@
-/* 玩家行动区（issue #115）：位于对局页中栏 SpeechFeed 之下。 */
+/* 玩家行动区：panel（旧布局，窄屏 / 兜底）与 hud（设计稿 3a 底部 HUD 中 + 右两段）。 */
 
+/* ---- panel ---- */
 .root {
-  border-top: 1px solid var(--color-divider);
+  border-top: 1px solid var(--ah-panel-edge);
   padding: var(--space-3) var(--space-4);
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  background: var(--color-surface);
+  background: var(--ah-panel-glass);
 }
 
 .idle {
-  border-top: 1px solid var(--color-divider);
+  border-top: 1px solid var(--ah-panel-edge);
   padding: var(--space-2) var(--space-4);
   font-size: 12.5px;
-  color: var(--color-neutral-500);
+  color: var(--ah-text-muted);
 }
 
 .tabs {
   display: flex;
-  gap: var(--space-2);
+  gap: 8px;
 }
 
 .tab {
-  font-size: 12.5px;
-  padding: 2px 10px;
-  border-radius: 999px;
-  border: 1px solid var(--color-divider);
+  font: inherit;
+  font-size: 12px;
+  padding: 4px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--ah-wood-edge);
   background: transparent;
+  color: var(--ah-text-dim);
   cursor: pointer;
 }
-
+.tab:hover {
+  border-color: var(--ah-wood-btn-edge);
+}
 .tabOn {
-  border-color: var(--color-primary);
-  color: var(--color-primary);
+  background: var(--ah-fire);
+  border-color: var(--ah-fire);
+  color: #2b1a08;
+  font-weight: 700;
 }
 
 .row {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-2);
+  gap: 8px;
   align-items: center;
 }
 
@@ -47,7 +54,7 @@
 }
 
 .seatOn {
-  outline: 2px solid var(--color-primary);
+  outline: 2px solid var(--ah-fire);
 }
 
 .textarea {
@@ -58,26 +65,181 @@
 
 .info {
   font-size: 12.5px;
-  color: var(--color-neutral-500);
+  color: var(--ah-text-dim);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .footer {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  font-size: 12.5px;
-  color: var(--color-neutral-500);
+  gap: 8px;
+  font-size: 12px;
+  color: var(--ah-text-muted);
+  min-height: 1.2em;
 }
 
 .warn {
-  color: var(--color-warning, #b45309);
+  color: var(--ah-warn);
 }
 
 .error {
-  color: var(--color-danger, #b91c1c);
+  color: var(--ah-wolf);
 }
 
 .danger {
-  border-color: var(--color-danger, #b91c1c);
-  color: var(--color-danger, #b91c1c);
+  border-color: var(--ah-wolf);
+  color: var(--ah-wolf);
+}
+
+/* ---- hud ---- */
+.hud {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 20px;
+  align-items: center;
+  min-width: 0;
+}
+
+.hudMain {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.hudSide {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: flex-end;
+}
+
+.hudIdle {
+  padding: 14px 18px;
+  border-radius: 6px;
+  background: rgba(22, 27, 40, 0.6);
+  border: 1px dashed var(--ah-wood-edge);
+  color: var(--ah-text-muted);
+  font-size: 13px;
+  line-height: 1.7;
+}
+.hudIdleTitle {
+  font-family: var(--font-heading);
+  font-size: 20px;
+  color: var(--ah-text-dim);
+  margin-right: 14px;
+}
+
+.hudHeadRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+}
+.hudHeading {
+  font-family: var(--font-heading);
+  font-size: 18px;
+  color: var(--ah-gold);
+}
+.hudSub {
+  font-size: 12px;
+  color: var(--ah-parch-muted);
+}
+
+.select {
+  width: auto;
+  min-height: 28px;
+  padding: 2px 26px 2px 8px;
+  font-size: 12px;
+}
+.flowInput {
+  width: 110px;
+  min-height: 28px;
+  padding: 2px 8px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.chip {
+  width: 48px;
+  height: 48px;
+  border-radius: 6px;
+  display: grid;
+  place-items: center;
+  font: 16px var(--font-heading);
+  background: var(--ah-panel);
+  color: var(--ah-text);
+  border: 2px solid var(--ah-panel-edge);
+  cursor: pointer;
+  padding: 0;
+}
+.chip:hover {
+  border-color: var(--ah-fire);
+}
+.chipOn {
+  background: linear-gradient(var(--ah-fire-hi), var(--ah-fire-lo));
+  color: #2b1a08;
+  border-color: var(--ah-fire);
+  box-shadow: 0 0 16px rgba(227, 166, 72, 0.5);
+}
+.chipDashed {
+  font: 12px var(--font-body);
+  color: var(--ah-parch-muted);
+  background: transparent;
+  border-style: dashed;
+  border-color: var(--ah-wood-edge);
+}
+
+.timer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.timerTrack {
+  width: 160px;
+  height: 10px;
+  border-radius: 5px;
+  background: #2a1d14;
+  overflow: hidden;
+}
+.timerTrack > span {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, var(--ah-fire-lo), var(--ah-fire-hi));
+  box-shadow: 0 0 10px var(--ah-fire-hi);
+  transition: width 1s linear;
+}
+.timerText {
+  font: 18px var(--font-mono);
+  color: var(--ah-gold);
+  min-width: 3ch;
+  text-align: right;
+}
+
+.primary {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.primary :global(.btn) {
+  padding: 11px 24px;
+  font-size: 15px;
+}
+
+@media (max-width: 900px) {
+  .hud {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+  .hudSide {
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .timerTrack {
+    width: 100px;
+  }
 }
