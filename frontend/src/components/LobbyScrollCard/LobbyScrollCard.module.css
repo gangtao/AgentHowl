@@ -1,0 +1,61 @@
+/* LobbyScrollCard（规格 §5 右栏）：木牌卡，标题金字，汇总 14px / 12px。 */
+
+.card {
+  align-self: start;
+  padding: 20px;
+  gap: 6px;
+}
+
+.kicker {
+  font-family: var(--font-heading);
+  font-weight: var(--font-heading-weight);
+  font-size: 16px;
+  letter-spacing: 0.08em;
+  margin-bottom: 4px;
+}
+
+.main {
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--ah-text-bright);
+}
+
+.sub {
+  font-size: 12px;
+  color: var(--ah-text-muted);
+}
+
+.checks {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+}
+
+.launch {
+  margin-top: 12px;
+  width: 100%;
+  font-family: var(--font-heading);
+  font-weight: var(--font-heading-weight);
+  font-size: 17px;
+  letter-spacing: 0.05em;
+}
+
+.notes {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--ah-wood-edge);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ah-text-muted);
+}
