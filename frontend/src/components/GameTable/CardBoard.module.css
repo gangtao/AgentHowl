@@ -1,0 +1,285 @@
+/* 卡牌皮肤（规格 §7）：repeat(4, 116px) 牌阵，牌 140px 高 radius 7。 */
+
+.root {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+  width: 100%;
+  max-width: 560px;
+  padding-top: 12px;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(4, 116px);
+  gap: 14px;
+  justify-content: center;
+}
+
+.piece {
+  position: relative;
+  width: 116px;
+  height: 140px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border-radius: 7px;
+  border: 2px solid var(--ah-wood-edge);
+  background: linear-gradient(180deg, var(--ah-wood-hi), var(--ah-wood-lo));
+  color: var(--ah-text);
+  font: inherit;
+  cursor: default;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.45);
+  transition:
+    transform 0.15s,
+    box-shadow 0.15s,
+    opacity 0.2s;
+}
+
+.inner {
+  position: absolute;
+  inset: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 4px;
+  pointer-events: none;
+}
+
+/* 已知身份正面：阵营渐变 */
+.piece[data-face='front'] {
+  background: radial-gradient(circle at 50% 30%, var(--cb-hi), var(--cb-lo));
+  color: var(--cb-fg);
+  border-color: var(--cb-ring);
+}
+
+/* 出局灰牌 */
+.piece[data-face='dead'] {
+  background: #141821;
+  color: #5a5f6a;
+  border-color: #2a3042;
+  box-shadow: none;
+}
+
+.no {
+  position: absolute;
+  left: 6px;
+  top: 6px;
+  padding: 1px 7px;
+  border-radius: 3px;
+  background: var(--ah-parch);
+  color: var(--ah-parch-ink);
+  font: 700 11px var(--font-mono);
+}
+
+.icon {
+  display: block;
+}
+
+.roleName {
+  font-family: var(--font-heading);
+  font-size: 16px;
+}
+
+.piece[data-face='dead'] .roleName,
+.piece[data-face='dead'] .icon {
+  opacity: 0.55;
+}
+
+.initial {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 2px solid var(--ah-wood-btn-edge);
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  font-family: var(--font-heading);
+  font-size: 26px;
+  color: var(--ah-text-dim);
+}
+
+.initial > * {
+  font-family: var(--font-heading);
+  color: var(--ah-text-dim);
+}
+
+.backText {
+  font-size: 11px;
+  color: var(--ah-text-muted);
+}
+
+.cross {
+  font-size: 34px;
+  color: #3b3f4a;
+  line-height: 1;
+}
+
+.deadText {
+  font-size: 11px;
+  color: #5a5f6a;
+}
+
+.stamp {
+  position: absolute;
+  right: 6px;
+  top: 4px;
+  font-size: 18px;
+  color: var(--ah-wolf);
+  line-height: 1;
+}
+
+.name {
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  bottom: 6px;
+  text-align: center;
+  font-size: 11px;
+  color: var(--ah-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.piece[data-face='dead'] .name {
+  color: #5a5f6a;
+}
+
+/* ---- 状态 ---- */
+.piece[data-selectable] {
+  cursor: pointer;
+}
+
+.piece[data-selectable]:hover,
+.piece[data-selected] {
+  border-color: var(--ah-fire);
+  box-shadow: 0 0 24px rgba(227, 166, 72, 0.6);
+}
+
+.piece[data-me] {
+  border-color: var(--ah-fire);
+}
+
+.piece[data-speaking] {
+  transform: translateY(-8px);
+  border-color: var(--ah-gold);
+  box-shadow: 0 0 28px rgba(240, 192, 96, 0.55);
+}
+
+.piece[data-leader] {
+  border-color: var(--ah-gold);
+}
+
+.piece[data-dim] {
+  opacity: 0.55;
+}
+
+.piece[data-target] {
+  opacity: 1;
+  transform: translateY(-6px);
+  box-shadow: 0 0 24px rgba(201, 70, 61, 0.5);
+}
+
+.root[data-night] .piece[data-face='back'] {
+  background: linear-gradient(180deg, var(--ah-table-night), var(--ah-table-night-edge));
+  border-color: #3a4260;
+}
+
+.root[data-night] .backText,
+.root[data-night] .name {
+  color: #8a92a8;
+}
+
+/* ---- 徽章 ---- */
+.candidate {
+  position: absolute;
+  right: -6px;
+  top: -6px;
+  padding: 1px 7px;
+  border-radius: 3px;
+  background: var(--ah-god);
+  color: #2b1a08;
+  font: 11px var(--font-heading);
+  border: 1px solid var(--ah-fire-edge);
+  z-index: 2;
+}
+
+.sheriff {
+  position: absolute;
+  right: -6px;
+  top: 20px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--ah-god);
+  color: #2b1a08;
+  font-size: 12px;
+  border: 1px solid var(--ah-fire-edge);
+  z-index: 2;
+}
+
+.votes,
+.redTag,
+.mark {
+  position: absolute;
+  left: 50%;
+  bottom: -10px;
+  transform: translateX(-50%);
+  padding: 2px 8px;
+  border-radius: 3px;
+  font-size: 10px;
+  white-space: nowrap;
+  z-index: 2;
+}
+
+.votes {
+  background: var(--ah-fire);
+  color: #2b1a08;
+  font: 700 10px var(--font-mono);
+}
+
+.redTag {
+  background: var(--ah-wolf);
+  color: #fbe0dc;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+}
+
+/* 票数与签同时存在时签在上一层、票数右移 */
+.votes ~ .redTag,
+.votes ~ .mark {
+  bottom: 12px;
+}
+
+.mark {
+  color: #fff;
+}
+
+.mark[data-mark='好人'] {
+  background: var(--ah-ok);
+}
+
+.mark[data-mark='狼人'] {
+  background: var(--ah-wolf);
+}
+
+.center {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+}
+
+@media (max-width: 560px) {
+  .grid {
+    grid-template-columns: repeat(3, 96px);
+    gap: 10px;
+  }
+  .piece {
+    width: 96px;
+    height: 118px;
+  }
+}

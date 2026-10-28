@@ -4,6 +4,7 @@
 import type { SpeechItem } from "../../engine/select";
 import type { SeatModel } from "../../lib/seatModel";
 import type { StageContent } from "../../lib/stageContent";
+import { currentSpeechItem, seatLabel } from "../../lib/tableText";
 import RoleToken from "../RoleToken/RoleToken";
 import { SpeechBubble, type BubbleKind } from "./SpeechBubble";
 import styles from "./GameTable.module.css";
@@ -31,24 +32,6 @@ export interface GameTableProps {
   avatars: Record<number, string>;
   /** 只对 selectable 的座位触发。 */
   onSelectSeat?(seat: number): void;
-}
-
-/** 当前发言者「这一轮」的发言：取 feed 里最后一条发言 / 遗言，且得是这个座位说的；否则还没说。 */
-function currentItem(items: SpeechItem[], speaker: number): SpeechItem | null {
-  for (let i = items.length - 1; i >= 0; i -= 1) {
-    const it = items[i] as SpeechItem;
-    if (it.kind === "speech" || it.kind === "last_words") {
-      return it.actor_seat === speaker ? it : null;
-    }
-  }
-  return null;
-}
-
-function seatLabel(s: SeatModel): string {
-  const parts = [`${s.seat}号`, s.name, s.alive ? "存活" : "出局"];
-  if (s.badges.sheriff) parts.push("警长");
-  if (s.speaking) parts.push("发言中");
-  return parts.join(" ");
 }
 
 export default function GameTable({
@@ -118,7 +101,7 @@ export default function GameTable({
 
         {speech !== null && speakerSeat !== null && (
           <SpeechBubble
-            item={currentItem(speech.items, speech.speaker)}
+            item={currentSpeechItem(speech.items, speech.speaker)}
             seat={speakerSeat.seat}
             name={speakerSeat.name}
             kind={speech.kind}
