@@ -66,4 +66,34 @@ describe("SpeechBubble（规格 §4.3）", () => {
     rerender(<SpeechBubble {...base} anchor={{ x: 50, y: 91 }} item={item} kind="speech" />);
     expect(screen.getByRole("status")).toHaveAttribute("data-side", "above");
   });
+
+  it("layout=strip：横向羊皮纸，不定位、带 44px 徽记，头行与倒计时同前", () => {
+    render(
+      <SpeechBubble
+        item={null}
+        seat={3}
+        name="狐语"
+        kind="speech"
+        deadline={100}
+        limit={120}
+        now={() => 71}
+        voicing={false}
+        mine
+        anchor={{ x: 50, y: 9 }}
+        layout="strip"
+        role="WEREWOLF"
+      />,
+    );
+    const el = screen.getByRole("status", { name: "3号 狐语 发言中" });
+    expect(el.style.left).toBe("");
+    expect(el.style.top).toBe("");
+    expect(screen.getByRole("img", { name: "狼人" })).toBeInTheDocument();
+    expect(screen.getByText("29s")).toBeInTheDocument();
+    expect(screen.getByText("轮到你发言…")).toBeInTheDocument();
+  });
+
+  it("layout=strip 且角色未知：徽记显示首字", () => {
+    render(<SpeechBubble {...base} item={item} kind="speech" layout="strip" role={null} />);
+    expect(screen.getByRole("img", { name: "身份未知" })).toHaveTextContent("G");
+  });
 });
