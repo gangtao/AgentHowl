@@ -411,10 +411,6 @@ export default function GamePage({ gameId, token, share, viewer }: GamePageProps
   const finished = head !== null && (head.phase === "GAME_OVER" || head.winner !== null);
   const over = finished || mode === "replay";
   const winner = head?.winner ?? view.winner;
-  const reconnectHint =
-    mode === "live" && (connection === "closed" || connection === "connecting") && !over
-      ? "重连中 · 正在补发事件"
-      : null;
 
   const rightPanel = isNight(view.phase) ? (
     <NightSummary rows={nightRows} round={view.round} viewer={resolvedViewer} />
@@ -437,9 +433,8 @@ export default function GamePage({ gameId, token, share, viewer }: GamePageProps
         mode={mode}
         viewer={resolvedViewer}
         connection={connection}
-        lastSeq={atSeq}
         totalSeq={totalSeq}
-        reconnectHint={reconnectHint}
+        over={over}
       />
 
       {over && (

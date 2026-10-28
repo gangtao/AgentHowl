@@ -44,7 +44,7 @@ describe("GamePage 聚光牌跟随配音（issue #110）", () => {
     stubFetch(() => jsonResponse(200, meta));
     vi.stubGlobal("WebSocket", vi.fn());
     render(<GamePage gameId="g_x" token="t" viewer="GM" />);
-    await screen.findByText(new RegExp(`已结束 · ${events.length} 条事件`));
+    await screen.findByText(new RegExp(`▶ 回放 · ${events.length} 条事件`));
     const narrated = events.find((e) => e.actor_seat === null && e.type === "VOTE_STARTED");
     expect(narrated).toBeDefined();
     act(() => useVoice.setState({ voicingSeq: narrated!.seq, playing: { seq: narrated!.seq, part: 0 } }));
@@ -59,7 +59,7 @@ describe("GamePage 聚光牌跟随配音（issue #110）", () => {
     stubFetch(() => jsonResponse(200, meta));
     vi.stubGlobal("WebSocket", vi.fn());
     render(<GamePage gameId="g_x" token="t" viewer="GM" />);
-    await screen.findByText(new RegExp(`已结束 · ${events.length} 条事件`));
+    await screen.findByText(new RegExp(`▶ 回放 · ${events.length} 条事件`));
     const shot = events.find((e) => e.type === "HUNTER_SHOT" && e.actor_seat !== null);
     expect(shot).toBeDefined();
     act(() => useVoice.setState({ voicingSeq: shot!.seq, playing: { seq: shot!.seq, part: 0 } }));
@@ -74,7 +74,7 @@ describe("GamePage 凭据模式（issue #114）", () => {
     const fetchMock = stubFetch(() => jsonResponse(200, meta));
     vi.stubGlobal("WebSocket", vi.fn());
     render(<GamePage gameId="g_x" viewer="GM" />);
-    await screen.findByText(new RegExp(`已结束 · ${events.length} 条事件`));
+    await screen.findByText(new RegExp(`▶ 回放 · ${events.length} 条事件`));
     const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toBe("/api/v1/games/g_x/meta");
     expect(init.credentials).toBe("same-origin");
@@ -85,7 +85,7 @@ describe("GamePage 凭据模式（issue #114）", () => {
     const fetchMock = stubFetch(() => jsonResponse(200, meta));
     vi.stubGlobal("WebSocket", vi.fn());
     render(<GamePage gameId="g_x" share="S" viewer="SPECTATOR" />);
-    await screen.findByText(new RegExp(`已结束 · ${events.length} 条事件`));
+    await screen.findByText(new RegExp(`▶ 回放 · ${events.length} 条事件`));
     const urls = fetchMock.mock.calls.map((c) => c[0]);
     expect(urls).toContain("/api/v1/games/g_x/meta?share=S");
     expect(urls).toContain("/api/v1/games/g_x/replay?share=S");
@@ -104,7 +104,7 @@ describe("GamePage 视角以服务端为准（issue #115）", () => {
     stubFetch(() => jsonResponse(200, { ...meta, viewer: "SPECTATOR" }));
     vi.stubGlobal("WebSocket", vi.fn());
     render(<GamePage gameId="g_x" token="t" viewer="GM" />);
-    await screen.findByText(new RegExp(`已结束 · ${events.length} 条事件`));
+    await screen.findByText(new RegExp(`▶ 回放 · ${events.length} 条事件`));
     expect(useGameStore.getState().viewer).toBe("SPECTATOR");
   });
 

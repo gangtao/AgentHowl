@@ -1,0 +1,35 @@
+/* 阶段木牌（设计稿 3a）：绝对定位由 GamePage 决定，这里只管内部排版与夜间 / 血色配色。 */
+
+.root {
+  z-index: 2;
+  max-width: 100%;
+}
+
+.title {
+  white-space: nowrap;
+}
+
+.sub {
+  white-space: normal;
+  max-width: 320px;
+}
+
+:global([data-night]) .root {
+  color: var(--ah-night-text);
+  border-color: var(--ah-night-wood-edge);
+  background: linear-gradient(180deg, #2a1e16, #1a110a);
+  box-shadow: 0 6px 0 #0a0603;
+}
+:global([data-night]) .sub {
+  color: var(--ah-night-muted);
+}
+
+:global([data-blood]) .root {
+  color: var(--ah-wolf-fg);
+  border-color: var(--ah-wolf);
+}
+
+:global([data-amber]) .root {
+  color: var(--ah-god-fg);
+  border-color: var(--ah-god);
+}
