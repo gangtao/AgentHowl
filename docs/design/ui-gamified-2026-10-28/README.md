@@ -12,5 +12,6 @@
 | `02-nav-lobby.png` | 木栏导航 + 大厅（大厅本体待 PR ③） | 1c 顶栏 |
 | `06-history-share-dialog.png` | 「传 · 分享对局」木牌对话框（历史页本体待 PR ④） | 4f |
 | `07-agents-editor.png` | 羊皮纸「招募告示」抽屉壳（表单内容待 PR ④） | 4e |
+| `07-agents-editor-personality.png` | 同一抽屉滚到「3 · 人格」：羊皮纸上的分段选择与 kicker 可读性 | 4e |
 | `09-error-not-found.png` | 4404「这局已随风散去」 | 4f |
 | `09-error-forbidden.png` | 匿名 4401「村口有人守着」 | 4f |
