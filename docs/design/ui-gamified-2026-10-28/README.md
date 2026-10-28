@@ -1,4 +1,4 @@
-# UI 改版截图基线（2026-10-28，PR ① 视觉基础 + PR ② 对局页）
+# UI 改版截图基线（2026-10-28，PR ① 视觉基础 + PR ② 对局页 + PR ③ 大厅）
 
 对照设计稿：`docs/design/gamified-2026-10-27/options/`。桌面 1440×900，手机 390×844。
 后续 PR（对局页、大厅、其余页面、卡牌皮肤）完成后在本目录追加对应截图。
@@ -9,7 +9,7 @@
 | `01-auth-register.png` | 注册「落户」 | 1b |
 | `01-auth-verify.png` | 验证码「对暗号」 | 1b |
 | `01-auth-login-390.png` | 手机宽登录（无横向滚动） | — |
-| `02-nav-lobby.png` | 木栏导航 + 大厅（大厅本体待 PR ③） | 1c 顶栏 |
+| `02-nav-lobby.png` | 木栏导航 + 大厅（PR ① 时的旧大厅，PR ③ 见下） | 1c 顶栏 |
 | `06-history-share-dialog.png` | 「传 · 分享对局」木牌对话框（历史页本体待 PR ④） | 4f |
 | `07-agents-editor.png` | 羊皮纸「招募告示」抽屉壳（表单内容待 PR ④） | 4e |
 | `07-agents-editor-personality.png` | 同一抽屉滚到「3 · 人格」：羊皮纸上的分段选择与 kicker 可读性 | 4e |
@@ -36,3 +36,17 @@
 | `05-gm-replay-{night,sheriff,speech,vote,over,drawer}.png` | 上帝回放：各阶段 + 结算 + 事件流抽屉 | 5c / 3a |
 | `05-spectator-replay-{speech,end}.png` | 匿名分享链接观众 | 7d |
 | `10-game-1100.png` / `10-game-390.png` | 1100 宽（右栏入抽屉）/ 390 宽（纵向堆叠，无横向滚动） | — |
+
+## PR ③ 大厅三步
+
+截图来自 `frontend/e2e/lobby-shots.mjs`（登录 `e2e_player`，档案库为空，seed 42，不点「点燃篝火」）。
+建局到开局的全流程由 `play.mjs`（村民 seed 3）走通：`finished: true`、`rejected: []`、`mismatches: 0`。
+
+| 文件 | 画面 | 设计稿 |
+|---|---|---|
+| `02-lobby-1-preset.png` | 第 1 步：左栏「建 局 三 步」、羊皮纸剧本牌（选中篝火描边、木签、角色徽记）、seed、右栏「开局卷轴」木牌卡 | 1c |
+| `02-lobby-2-seats.png` | 第 2 步：左栏迷你档案列（空库提示）、480px 圆桌入座（0 号「我」、其余虚线 bot）、工具行 | 1d |
+| `02-lobby-2-seats-menu.png` | 第 2 步：点 5 号座位弹出木牌菜单（「我自己」因已在 0 号而禁用） | 1d |
+| `02-lobby-3-scroll.png` | 第 3 步：顶部横向进度、640px 羊皮纸「开 局 卷 轴」（座位签 / 时限「秒 · 一根蜡烛」）、两处「点燃篝火 · 开局」 | 4a |
+| `02-lobby-1-preset-1100.png` / `02-lobby-2-seats-1100.png` | 1100 宽（≤1280 断点）：剧本牌单列；档案列上移成整行，圆桌保持 480px | — |
+| `02-lobby-2-seats-390.png` | 390 宽：圆桌与迷你档案卡隐藏，`SeatAssignment` 列表回退 | — |

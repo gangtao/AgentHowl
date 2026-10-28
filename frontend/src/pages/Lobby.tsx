@@ -1,4 +1,6 @@
-// Lobby 三步建局（设计稿 2a / 2d / 1b）：选 preset → 分配座位 → 创建并开始 → ShareDialog。
+// Lobby 三步建局（规格 §5，设计稿 1c / 1d / 4a）：选剧本 → 圆桌分配座位 → 开局卷轴 → ShareDialog。
+// 本文件只做状态与编排；视觉在 PresetCard / SeatRing / AgentMiniList / LobbyScrollCard / LaunchScroll。
+// SeatAssignment 保留为 <900px 的列表回退（CSS 切换，两套同时渲染、aria 名不同）。
 //
 // 建局请求形状（规格 §7.2）：
 //   POST /games {preset, config_override: {seed?}, agents: {"0": AgentProfile, "*": AgentProfile}, agent_ids: {"0": agent_id, "*": agent_id}}
@@ -17,20 +19,35 @@ import {
 } from "../api/rest";
 import { deleteGame } from "../api/history";
 import AgentEditor from "../components/AgentEditor/AgentEditor";
+import LaunchScroll from "../components/LaunchScroll/LaunchScroll";
+import LobbyScrollCard from "../components/LobbyScrollCard/LobbyScrollCard";
 import PresetCard from "../components/PresetCard/PresetCard";
 import SeatAssignment from "../components/SeatAssignment/SeatAssignment";
+import AgentMiniList from "../components/SeatRing/AgentMiniList";
+import SeatRing from "../components/SeatRing/SeatRing";
 import ShareDialog from "../components/ShareDialog/ShareDialog";
-import { assignmentSummary, buildAgentIdsPayload, buildAgentsPayload, emptyAssignment, meSeat, type SeatSlot } from "../lib/seats";
+import { seatTags } from "../lib/lobbyText";
+import {
+  assignmentSummary,
+  buildAgentIdsPayload,
+  buildAgentsPayload,
+  emptyAssignment,
+  meSeat,
+  type SeatSlot,
+} from "../lib/seats";
 import { useAgentLibrary } from "../store/agents";
 import { useAuth } from "../store/auth";
 import { useProviders } from "../store/providers";
 import styles from "./Lobby.module.css";
 
 const STEPS = [
-  { n: 1, title: "选择对局", sub: "板子 preset 与 seed" },
+  { n: 1, title: "选择剧本", sub: "板子 preset 与 seed" },
   { n: 2, title: "分配座位", sub: "从档案库挑 Agent" },
-  { n: 3, title: "创建并开始", sub: "汇总并开局" },
+  { n: 3, title: "点燃篝火", sub: "开局卷轴与时限" },
 ] as const;
+
+/** 第 3 步顶部横向进度（设计稿 4a）。 */
+const PROGRESS = ["① 选择剧本", "② 分配座位", "③ 点燃篝火"] as const;
 
 interface Created {
   gameId: string;
@@ -38,7 +55,13 @@ interface Created {
   shareToken: string | null;
 }
 
-const TTS_DISABLED: TtsStatus = { enabled: false, ok: false, url: null, detail: null, supports_style: false };
+const TTS_DISABLED: TtsStatus = {
+  enabled: false,
+  ok: false,
+  url: null,
+  detail: null,
+  supports_style: false,
+};
 
 export default function Lobby(): JSX.Element {
   const { items, skills, presets, error, refresh, create } = useAgentLibrary();
@@ -50,6 +73,8 @@ export default function Lobby(): JSX.Element {
   const [seed, setSeed] = useState("");
   const [assignment, setAssignment] = useState<SeatSlot[]>([]);
   const [fill, setFill] = useState<string | null>(null);
+  /** 左栏点中、待放到座位上的档案（规格 §5：先点档案再点座位）。 */
+  const [pendingAgent, setPendingAgent] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const [created, setCreated] = useState<Created | null>(null);
@@ -78,9 +103,13 @@ export default function Lobby(): JSX.Element {
 
   const preset = presets.find((p) => p.name === presetName) ?? null;
 
-  // 默认选中第一个 preset；换 preset 时按新人数重建座位表（保留仍存在的座位）
+  // 默认选中第一个 preset；列表刷新后所选名字不存在（store 里是别处留下的旧列表）也回退到第一个。
+  // 换 preset 时按新人数重建座位表（保留仍存在的座位）
   useEffect(() => {
-    if (presetName === null && presets.length > 0) setPresetName(presets[0]?.name ?? null);
+    if (presets.length === 0) return;
+    if (presetName === null || !presets.some((p) => p.name === presetName)) {
+      setPresetName(presets[0]?.name ?? null);
+    }
   }, [presets, presetName]);
 
   useEffect(() => {
@@ -203,87 +232,74 @@ export default function Lobby(): JSX.Element {
     }
   }
 
-  const payloadKeys = Object.keys(agentsPayload).sort();
-  const idKeys = Object.keys(agentIdsPayload).sort();
+  const tags = seatTags(assignment, items, fillBlocked ? null : fill);
+  const canLaunch = step === 3 && preset !== null && !fillBlocked && failedGame === null;
+  const fillError = fillBlocked
+    ? `「${fillAgent?.profile.name ?? ""}」配置了 memory_id，不能作为 "*" 档案（后端会 400）。请回到步骤 2 改用逐座位分配。`
+    : null;
+
+  function goStep(n: number): void {
+    setPendingAgent(null);
+    setStep(n);
+  }
 
   return (
-    <div className={styles.page}>
-      <aside className={styles.steps}>
-        {STEPS.map((s) => (
-          <button
-            key={s.n}
-            type="button"
-            className={styles.stepRow}
-            aria-current={step === s.n ? "step" : undefined}
-            onClick={() => setStep(s.n)}
-          >
-            <span
-              className={`${styles.stepDot} ${step === s.n ? styles.stepDotOn : ""} ${
-                step > s.n ? styles.stepDotDone : ""
-              }`}
+    <div className={styles.page} data-step={step}>
+      {step === 1 ? (
+        <aside className={styles.steps}>
+          <span className={styles.stepsTitle}>建 局 三 步</span>
+          {STEPS.map((s) => (
+            <button
+              key={s.n}
+              type="button"
+              className={styles.stepRow}
+              data-state={step === s.n ? "current" : step > s.n ? "done" : "todo"}
+              aria-current={step === s.n ? "step" : undefined}
+              onClick={() => goStep(s.n)}
             >
-              {s.n}
-            </span>
-            <span className={styles.stepText}>
-              <span className={step === s.n ? styles.stepTitleOn : styles.stepTitle}>{s.title}</span>
-              <span className={styles.stepSub}>{s.sub}</span>
-            </span>
-          </button>
-        ))}
+              <span className={styles.stepDot}>{s.n}</span>
+              <span className={styles.stepText}>
+                <span className={styles.stepTitle}>{s.title}</span>
+                <span className={styles.stepSub}>{s.sub}</span>
+              </span>
+            </button>
+          ))}
+        </aside>
+      ) : (
+        <nav className={styles.progress} aria-label="建局进度">
+          {PROGRESS.map((t, i) => (
+            <button
+              key={t}
+              type="button"
+              className={styles.progressStep}
+              aria-current={i + 1 === step ? "step" : undefined}
+              onClick={() => goStep(i + 1)}
+            >
+              {t}
+            </button>
+          ))}
+        </nav>
+      )}
 
-        <div className={styles.summary}>
-          <span className="card-kicker">汇总</span>
-          <span className={styles.summaryMain}>
-            {preset ? `${preset.num_players} 座位` : "未选板子"} · {summary.agentSeats} 个 Agent
-            {summary.humanSeat !== null ? ` · 我在 ${summary.humanSeat}号` : ""} ·{" "}
-            {summary.filled ? `其余 ${summary.restSeats} 座填满（*）` : `${summary.restSeats} 个随机 bot`}
-          </span>
-          <span className={styles.summarySub}>
-            {summary.filled && fillAgent ? `其余由「${fillAgent.profile.name}」填满（*）· ` : ""}
-            seed {seed.trim() === "" ? "随机" : seed.trim()}
-          </span>
-          {tts.enabled && (
-            <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5 }}>
-              <input
-                type="checkbox"
-                checked={voice}
-                disabled={!tts.ok}
-                onChange={(e) => {
-                  setVoice(e.target.checked);
-                  if (!e.target.checked) setNarration(false);
-                }}
-              />
-              语音播报{tts.ok ? "" : `（TTS 不可用：${tts.detail ?? ""}）`}
-            </label>
-          )}
-          {tts.enabled && (
-            <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, marginLeft: 20 }}>
-              <input
-                type="checkbox"
-                checked={voice && narration}
-                disabled={!tts.ok || !voice}
-                onChange={(e) => setNarration(e.target.checked)}
-              />
-              旁白（GM 播报阶段 / 结算 / 投票结果）
-            </label>
-          )}
-          <button
-            type="button"
-            className="btn btn-primary"
-            style={{ marginTop: 6 }}
-            disabled={step !== 3 || preset === null || creating || fillBlocked || failedGame !== null}
-            onClick={() => void createAndStart()}
-          >
-            {creating ? "创建中…" : "创建并开始"}
-          </button>
-          <span className={styles.payload}>
-            agents: {payloadKeys.length === 0 ? "{}" : `{${payloadKeys.map((k) => `"${k}"`).join(", ")}}`}
-          </span>
-          <span className={styles.payload}>
-            agent_ids: {idKeys.length === 0 ? "{}" : `{${idKeys.map((k) => `"${k}"`).join(", ")}}`}
-          </span>
-        </div>
-      </aside>
+      {step === 2 && (
+        <aside className={styles.agentCol}>
+          <div>
+            <h2 className={styles.title}>分配座位</h2>
+            <p className={styles.lead}>
+              从档案库把 Agent 放到座位上；留空即随机 bot。选「我自己」即亲自入座。
+            </p>
+          </div>
+          <AgentMiniList
+            library={items}
+            selected={pendingAgent}
+            onSelect={setPendingAgent}
+            onNewAgent={() => {
+              setNewAgentError(null);
+              setNewAgentOpen(true);
+            }}
+          />
+        </aside>
+      )}
 
       <main className={styles.main}>
         {error && <div className={styles.error}>{error}</div>}
@@ -291,16 +307,12 @@ export default function Lobby(): JSX.Element {
         {step === 1 && (
           <>
             <div>
-              <h3 className={styles.title}>选择对局</h3>
-              <p className="text-muted" style={{ fontSize: 13, margin: 0 }}>
-                全 AI 对局；未分配档案的座位是随机 bot（零 LLM）。
-              </p>
+              <h2 className={styles.title}>选择剧本</h2>
+              <p className={styles.lead}>全 AI 对局；未分配档案的座位是随机 bot（零 LLM）。</p>
             </div>
             <div className={styles.presets}>
               {presets.length === 0 ? (
-                <p className="text-muted" style={{ fontSize: 13 }}>
-                  载入 preset 中…
-                </p>
+                <p className={styles.lead}>载入 preset 中…</p>
               ) : (
                 presets.map((p) => (
                   <PresetCard
@@ -311,26 +323,26 @@ export default function Lobby(): JSX.Element {
                   />
                 ))
               )}
-              <div className="field" style={{ marginTop: 4, maxWidth: 240 }}>
-                <label htmlFor="lobby-seed">seed</label>
-                <input
-                  id="lobby-seed"
-                  className="input"
-                  value={seed}
-                  placeholder="随机"
-                  inputMode="numeric"
-                  onChange={(e) => setSeed(e.target.value)}
-                />
-              </div>
+            </div>
+            <div className={`field ${styles.seedField}`}>
+              <label htmlFor="lobby-seed">seed</label>
+              <input
+                id="lobby-seed"
+                className="input"
+                value={seed}
+                placeholder="随机"
+                inputMode="numeric"
+                onChange={(e) => setSeed(e.target.value)}
+              />
             </div>
             <div className={styles.nav}>
               <button
                 type="button"
-                className="btn btn-primary"
+                className="btn btn-secondary"
                 disabled={preset === null}
-                onClick={() => setStep(2)}
+                onClick={() => goStep(2)}
               >
-                下一步 · 分配座位
+                下一步 · 分配座位 →
               </button>
             </div>
           </>
@@ -338,136 +350,144 @@ export default function Lobby(): JSX.Element {
 
         {step === 2 && (
           <>
-            <div>
-              <h3 className={styles.title}>分配座位</h3>
-              <p className="text-muted" style={{ fontSize: 13, margin: 0 }}>
-                从档案库把 Agent 选到座位上；未分配的座位为随机 bot（零 LLM）。同一档案可放多个座位。选「我自己」即亲自入座一个座位。
-              </p>
+            <div className={styles.ringCol}>
+              {pendingAgent !== null && (
+                <span className={styles.pendingHint}>
+                  已选中「{items.find((a) => a.agent_id === pendingAgent)?.profile.name ?? ""}」·
+                  点一个座位放入
+                </span>
+              )}
+              <SeatRing
+                assignment={assignment}
+                library={items}
+                fill={fillBlocked ? null : fill}
+                pendingAgent={pendingAgent}
+                onAssign={(seat, id) => {
+                  assign(seat, id);
+                  setPendingAgent(null);
+                }}
+              />
+              <div className={styles.tools}>
+                <span className={styles.toolLabel}>工具：</span>
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  onClick={() => {
+                    setFill(null);
+                    setAssignment((prev) => prev.map((s) => ({ seat: s.seat, agentId: null })));
+                  }}
+                >
+                  全部随机 bot
+                </button>
+                <button type="button" className="btn btn-ghost" onClick={shuffle}>
+                  随机打乱
+                </button>
+                <label className={styles.fillLabel}>
+                  填满其余座位：
+                  <select
+                    className={`input ${styles.fillSelect}`}
+                    value={fill ?? ""}
+                    aria-label="填满其余座位"
+                    onChange={(e) => setFill(e.target.value || null)}
+                  >
+                    <option value="">不填</option>
+                    {items.map((a) => (
+                      <option
+                        key={a.agent_id}
+                        value={a.agent_id}
+                        disabled={a.profile.memory_id != null}
+                      >
+                        {a.profile.name}
+                        {a.profile.memory_id != null ? "（含 memory_id，不可填满）" : ""}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              {fillError !== null && <div className={styles.error}>{fillError}</div>}
             </div>
-            <SeatAssignment
-              library={items}
-              assignment={assignment}
-              fill={fill}
-              onAssign={assign}
-              onFill={setFill}
-              onAllRandom={() => {
-                setFill(null);
-                setAssignment((prev) => prev.map((s) => ({ seat: s.seat, agentId: null })));
-              }}
-              onShuffle={shuffle}
-              onNewAgent={() => {
-                setNewAgentError(null);
-                setNewAgentOpen(true);
-              }}
-            />
+            <div className={styles.fallback}>
+              <h2 className={styles.title}>分配座位</h2>
+              <p className={styles.lead}>
+                从档案库把 Agent 放到座位上；留空即随机 bot。选「我自己」即亲自入座。
+              </p>
+              <SeatAssignment
+                library={items}
+                assignment={assignment}
+                fill={fill}
+                onAssign={assign}
+                onFill={setFill}
+                onAllRandom={() => {
+                  setFill(null);
+                  setAssignment((prev) => prev.map((s) => ({ seat: s.seat, agentId: null })));
+                }}
+                onShuffle={shuffle}
+                onNewAgent={() => {
+                  setNewAgentError(null);
+                  setNewAgentOpen(true);
+                }}
+              />
+            </div>
             <div className={styles.nav}>
-              <button type="button" className="btn btn-ghost" onClick={() => setStep(1)}>
-                上一步
+              <button type="button" className="btn btn-ghost" onClick={() => goStep(1)}>
+                ← 上一步
               </button>
-              <button type="button" className="btn btn-primary" onClick={() => setStep(3)}>
-                下一步 · 汇总
+              <button type="button" className="btn btn-secondary" onClick={() => goStep(3)}>
+                下一步 · 开局卷轴 →
               </button>
             </div>
           </>
         )}
 
-        {step === 3 && (
-          <>
-            <div>
-              <h3 className={styles.title}>创建并开始</h3>
-              <p className="text-muted" style={{ fontSize: 13, margin: 0 }}>
-                {me === null
-                  ? "创建后自动开始，你以上帝视角实时观看。"
-                  : `你将以 ${me}号 入座，创建后直接进入玩家页；对局结束前看不到上帝视角。`}
-              </p>
-            </div>
-            <div className={styles.review}>
-              <div className={styles.reviewRow}>
-                <span className={styles.reviewKey}>板子</span>
-                <span>
-                  {preset ? `${preset.description_zh}（${preset.name}）` : "—"}
-                </span>
-              </div>
-              <div className={styles.reviewRow}>
-                <span className={styles.reviewKey}>座位</span>
-                <span>
-                  {preset?.num_players ?? 0} 座 · {summary.agentSeats} 个 Agent ·{" "}
-                  {summary.filled ? `其余 ${summary.restSeats} 座由「*」填满` : `${summary.restSeats} 个随机 bot`}
-                </span>
-              </div>
-              <div className={styles.reviewRow}>
-                <span className={styles.reviewKey}>seed</span>
-                <span>{seed.trim() === "" ? "随机" : seed.trim()}</span>
-              </div>
-              {me !== null && (
-                <>
-                  <div className={styles.reviewRow}>
-                    <span className={styles.reviewKey}>我的显示名</span>
-                    <input
-                      className="input"
-                      aria-label="我的显示名"
-                      value={displayName}
-                      placeholder={user?.username ?? "我"}
-                      onChange={(e) => setDisplayName(e.target.value)}
-                    />
-                  </div>
-                  <div className={styles.reviewRow}>
-                    <span className={styles.reviewKey}>发言时限（秒）</span>
-                    <input className="input" aria-label="发言时限" inputMode="numeric" value={speechTimeout} onChange={(e) => setSpeechTimeout(e.target.value)} />
-                  </div>
-                  <div className={styles.reviewRow}>
-                    <span className={styles.reviewKey}>行动时限（秒）</span>
-                    <input className="input" aria-label="行动时限" inputMode="numeric" value={actionTimeout} onChange={(e) => setActionTimeout(e.target.value)} />
-                  </div>
-                </>
-              )}
-              <div className={styles.reviewRow}>
-                <span className={styles.reviewKey}>agents</span>
-                <pre className={styles.json}>{JSON.stringify(agentsPayload, null, 2)}</pre>
-              </div>
-              <div className={styles.reviewRow}>
-                <span className={styles.reviewKey}>agent_ids</span>
-                <pre className={styles.json}>{JSON.stringify(agentIdsPayload, null, 2)}</pre>
-              </div>
-            </div>
-            {fillBlocked && (
-              <div className={styles.error}>
-                「{fillAgent?.profile.name}」配置了 memory_id，不能作为 <code>&quot;*&quot;</code>{" "}
-                档案（后端会 400）。请回到步骤 2 改用逐座位分配。
-              </div>
-            )}
-            {createError && (
-              <div className={styles.error}>
-                {createError}
-                {failedGame !== null && (
-                  <>
-                    {" "}
-                    <button type="button" className="btn btn-ghost" onClick={() => void discardFailedGame()}>
-                      删除这局
-                    </button>
-                  </>
-                )}
-              </div>
-            )}
-            <div className={styles.nav}>
-              <button type="button" className="btn btn-ghost" onClick={() => setStep(2)}>
-                上一步
-              </button>
-              <button
-                type="button"
-                className="btn btn-primary"
-                disabled={preset === null || creating || fillBlocked || failedGame !== null}
-                onClick={() => void createAndStart()}
-              >
-                {creating ? "创建中…" : "创建并开始"}
-              </button>
-              <span className={styles.navHint}>
-                {me === null ? "POST /games → /start → #/g/{id}?gm=…" : "POST /games → /join → /start → #/g/{id}?player=…"}
-              </span>
-            </div>
-          </>
+        {step === 3 && preset !== null && (
+          <LaunchScroll
+            preset={preset}
+            me={me}
+            seatTags={tags.tags}
+            rest={tags.rest}
+            fillName={tags.fillName}
+            seed={seed}
+            displayName={displayName}
+            displayNamePlaceholder={user?.username ?? "我"}
+            onDisplayName={setDisplayName}
+            speechTimeout={speechTimeout}
+            onSpeechTimeout={setSpeechTimeout}
+            actionTimeout={actionTimeout}
+            onActionTimeout={setActionTimeout}
+            voice={voice}
+            narration={voice && narration}
+            ttsEnabled={tts.enabled}
+            error={fillError ?? createError}
+            canDiscard={failedGame !== null}
+            onDiscard={() => void discardFailedGame()}
+            canLaunch={canLaunch}
+            creating={creating}
+            onBack={() => goStep(2)}
+            onLaunch={() => void createAndStart()}
+          />
         )}
+        {step === 3 && preset === null && <p className={styles.lead}>先回到第 1 步选择剧本。</p>}
       </main>
+
+      <LobbyScrollCard
+        numPlayers={preset?.num_players ?? null}
+        presetZh={preset?.description_zh ?? null}
+        summary={summary}
+        fillName={fillBlocked ? null : (fillAgent?.profile.name ?? null)}
+        seed={seed}
+        tts={tts}
+        voice={voice}
+        narration={narration}
+        onVoice={(v) => {
+          setVoice(v);
+          if (!v) setNarration(false);
+        }}
+        onNarration={setNarration}
+        showNotes={step === 2}
+        canLaunch={canLaunch}
+        creating={creating}
+        onLaunch={() => void createAndStart()}
+      />
 
       {newAgentOpen && (
         <AgentEditor
