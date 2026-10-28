@@ -1,0 +1,144 @@
+/* 右栏信息卡（设计稿 3a / 5a / 7a / 7b）：卡片本体用全局 .ah-panel / .ah-panel-head，这里是内部排版。 */
+
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.card {
+  flex: none;
+}
+
+.title {
+  margin: 0;
+  font: inherit;
+  font-size: 11px;
+  color: var(--ah-text-muted);
+  letter-spacing: 0.02em;
+}
+
+.muted {
+  font-size: 11px;
+  color: var(--ah-parch-muted);
+}
+
+/* 村镇公告 */
+.kv {
+  display: flex;
+  gap: 10px;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.k {
+  flex: none;
+  width: 52px;
+  color: var(--ah-parch-muted);
+}
+.v[data-tone='wolf'] {
+  color: var(--ah-wolf);
+}
+.v[data-tone='gold'] {
+  color: var(--ah-gold);
+}
+.v[data-tone='muted'] {
+  color: var(--ah-text-muted);
+}
+
+/* 墓地 */
+.grave {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 5px 0;
+  border-top: 1px dashed var(--ah-panel-edge);
+  font-size: 12px;
+}
+.graveBody {
+  flex: 1;
+  color: var(--ah-text);
+}
+.graveRole {
+  margin-left: 6px;
+  color: var(--ah-villager);
+}
+.graveRole[data-role='WEREWOLF'] {
+  color: var(--ah-wolf);
+}
+.graveRole[data-role='SEER'],
+.graveRole[data-role='WITCH'],
+.graveRole[data-role='HUNTER'],
+.graveRole[data-role='GUARD'],
+.graveRole[data-role='IDIOT'] {
+  color: var(--ah-god);
+}
+
+/* 夜晚流程 */
+.flowRow {
+  display: flex;
+  gap: 6px;
+  padding: 3px 0;
+  font-size: 13px;
+  color: #4a5570;
+}
+.flowRow[data-status='已行动'] {
+  color: #6b7590;
+}
+.flowRow[data-now] {
+  color: var(--ah-god);
+}
+.flowRow[data-status='进行中'] {
+  color: var(--ah-night-text);
+}
+
+/* 验人记录 */
+.logRow {
+  font-size: 12px;
+  line-height: 1.9;
+  color: var(--ah-text-dim);
+}
+.result[data-result='GOOD'] {
+  color: var(--ah-ok);
+}
+.result[data-result='WOLF'] {
+  color: var(--ah-wolf);
+}
+
+/* 药瓶 */
+.potions {
+  display: flex;
+  gap: 12px;
+}
+.potion {
+  flex: 1;
+  padding: 12px;
+  border-radius: 6px;
+  text-align: center;
+  border: 1px solid var(--ah-ok);
+  background: rgba(90, 154, 90, 0.12);
+}
+.potion[data-kind='poison'] {
+  border-color: var(--ah-wolf);
+  background: rgba(201, 70, 61, 0.12);
+}
+.potion[data-used] {
+  opacity: 0.45;
+}
+.potionName {
+  font-family: var(--font-heading);
+  font-size: 18px;
+  color: #8fd08f;
+}
+.potion[data-kind='poison'] .potionName {
+  color: var(--ah-wolf-fg);
+}
+
+/* PK 回顾 */
+.recap {
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--ah-text-dim);
+}

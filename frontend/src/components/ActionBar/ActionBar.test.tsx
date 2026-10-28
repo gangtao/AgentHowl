@@ -12,7 +12,12 @@ function obs(extra: Partial<PlayerObservation>): PlayerObservation {
     my_status: "ALIVE",
     phase: "DAY_SPEECH",
     round: 1,
-    seats: [0, 1, 2, 3].map((seat) => ({ seat, alive: seat !== 3, is_sheriff: false, idiot_revealed: false })),
+    seats: [0, 1, 2, 3].map((seat) => ({
+      seat,
+      alive: seat !== 3,
+      is_sheriff: false,
+      idiot_revealed: false,
+    })),
     sheriff_seat: null,
     badge_flow_claims: {},
     private: {},
@@ -27,8 +32,16 @@ function obs(extra: Partial<PlayerObservation>): PlayerObservation {
   };
 }
 
-function prompt(tools: string[], extra: Partial<PlayerObservation> = {}, deadline = 10_000): YourTurn {
-  return { observation: obs(extra), available_tools: [...tools, "get_state"], deadline_ts: deadline };
+function prompt(
+  tools: string[],
+  extra: Partial<PlayerObservation> = {},
+  deadline = 10_000,
+): YourTurn {
+  return {
+    observation: obs(extra),
+    available_tools: [...tools, "get_state"],
+    deadline_ts: deadline,
+  };
 }
 
 const base = { pending: false, lastResult: null, lastError: null, now: () => 9_000 };
@@ -47,12 +60,21 @@ describe("ActionBar", () => {
     fireEvent.change(screen.getByLabelText("发言内容"), { target: { value: "我是好人" } });
     fireEvent.change(screen.getByLabelText("声明身份"), { target: { value: "SEER" } });
     fireEvent.click(btn);
-    expect(onSubmit).toHaveBeenCalledWith({ tool: "speak", arguments: { content: "我是好人", claim_role: "SEER" } });
+    expect(onSubmit).toHaveBeenCalledWith({
+      tool: "speak",
+      arguments: { content: "我是好人", claim_role: "SEER" },
+    });
   });
 
   it("vote：未选目标禁用；选弃票提交 abstain；选座位提交 target_seat", () => {
     const onSubmit = vi.fn();
-    render(<ActionBar {...base} prompt={prompt(["vote", "speak"], { phase: "VOTE" })} onSubmit={onSubmit} />);
+    render(
+      <ActionBar
+        {...base}
+        prompt={prompt(["vote", "speak"], { phase: "VOTE" })}
+        onSubmit={onSubmit}
+      />,
+    );
     const btn = screen.getByRole("button", { name: "确认投票" });
     expect(btn).toBeDisabled();
     fireEvent.click(screen.getByRole("button", { name: "弃票" }));
@@ -100,22 +122,38 @@ describe("ActionBar", () => {
     const { rerender } = render(
       <ActionBar
         {...base}
-        prompt={prompt(["sheriff_action", "speak"], { phase: "SHERIFF_ELECTION", election_stage: "candidacy", sheriff_options: ["run_for_sheriff", "withdraw"] })}
+        prompt={prompt(["sheriff_action", "speak"], {
+          phase: "SHERIFF_ELECTION",
+          election_stage: "candidacy",
+          sheriff_options: ["run_for_sheriff", "withdraw"],
+        })}
         onSubmit={onSubmit}
       />,
     );
     fireEvent.click(screen.getByRole("button", { name: "上警" }));
-    expect(onSubmit).toHaveBeenLastCalledWith({ tool: "sheriff_action", arguments: { action_type: "run_for_sheriff" } });
+    expect(onSubmit).toHaveBeenLastCalledWith({
+      tool: "sheriff_action",
+      arguments: { action_type: "run_for_sheriff" },
+    });
     rerender(
       <ActionBar
         {...base}
-        prompt={prompt(["sheriff_action"], { phase: "LAST_WORDS", badge_only: true, sheriff_seat: 2, state_version: 2, sheriff_options: ["pass_badge", "tear_badge"] })}
+        prompt={prompt(["sheriff_action"], {
+          phase: "LAST_WORDS",
+          badge_only: true,
+          sheriff_seat: 2,
+          state_version: 2,
+          sheriff_options: ["pass_badge", "tear_badge"],
+        })}
         onSubmit={onSubmit}
       />,
     );
     expect(screen.queryByRole("button", { name: "上警" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "撕警徽" }));
-    expect(onSubmit).toHaveBeenLastCalledWith({ tool: "sheriff_action", arguments: { action_type: "tear_badge" } });
+    expect(onSubmit).toHaveBeenLastCalledWith({
+      tool: "sheriff_action",
+      arguments: { action_type: "tear_badge" },
+    });
   });
 
   it("sheriff_action：报名阶段非候选人可选「不上」→ withdraw", () => {
@@ -123,13 +161,20 @@ describe("ActionBar", () => {
     render(
       <ActionBar
         {...base}
-        prompt={prompt(["sheriff_action"], { phase: "SHERIFF_ELECTION", election_stage: "candidacy", sheriff_options: ["run_for_sheriff", "withdraw"] })}
+        prompt={prompt(["sheriff_action"], {
+          phase: "SHERIFF_ELECTION",
+          election_stage: "candidacy",
+          sheriff_options: ["run_for_sheriff", "withdraw"],
+        })}
         onSubmit={onSubmit}
       />,
     );
     expect(screen.getByRole("button", { name: "上警" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "不上" }));
-    expect(onSubmit).toHaveBeenLastCalledWith({ tool: "sheriff_action", arguments: { action_type: "withdraw" } });
+    expect(onSubmit).toHaveBeenLastCalledWith({
+      tool: "sheriff_action",
+      arguments: { action_type: "withdraw" },
+    });
   });
 
   it("sheriff_action：退水子阶段候选人可选「坚持竞选」→ run_for_sheriff", () => {
@@ -284,7 +329,12 @@ describe("ActionBar", () => {
       <ActionBar
         {...base}
         pending
-        lastResult={{ ok: false, event_id: null, state_version: null, rejected_reason: "夜里不能发言" }}
+        lastResult={{
+          ok: false,
+          event_id: null,
+          state_version: null,
+          rejected_reason: "夜里不能发言",
+        }}
         lastError="行动窗口已关闭"
         prompt={prompt(["speak"])}
         onSubmit={onSubmit}
@@ -316,7 +366,13 @@ describe("ActionBar", () => {
   });
 
   it("一次只展示一个工具分组", () => {
-    render(<ActionBar {...base} prompt={prompt(["speak", "vote"], { phase: "VOTE" })} onSubmit={vi.fn()} />);
+    render(
+      <ActionBar
+        {...base}
+        prompt={prompt(["speak", "vote"], { phase: "VOTE" })}
+        onSubmit={vi.fn()}
+      />,
+    );
     expect(screen.getByLabelText("发言内容")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "确认投票" })).toBeNull();
     fireEvent.click(screen.getByRole("tab", { name: "投票" }));
@@ -325,7 +381,8 @@ describe("ActionBar", () => {
   });
 
   it("state_version 变化重置文本、目标与自爆确认", () => {
-    const mk = (v: number) => prompt(["speak", "vote", "self_destruct"], { phase: "VOTE", state_version: v });
+    const mk = (v: number) =>
+      prompt(["speak", "vote", "self_destruct"], { phase: "VOTE", state_version: v });
     const { rerender } = render(<ActionBar {...base} prompt={mk(1)} onSubmit={vi.fn()} />);
     fireEvent.change(screen.getByLabelText("发言内容"), { target: { value: "hello" } });
     fireEvent.click(screen.getByRole("tab", { name: "投票" }));
@@ -375,5 +432,156 @@ describe("ActionBar", () => {
       unmount();
       expect(vi.getTimerCount()).toBe(0);
     });
+  });
+});
+
+describe("ActionBar · HUD 受控模式（UI 改版 PR ②）", () => {
+  it("受控目标：点胶囊调用 onSelectTarget，不改内部状态；onSelectableChange 上报可选座位", () => {
+    const onSelectTarget = vi.fn();
+    const onSelectableChange = vi.fn();
+    const { rerender } = render(
+      <ActionBar
+        {...base}
+        prompt={prompt(["vote"])}
+        onSubmit={vi.fn()}
+        selectedTarget={null}
+        onSelectTarget={onSelectTarget}
+        onSelectableChange={onSelectableChange}
+      />,
+    );
+    expect(onSelectableChange).toHaveBeenLastCalledWith([0, 1]);
+    fireEvent.click(screen.getByRole("button", { name: "1号" }));
+    expect(onSelectTarget).toHaveBeenCalledWith(1);
+    expect(screen.getByRole("button", { name: "1号" })).toHaveAttribute("aria-pressed", "false");
+    rerender(
+      <ActionBar
+        {...base}
+        prompt={prompt(["vote"])}
+        onSubmit={vi.fn()}
+        selectedTarget={1}
+        onSelectTarget={onSelectTarget}
+        onSelectableChange={onSelectableChange}
+      />,
+    );
+    expect(screen.getByRole("button", { name: "1号" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "确认投票" })).toBeEnabled();
+  });
+
+  it("发言分组不需要目标：onSelectableChange 上报 null", () => {
+    const onSelectableChange = vi.fn();
+    render(
+      <ActionBar
+        {...base}
+        prompt={prompt(["speak"])}
+        onSubmit={vi.fn()}
+        onSelectableChange={onSelectableChange}
+      />,
+    );
+    expect(onSelectableChange).toHaveBeenLastCalledWith(null);
+  });
+
+  it("layout=hud：投票主按钮文案「确认投票 · 2号」，无 prompt 时显示 idleText", () => {
+    const { rerender } = render(
+      <ActionBar {...base} prompt={null} onSubmit={vi.fn()} layout="hud" idleText="旁听中" />,
+    );
+    expect(screen.getByRole("status")).toHaveTextContent("旁听中");
+    rerender(
+      <ActionBar
+        {...base}
+        prompt={prompt(["vote"])}
+        onSubmit={vi.fn()}
+        layout="hud"
+        selectedTarget={2}
+        onSelectTarget={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole("button", { name: "确认投票 · 2号" })).toBeInTheDocument();
+    expect(screen.getByText("把票投给谁？")).toBeInTheDocument();
+  });
+
+  it("layout=hud：狼刀主按钮「刀 · N号」+「空刀」；查验「查验 · N号」+「跳过」", () => {
+    const onSubmit = vi.fn();
+    const { rerender } = render(
+      <ActionBar
+        {...base}
+        prompt={prompt(["night_action"], { my_role: "WEREWOLF", phase: "NIGHT_WEREWOLF" })}
+        onSubmit={onSubmit}
+        layout="hud"
+        selectedTarget={1}
+        onSelectTarget={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "刀 · 1号" }));
+    expect(onSubmit).toHaveBeenLastCalledWith({
+      tool: "night_action",
+      arguments: { action_type: "kill", target_seat: 1 },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "空刀" }));
+    expect(onSubmit).toHaveBeenLastCalledWith({
+      tool: "night_action",
+      arguments: { action_type: "skip" },
+    });
+    rerender(
+      <ActionBar
+        {...base}
+        prompt={prompt(["night_action"], { my_role: "SEER", phase: "NIGHT_SEER" })}
+        onSubmit={onSubmit}
+        layout="hud"
+        selectedTarget={0}
+        onSelectTarget={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole("button", { name: "查验 · 0号" })).toBeInTheDocument();
+    expect(screen.getByText("今夜查验谁？")).toBeInTheDocument();
+  });
+
+  it("已出局玩家收到 shoot prompt 仍渲染行动区（Review Focus 3）", () => {
+    render(
+      <ActionBar
+        {...base}
+        prompt={prompt(["night_action"], {
+          my_role: "HUNTER",
+          my_status: "DEAD",
+          phase: "HUNTER_SHOOT",
+        })}
+        onSubmit={vi.fn()}
+        layout="hud"
+        selectedTarget={1}
+        onSelectTarget={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("带走谁？")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "开枪 · 1号" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "不开枪" })).toBeInTheDocument();
+  });
+
+  it("受控：先点「弃票」再从桌上选座位 → 弃票取消，主按钮变「确认投票 · N号」（Important 2）", () => {
+    const onSelectTarget = vi.fn();
+    const { rerender } = render(
+      <ActionBar
+        {...base}
+        prompt={prompt(["vote"])}
+        onSubmit={vi.fn()}
+        layout="hud"
+        selectedTarget={null}
+        onSelectTarget={onSelectTarget}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "弃票" }));
+    expect(screen.getByRole("button", { name: "确认 · 弃票" })).toBeInTheDocument();
+    // 桌上点了 1 号：GamePage 把 selectedTarget 改成 1
+    rerender(
+      <ActionBar
+        {...base}
+        prompt={prompt(["vote"])}
+        onSubmit={vi.fn()}
+        layout="hud"
+        selectedTarget={1}
+        onSelectTarget={onSelectTarget}
+      />,
+    );
+    expect(screen.getByRole("button", { name: "确认投票 · 1号" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "弃票" })).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByRole("button", { name: "1号" })).toHaveAttribute("aria-pressed", "true");
   });
 });

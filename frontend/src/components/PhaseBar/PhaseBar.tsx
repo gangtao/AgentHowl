@@ -1,7 +1,10 @@
-// 顶栏（设计稿 1c/1d/1g/1h/1j）：轮次、阶段中文、模式徽标、连接状态、视角标签。
+// 顶栏（规格 §4.1，设计稿 3a / 5c / 7d）：品牌、对局 id、居中状态（直播 / 回放 / 终局 / 连接），
+// 右侧视角分段标签与插槽（匿名观众的「登录」、玩家的语音开关、PR ⑤ 的桌面皮肤切换）。
+// 轮次与阶段名不再放顶栏——它们在左上角的阶段木牌（PhasePlaque）上。
 
-import { ELECTION_STAGE_ZH, PHASE_ZH } from "../../engine/phases";
+import type { ReactNode } from "react";
 import type { GameState } from "../../engine/types";
+import { statusText } from "../../lib/phaseText";
 import type { ConnectionState, PlaybackMode, Viewer } from "../../store/game";
 import styles from "./PhaseBar.module.css";
 
@@ -10,12 +13,14 @@ export interface PhaseBarProps {
   mode: PlaybackMode;
   viewer: Viewer;
   connection: ConnectionState;
-  /** 当前显示到的 seq（回放游标或最新）。 */
-  lastSeq: number;
   /** 事件流总条数（最后一条 seq）。 */
   totalSeq: number;
-  /** 重连提示文案（无则不显示）。 */
-  reconnectHint?: string | null;
+  /** 这局是否已结束（head 到终局或回放模式）。 */
+  over: boolean;
+  /** 最终胜方（来自 head，而不是回放游标处的 state）。 */
+  winner: string | null;
+  /** 右侧插槽。 */
+  extra?: ReactNode;
 }
 
 /** 长 game_id 缩略成 `g_7f3a…c21` 的样子。 */
@@ -23,70 +28,49 @@ function shortId(id: string): string {
   return id.length > 14 ? `${id.slice(0, 6)}…${id.slice(-3)}` : id;
 }
 
-function phaseLabel(state: GameState): string {
-  const base = PHASE_ZH[state.phase] ?? state.phase;
-  if (state.phase === "SHERIFF_ELECTION" && state.election_stage !== "") {
-    return `${base} · ${ELECTION_STAGE_ZH[state.election_stage]}`;
-  }
-  return base;
-}
-
-function connectionLabel(
-  connection: ConnectionState,
-  mode: PlaybackMode,
-  totalSeq: number,
-  over: boolean,
-): string {
-  if (mode === "replay" || over) return `已结束 · ${totalSeq} 条事件`;
-  if (connection === "open") return `已连接 · seq ${totalSeq}`;
-  if (connection === "connecting") return "连接中…";
-  if (connection === "closed") return "连接已断开";
-  if (connection === "error") return "连接错误";
-  return "未连接";
-}
-
 export default function PhaseBar({
   state,
   mode,
   viewer,
   connection,
-  lastSeq,
   totalSeq,
-  reconnectHint,
+  over,
+  winner,
+  extra,
 }: PhaseBarProps): JSX.Element {
-  const over = state.phase === "GAME_OVER";
+  const status = statusText(winner, mode, connection, totalSeq, over);
+  // 终局之后仍要告诉用户现在是回放还是直播（设计稿 5c：居中「游戏结束」，右侧「▶ 回放 · N 条事件」）。
+  const secondary = over ? statusText(winner, mode, connection, totalSeq, false) : null;
   return (
     <header className={styles.root}>
       <span className={styles.brand}>AgentHowl</span>
       <span className={styles.gameId} title={state.game_id}>
         {shortId(state.game_id)}
       </span>
-      <span className="tag tag-neutral">第 {state.round} 轮</span>
-      <span className={styles.phase}>{phaseLabel(state)}</span>
-      {mode === "live" ? (
-        <span className={styles.mode}>
-          <span className={styles.liveDot} />
-          直播
-        </span>
-      ) : (
-        <span className={styles.mode}>
-          <span className={styles.replayIcon}>▶</span>回放
+      <span className={styles.spacer} />
+      <span className={styles.status} data-tone={status.tone} role="status">
+        {status.tone === "over" && <span className={styles.rule} aria-hidden="true" />}
+        {status.text}
+        {status.tone === "over" && <span className={styles.rule} aria-hidden="true" />}
+      </span>
+      <span className={styles.spacer} />
+      {secondary !== null && (
+        <span className={styles.status} data-tone={secondary.tone}>
+          {secondary.text}
         </span>
       )}
-      {reconnectHint ? (
-        <span className={styles.reconnect}>
-          <span className={styles.reconnectDot} />
-          {reconnectHint}
+      {extra}
+      <span className="seg" aria-label="视角">
+        <span className="seg-opt" {...(viewer === "GM" ? { "aria-current": "true" } : {})}>
+          上帝
         </span>
-      ) : null}
-      <span className={styles.status}>
-        {connectionLabel(connection, mode, totalSeq, over)}
-        {lastSeq !== totalSeq ? ` · 回放到 seq ${lastSeq}` : ""}
-      </span>
-      <span className={`seg ${styles.seg}`}>
-        <span className={`seg-opt ${viewer === "GM" ? styles.segOn : ""}`}>上帝</span>
-        <span className={`seg-opt ${viewer === "SPECTATOR" ? styles.segOn : ""}`}>观众</span>
-        <span className={`seg-opt ${typeof viewer === "number" ? styles.segOn : ""}`}>
+        <span className="seg-opt" {...(viewer === "SPECTATOR" ? { "aria-current": "true" } : {})}>
+          观众
+        </span>
+        <span
+          className="seg-opt"
+          {...(typeof viewer === "number" ? { "aria-current": "true" } : {})}
+        >
           {typeof viewer === "number" ? `玩家 ${viewer}号` : "玩家"}
         </span>
       </span>

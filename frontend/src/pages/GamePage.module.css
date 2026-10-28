@@ -1,149 +1,160 @@
-/* 对局页布局（设计稿 1c/1g/1j）：48px [终局横幅 40px] minmax(0,1fr) 52px；三栏 320 / 1fr / 320。 */
+/* 对局页布局（规格 §4.1 / §4.9，设计稿 3a）：48px 顶栏 / 舞台 / 底部（玩家 HUD 150px 或绳索条 72px）。
+   舞台：桌子区自适应 + 右栏 340px + 28px 抽屉页签；夜间 / 血色 / 琥珀色由根节点 data-* 切背景。 */
 
 .root {
   height: 100%;
   display: grid;
-  grid-template-rows: 48px minmax(0, 1fr) 52px;
-  background: var(--color-bg);
-  color: var(--color-text);
+  grid-template-rows: 48px minmax(0, 1fr) auto;
+  background: radial-gradient(ellipse at 50% 40%, #1a1f30, var(--ah-night) 70%);
+  color: var(--ah-text);
+  min-width: 0;
+}
+.root[data-night] {
+  background: radial-gradient(ellipse at 50% 0%, var(--ah-sky-night) 0%, #070910 65%);
+}
+.root[data-blood] {
+  background: radial-gradient(ellipse at 50% 40%, var(--ah-blood-sky), var(--ah-night) 70%);
+}
+.root[data-amber] {
+  background: radial-gradient(ellipse at 50% 40%, #2a1a10, var(--ah-night) 70%);
 }
 
-.rootOver {
-  grid-template-rows: 48px 40px minmax(0, 1fr) 52px;
-}
-
-.banner {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--space-4);
-  font-size: 13px;
-  background: linear-gradient(
-    to right,
-    transparent,
-    color-mix(in srgb, var(--ah-god) 10%, transparent) 30%,
-    color-mix(in srgb, var(--ah-god) 10%, transparent) 70%,
-    transparent
-  );
-}
-
-.bannerRule {
-  color: var(--ah-god);
-}
-
-.bannerWinner {
-  color: var(--ah-god);
-  font-weight: 500;
-}
-
-.bannerCode {
-  color: var(--color-neutral-500);
-}
-
-.bannerSub {
-  font-size: 11.5px;
-  color: var(--color-neutral-500);
-}
-
-.body {
-  display: grid;
-  grid-template-columns: 320px minmax(0, 1fr) 320px;
-  min-height: 0;
-}
-
-.left {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  overflow-y: auto;
-  background: linear-gradient(
-      to bottom,
-      transparent,
-      var(--color-divider) 48px,
-      var(--color-divider) calc(100% - 48px),
-      transparent
-    )
-    no-repeat right / 1px 100%;
-}
-
-.center {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
+.stage {
   position: relative;
-}
-
-.right {
-  padding: var(--space-6);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px 28px;
+  gap: 16px 20px;
+  padding: 16px 0 16px 24px;
   min-height: 0;
   overflow: hidden;
-  background: linear-gradient(
-      to bottom,
-      transparent,
-      var(--color-divider) 48px,
-      var(--color-divider) calc(100% - 48px),
-      transparent
-    )
-    no-repeat left / 1px 100%;
+}
+
+.tableArea {
+  position: relative;
+  min-height: 0;
+  min-width: 0;
+  display: grid;
+  place-items: center;
+  --table-max: 560px;
+}
+
+.plaque {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 2;
+}
+
+.rail {
+  min-height: 0;
+  overflow-y: auto;
+  padding-top: 56px;
+}
+
+.drawerRail {
+  display: none;
 }
 
 .loading {
   height: 100%;
   display: grid;
   place-items: center;
-  color: var(--color-neutral-500);
+  color: var(--ah-text-muted);
   font-size: 13px;
 }
 
 .error {
   position: fixed;
-  bottom: 62px;
+  bottom: 160px;
   left: 50%;
   transform: translateX(-50%);
   padding: 6px 12px;
   border-radius: var(--radius-md);
-  background: color-mix(in srgb, var(--ah-err) 18%, var(--color-surface));
-  color: var(--color-text);
+  background: rgba(201, 70, 61, 0.25);
+  border: 1px solid var(--ah-wolf);
+  color: var(--ah-text);
   font-size: 12px;
-  z-index: 5;
+  z-index: 6;
 }
 
-/* <900px：纵向堆叠（设计稿 1j），ReplayBar 仍固定底部。 */
-@media (max-width: 900px) {
-  /* 行模板不变（横幅只在终局出现）；主体改为纵向堆叠并整体滚动。 */
-  .body {
-    display: flex;
-    flex-direction: column;
-    overflow-y: auto;
-  }
+/* ---- 玩家 HUD ---- */
+.hud {
+  min-height: 150px;
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr);
+  gap: 20px;
+  padding: 16px 24px;
+  align-items: center;
+  background: linear-gradient(180deg, #24180f, #1a110a);
+  border-top: 2px solid var(--ah-wood-edge);
+}
+.root[data-night] .hud {
+  background: linear-gradient(180deg, #1a110a, #120b06);
+  border-top-color: var(--ah-night-wood-edge);
+}
+.hud[data-blood] {
+  border-top-color: var(--ah-wolf);
+}
+.hud[data-amber] {
+  border-top-color: var(--ah-god);
+}
 
-  /* 纵向堆叠时各段按内容高度排布，不允许被 flex 压缩（压缩会让座位环与发言流重叠）。 */
-  .left,
-  .right {
-    flex: none;
-    background: linear-gradient(
-        to right,
-        transparent,
-        var(--color-divider) 48px,
-        var(--color-divider) calc(100% - 48px),
-        transparent
-      )
-      no-repeat bottom / 100% 1px;
+/* ---- 响应式（规格 §4.9） ---- */
+@media (max-width: 1199px) {
+  .stage {
+    grid-template-columns: minmax(0, 1fr) 300px 28px;
+  }
+}
+
+@media (max-width: 1099px) {
+  .stage {
+    grid-template-columns: minmax(0, 1fr) 28px;
+  }
+  .rail {
+    display: none;
+  }
+  .drawerRail {
+    display: block;
+  }
+}
+
+@media (max-width: 900px) {
+  .root {
+    grid-template-rows: 48px minmax(0, 1fr) auto;
+    height: auto;
+    min-height: 100%;
+  }
+  .stage {
+    grid-template-columns: minmax(0, 1fr) 28px;
+    gap: 8px;
+    padding: 8px 0 8px 8px;
     overflow: visible;
   }
-
-  .center {
-    min-height: 320px;
-    flex: 1;
+  .tableArea {
+    --table-max: 100%;
+    padding-top: 64px;
+  }
+  .plaque {
+    left: 4px;
+    top: 4px;
+  }
+  .hud {
+    position: sticky;
+    bottom: 0;
+    z-index: 5;
+    grid-template-columns: 1fr;
+    gap: 10px;
+    padding: 10px 12px;
+    min-height: 0;
   }
 }
 
-.playerBar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: var(--space-2) var(--space-4);
-  font-size: 13px;
-  font-weight: 500;
-  border-bottom: 1px solid var(--color-divider);
+/* 390 宽：顶栏可换行、桌子区留出座位外扩的空间 */
+@media (max-width: 900px) {
+  .root {
+    grid-template-rows: auto minmax(0, 1fr) auto;
+  }
+  .tableArea {
+    padding: 64px 32px 32px;
+  }
 }

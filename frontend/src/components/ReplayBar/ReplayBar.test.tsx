@@ -80,3 +80,28 @@ describe("ReplayBar", () => {
     expect(screen.getByRole("button", { name: "回到直播" })).toBeEnabled();
   });
 });
+
+describe("ReplayBar · 插槽（UI 改版 PR ②）", () => {
+  it("leading / trailing 插槽渲染", () => {
+    render(
+      <ReplayBar
+        cursor={null}
+        total={10}
+        playing={false}
+        speed={2}
+        segments={[]}
+        live={false}
+        onCursor={vi.fn()}
+        onPlay={vi.fn()}
+        onPause={vi.fn()}
+        onSpeed={vi.fn()}
+        onStep={vi.fn()}
+        onLive={vi.fn()}
+        leading={<span>LEAD</span>}
+        trailing={<span>TRAIL</span>}
+      />,
+    );
+    expect(screen.getByText("LEAD")).toBeInTheDocument();
+    expect(screen.getByText("TRAIL")).toBeInTheDocument();
+  });
+});

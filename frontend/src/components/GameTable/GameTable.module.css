@@ -1,0 +1,599 @@
+/* 全景圆桌（设计稿 3a / 5a / 5b / 5c / 7a–7c）：正方形容器，桌面圆 inset 12%，座位百分比定位。 */
+
+.root {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  min-height: 0;
+}
+
+.table {
+  position: relative;
+  width: min(100%, var(--table-max, 560px));
+  aspect-ratio: 1;
+  max-height: 100%;
+}
+
+.disc {
+  position: absolute;
+  inset: 12%;
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 45%, #4a3524, #2a1d14 70%, #1a110a);
+  border: 6px solid var(--ah-wood-edge);
+  box-shadow:
+    0 30px 80px rgba(0, 0, 0, 0.7),
+    inset 0 0 60px rgba(0, 0, 0, 0.6);
+}
+.root[data-night] .disc {
+  background: radial-gradient(circle at 50% 45%, var(--ah-table-night), var(--ah-table-night-edge) 70%, #0a0c14);
+  border-color: var(--ah-table-night);
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.8);
+}
+
+/* 桌心装饰：篝火 / 月亮 */
+.fire {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 18%;
+  aspect-ratio: 1;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: radial-gradient(circle, var(--ah-fire-hi) 0%, var(--ah-fire-lo) 40%, var(--ah-fire-shadow) 70%, transparent 72%);
+  box-shadow: 0 0 60px 24px rgba(227, 166, 72, 0.25);
+  animation: ah-flicker 3s ease-in-out infinite;
+  pointer-events: none;
+}
+.moon {
+  position: absolute;
+  left: 50%;
+  top: 28%;
+  width: 14%;
+  aspect-ratio: 1;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: var(--ah-moon);
+  box-shadow: 0 0 60px 20px rgba(185, 198, 232, 0.18);
+  pointer-events: none;
+}
+
+/* ---- 座位 ---- */
+.seat {
+  position: absolute;
+  width: 72px;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  background: none;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  cursor: default;
+  z-index: 1;
+}
+.seat[data-selectable] {
+  cursor: pointer;
+}
+.seat[data-selectable]:hover .token > :first-child,
+.seat[data-selected] .token > :first-child {
+  border-color: var(--ah-fire);
+  box-shadow: 0 0 24px rgba(227, 166, 72, 0.6);
+}
+.seat[data-me] .token > :first-child {
+  border-color: var(--ah-fire);
+}
+.seat[data-speaking] .token > :first-child {
+  border-color: var(--ah-gold);
+  box-shadow: 0 0 24px rgba(240, 192, 96, 0.6);
+}
+.seat[data-dim] {
+  opacity: 0.55;
+}
+.seat:disabled {
+  cursor: default;
+}
+.seat:focus-visible {
+  outline: none;
+}
+.seat:focus-visible .token > :first-child {
+  outline: 2px solid var(--ah-fire);
+  outline-offset: 3px;
+}
+
+.token {
+  position: relative;
+  display: block;
+  width: 64px;
+  height: 64px;
+}
+.token > :first-child {
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s;
+}
+
+.no {
+  position: absolute;
+  left: -6px;
+  top: -6px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--ah-parch);
+  color: var(--ah-parch-ink);
+  font: 700 11px var(--font-mono);
+  border: 1px solid var(--ah-parch-muted);
+}
+.root[data-night] .no {
+  background: #c9c2b0;
+  border-color: #6b5a44;
+}
+
+.candidate {
+  position: absolute;
+  right: -8px;
+  bottom: -6px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: var(--ah-god);
+  color: #2b1a08;
+  font: 12px var(--font-heading);
+  border: 1px solid var(--ah-fire-edge);
+}
+.sheriff {
+  position: absolute;
+  right: -6px;
+  bottom: -4px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--ah-god);
+  color: #2b1a08;
+  font-size: 12px;
+  border: 1px solid var(--ah-fire-edge);
+}
+.votes {
+  position: absolute;
+  right: -8px;
+  top: -8px;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 5px;
+  border-radius: 11px;
+  display: grid;
+  place-items: center;
+  background: var(--ah-fire);
+  color: #2b1a08;
+  font: 700 12px var(--font-mono);
+}
+.mark,
+.tag {
+  position: absolute;
+  left: 50%;
+  bottom: -10px;
+  transform: translateX(-50%);
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 10px;
+  white-space: nowrap;
+  color: #fff;
+  z-index: 2;
+}
+.mark[data-mark='好人'] {
+  background: var(--ah-ok);
+}
+.mark[data-mark='狼人'] {
+  background: var(--ah-wolf);
+}
+.tag {
+  background: var(--ah-wolf);
+  color: #fbe0dc;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+}
+
+.name {
+  font-size: 11px;
+  color: var(--ah-text);
+  white-space: nowrap;
+  max-width: 84px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.root[data-night] .name {
+  color: #8a92a8;
+}
+
+/* ---- 桌心 ---- */
+.center {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 56%;
+  max-width: 300px;
+  text-align: center;
+  z-index: 2;
+}
+.centerLow {
+  top: 72%;
+  width: 60%;
+}
+.lastTallyLabel {
+  font-size: 12px;
+  color: var(--ah-text-muted);
+}
+.lastTally {
+  font-size: 12px;
+  color: var(--ah-text);
+  margin-top: 2px;
+}
+
+.moonCard {
+  color: var(--ah-night-text);
+  top: 62%;
+}
+.moonTitle {
+  font-family: var(--font-heading);
+  font-size: 22px;
+  letter-spacing: 4px;
+}
+.moonSub {
+  font-size: 12px;
+  color: var(--ah-night-muted);
+  margin-top: 4px;
+}
+
+/* 狼队密议 / 女巫 */
+.council {
+  padding: 12px 16px;
+  text-align: left;
+  background: rgba(20, 14, 18, 0.92);
+  border: 1px solid #6e1f18;
+  color: var(--ah-text);
+  border-radius: 8px;
+  font-size: 12.5px;
+  line-height: 1.7;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+}
+.councilKicker {
+  font-size: 11px;
+  color: var(--ah-wolf);
+  letter-spacing: 3px;
+  margin-bottom: 6px;
+}
+.proposal {
+  display: inline-block;
+  margin-right: 14px;
+}
+.wolfText {
+  color: var(--ah-wolf);
+}
+.councilTally {
+  color: var(--ah-gold);
+}
+.councilHint {
+  font-size: 11px;
+  color: var(--ah-parch-muted);
+  margin-top: 6px;
+}
+.witch {
+  text-align: center;
+  padding: 14px 18px;
+}
+.bigName {
+  font-family: var(--font-heading);
+  font-size: 32px;
+  color: var(--ah-wolf-fg);
+  margin: 4px 0;
+}
+
+/* 水晶球 / 准星 */
+.crystal,
+.crosshair {
+  width: 180px;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  border: 2px solid var(--ah-god);
+}
+.crystal {
+  background: radial-gradient(circle at 40% 35%, rgba(217, 168, 78, 0.5), rgba(120, 90, 40, 0.25) 50%, rgba(20, 22, 34, 0.9) 72%);
+  box-shadow: 0 0 60px rgba(217, 168, 78, 0.35);
+}
+.crosshair {
+  width: 160px;
+  border-width: 3px;
+  background: rgba(20, 14, 8, 0.7);
+  box-shadow: 0 0 40px rgba(217, 168, 78, 0.4);
+}
+.orbKicker {
+  font-size: 11px;
+  color: var(--ah-text-dim);
+  letter-spacing: 3px;
+}
+.orbSeat {
+  font-family: var(--font-heading);
+  font-size: 34px;
+  color: var(--ah-god-fg);
+  line-height: 1.1;
+}
+.orbSub {
+  font-size: 12px;
+  color: var(--ah-god);
+}
+.crystal > *,
+.crosshair > * {
+  grid-area: 1 / 1;
+}
+.crystal > .orbKicker,
+.crosshair > .orbKicker {
+  align-self: start;
+  margin-top: 34px;
+}
+.crystal > .orbSub,
+.crosshair > .orbSub {
+  align-self: end;
+  margin-bottom: 34px;
+}
+
+/* 羊皮纸票型 / GM 手记 */
+.parch {
+  padding: 14px 18px;
+  text-align: left;
+  background: var(--ah-parch);
+  color: var(--ah-parch-ink);
+  border-radius: 6px;
+  font-size: 13px;
+  line-height: 1.8;
+  box-shadow:
+    0 14px 40px rgba(0, 0, 0, 0.6),
+    inset 0 0 30px rgba(120, 90, 40, 0.12);
+}
+.parchHead {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--ah-parch-muted);
+  margin-bottom: 4px;
+}
+.parchMuted {
+  color: var(--ah-parch-muted);
+  font-size: 11px;
+}
+.leading {
+  color: var(--ah-parch-danger);
+}
+.notes {
+  font-size: 12px;
+  line-height: 1.6;
+  border-radius: 4px;
+}
+.notesTitle {
+  font-family: var(--font-heading);
+  font-size: 15px;
+  color: var(--ah-parch-ink-2);
+  border-bottom: 1px solid var(--ah-parch-edge);
+  padding-bottom: 4px;
+  margin-bottom: 6px;
+}
+.noteRow {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+}
+.noteDot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  transform: translateY(-1px);
+}
+
+/* PK 台 */
+.pk {
+  width: 64%;
+}
+.pkRow {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 18px;
+  margin-top: 8px;
+}
+.pkSide {
+  text-align: center;
+}
+.pkToken {
+  border-color: var(--ah-gold) !important;
+  box-shadow: 0 0 24px rgba(240, 192, 96, 0.5);
+}
+.pkName {
+  font-size: 12px;
+  color: var(--ah-text-bright);
+  margin-top: 4px;
+}
+.pkVotes {
+  font: 700 22px var(--font-mono);
+  color: var(--ah-fire);
+}
+.vs {
+  font-family: var(--font-heading);
+  font-size: 30px;
+  color: var(--ah-wolf);
+}
+.pkBar {
+  margin: 10px auto 4px;
+  width: 220px;
+  max-width: 100%;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--ah-wood-btn-edge);
+  overflow: hidden;
+}
+.pkBar > span {
+  display: block;
+  height: 100%;
+  background: var(--ah-wolf);
+}
+
+/* ---- 发言气泡 ---- */
+.bubble {
+  position: absolute;
+  transform: translateX(-50%);
+  width: 60%;
+  max-width: 300px;
+  padding: 12px 16px;
+  background: var(--ah-parch);
+  color: var(--ah-parch-ink);
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1.7;
+  box-shadow:
+    0 14px 40px rgba(0, 0, 0, 0.6),
+    inset 0 0 30px rgba(120, 90, 40, 0.12);
+  z-index: 3;
+}
+.bubble[data-kind='last_words'] {
+  box-shadow:
+    0 14px 40px rgba(0, 0, 0, 0.6),
+    0 0 0 1px var(--ah-wolf);
+}
+.bubbleArrow {
+  position: absolute;
+  left: 50%;
+  width: 0;
+  height: 0;
+  margin-left: -10px;
+  border: 10px solid transparent;
+}
+.bubble[data-side='below'] .bubbleArrow {
+  top: -10px;
+  border-top: 0;
+  border-bottom-color: var(--ah-parch);
+}
+.bubble[data-side='above'] .bubbleArrow {
+  bottom: -10px;
+  border-bottom: 0;
+  border-top-color: var(--ah-parch);
+}
+.bubbleHead {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--ah-parch-muted);
+  margin-bottom: 4px;
+}
+.bubbleTimer {
+  font-family: var(--font-mono);
+  color: var(--ah-parch-danger);
+}
+.bubbleText {
+  max-height: 10.5em;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.placeholder {
+  color: var(--ah-parch-muted);
+  font-style: italic;
+}
+.caret {
+  display: inline-block;
+  margin-left: 2px;
+  color: var(--ah-parch-ink);
+  animation: ah-pulse 1s steps(2) infinite;
+}
+.voicing {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--ah-parch-muted);
+}
+.bars {
+  display: flex;
+  gap: 3px;
+  align-items: flex-end;
+  height: 12px;
+}
+.bars i {
+  display: block;
+  width: 3px;
+  background: var(--ah-fire-lo);
+  animation: ah-bars 0.9s ease-in-out infinite;
+}
+.bars i:nth-child(1) {
+  height: 6px;
+}
+.bars i:nth-child(2) {
+  height: 12px;
+  animation-delay: 0.15s;
+}
+.bars i:nth-child(3) {
+  height: 8px;
+  animation-delay: 0.3s;
+}
+.bars i:nth-child(4) {
+  height: 10px;
+  animation-delay: 0.45s;
+}
+@keyframes ah-bars {
+  0%,
+  100% {
+    transform: scaleY(0.5);
+  }
+  50% {
+    transform: scaleY(1);
+  }
+}
+.progress {
+  margin-top: 8px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--ah-parch-shade);
+  overflow: hidden;
+}
+.progress > span {
+  display: block;
+  height: 100%;
+  background: var(--ah-fire-lo);
+}
+.bubble[data-kind='last_words'] .progress > span {
+  background: var(--ah-parch-danger);
+}
+
+@media (max-width: 900px) {
+  .seat {
+    width: 56px;
+  }
+  .token {
+    width: 48px;
+    height: 48px;
+  }
+  .token > :first-child {
+    width: 48px !important;
+    height: 48px !important;
+    font-size: 20px !important;
+  }
+  .name {
+    font-size: 10px;
+    max-width: 64px;
+  }
+  .bubble {
+    width: 70%;
+    font-size: 12px;
+    padding: 8px 10px;
+  }
+}

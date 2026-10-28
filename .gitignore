@@ -231,3 +231,9 @@ frontend/dist/
 
 # Vite 缓存
 frontend/.vite/
+
+# e2e 脚本的独立依赖
+frontend/e2e/node_modules/
+frontend/e2e/shots/
+frontend/e2e/*.log
+frontend/e2e/*.out

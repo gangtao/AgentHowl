@@ -1,0 +1,126 @@
+/* 终局结算（设计稿 1i）：覆盖舞台的全屏层，血月（狼胜）/ 金月（好人胜）。 */
+
+.root {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 28px;
+  padding: 48px 24px 40px;
+  background: radial-gradient(ellipse at 50% 20%, #1c2440 0%, var(--ah-night) 60%);
+}
+.root[data-winner='WOLF'] {
+  background: radial-gradient(ellipse at 50% 20%, var(--ah-blood-sky) 0%, var(--ah-night) 60%);
+}
+
+.moon {
+  width: 200px;
+  height: 200px;
+  border-radius: 50%;
+  flex: none;
+  background: radial-gradient(circle at 40% 35%, #fff0b0, var(--ah-god) 60%, #6e4a18);
+  box-shadow: 0 0 120px 40px rgba(217, 168, 78, 0.25);
+}
+.root[data-winner='WOLF'] .moon {
+  background: radial-gradient(circle at 40% 35%, #f3b3a3, var(--ah-wolf) 60%, #6e1f18);
+  box-shadow: 0 0 120px 40px rgba(201, 70, 61, 0.3);
+}
+.root[data-winner='TIE'] .moon {
+  background: var(--ah-moon);
+  box-shadow: 0 0 120px 40px rgba(241, 234, 214, 0.18);
+}
+
+.head {
+  text-align: center;
+}
+.kicker {
+  font-size: 14px;
+  color: var(--ah-text-muted);
+  letter-spacing: 8px;
+}
+.headline {
+  margin: 4px 0 0;
+  font-size: 84px;
+  letter-spacing: 14px;
+  line-height: 1.1;
+  color: var(--ah-god-fg);
+  text-shadow: 0 0 50px rgba(217, 168, 78, 0.5);
+}
+.root[data-winner='WOLF'] .headline {
+  color: var(--ah-wolf-fg);
+  text-shadow: 0 0 50px rgba(201, 70, 61, 0.6);
+}
+.sub {
+  font-size: 14px;
+  letter-spacing: 4px;
+  margin-top: 6px;
+  color: var(--ah-god);
+}
+.root[data-winner='WOLF'] .sub {
+  color: var(--ah-wolf);
+}
+
+.grid {
+  width: min(100%, 1200px);
+  display: grid;
+  grid-template-columns: repeat(var(--cols, 9), minmax(0, 1fr));
+  gap: 14px;
+}
+.cell {
+  padding: 14px 8px;
+  border-radius: 6px;
+  text-align: center;
+  background: linear-gradient(180deg, var(--ah-wood-hi), var(--ah-wood-lo));
+  border: 2px solid var(--ah-wood-edge);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.cell[data-alive='false'] {
+  opacity: 0.6;
+}
+.cellName {
+  font-size: 13px;
+  color: var(--ah-text-bright);
+  margin-top: 4px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cellRole {
+  font-size: 11px;
+}
+.cellFate {
+  font-size: 11px;
+  color: var(--ah-parch-muted);
+}
+
+.actions {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+@media (max-width: 900px) {
+  .root {
+    padding-top: 24px;
+    gap: 18px;
+  }
+  .moon {
+    width: 110px;
+    height: 110px;
+  }
+  .headline {
+    font-size: 44px;
+    letter-spacing: 8px;
+  }
+  .grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}

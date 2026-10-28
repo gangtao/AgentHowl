@@ -21,7 +21,7 @@
 
 .sub {
   font-size: 11px;
-  color: var(--color-neutral-500);
+  color: var(--ah-text-muted);
 }
 
 .rows {
@@ -54,21 +54,21 @@
 
 .rowRole {
   font-size: 11px;
-  color: var(--color-neutral-500);
+  color: var(--ah-text-muted);
 }
 
 .rowText {
   font-size: 13px;
   line-height: 1.45;
-  color: var(--color-text);
+  color: var(--ah-text);
 }
 
 .footer {
   margin-top: auto;
   padding-top: var(--space-4);
   font-size: 11.5px;
-  color: var(--color-neutral-500);
-  border-top: 1px solid var(--color-divider);
+  color: var(--ah-text-muted);
+  border-top: 1px solid var(--ah-panel-edge);
 }
 
 .empty {
@@ -76,14 +76,14 @@
   display: grid;
   place-items: center;
   text-align: center;
-  color: var(--color-neutral-500);
+  color: var(--ah-text-muted);
   font-size: 13px;
   line-height: 1.7;
 }
 
 .emptySub {
   font-size: 11.5px;
-  color: var(--color-neutral-600);
+  color: var(--ah-parch-muted);
 }
 
 .spinner {
@@ -91,7 +91,7 @@
   height: 28px;
   margin: 0 auto 10px;
   border-radius: 50%;
-  border: 2px solid var(--color-neutral-800);
-  border-top-color: var(--color-neutral-400);
+  border: 2px solid var(--ah-panel-edge);
+  border-top-color: var(--ah-text-muted);
   animation: ah-spin 1.2s linear infinite;
 }
