@@ -152,4 +152,51 @@ describe("SeatRing（规格 §5 第 2 步）", () => {
     );
     expect(screen.getByRole("button", { name: "入座 0号" })).toHaveAttribute("data-kind", "fill");
   });
+
+  it("点菜单外部关闭；打开时焦点进第一项，Escape 把焦点还给座位按钮", () => {
+    render(
+      <SeatRing
+        assignment={four({ 0: ME })}
+        library={lib}
+        fill={null}
+        pendingAgent={null}
+        onAssign={vi.fn()}
+      />,
+    );
+    const seat = screen.getByRole("button", { name: "入座 2号" });
+    fireEvent.click(seat);
+    // 「我自己」已在 0 号被禁用 → 焦点落在第一个可用项「随机 bot」
+    expect(screen.getByRole("menuitem", { name: "随机 bot" })).toHaveFocus();
+    fireEvent.mouseDown(document.body);
+    expect(screen.queryByRole("menu")).toBeNull();
+    fireEvent.click(seat);
+    fireEvent.mouseDown(screen.getByRole("menu"));
+    expect(screen.getByRole("menu")).toBeInTheDocument();
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByRole("menu")).toBeNull();
+    expect(seat).toHaveFocus();
+  });
+
+  it("菜单内 ↑ ↓ 在可用项之间移动焦点并循环", () => {
+    render(
+      <SeatRing
+        assignment={four({ 0: ME })}
+        library={lib}
+        fill={null}
+        pendingAgent={null}
+        onAssign={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "入座 2号" }));
+    const bot = screen.getByRole("menuitem", { name: "随机 bot" });
+    expect(bot).toHaveFocus();
+    fireEvent.keyDown(bot, { key: "ArrowDown" });
+    expect(screen.getByRole("menuitem", { name: "狐语" })).toHaveFocus();
+    fireEvent.keyDown(screen.getByRole("menuitem", { name: "狐语" }), { key: "ArrowDown" });
+    expect(screen.getByRole("menuitem", { name: "算盘" })).toHaveFocus();
+    fireEvent.keyDown(screen.getByRole("menuitem", { name: "算盘" }), { key: "ArrowDown" });
+    expect(bot).toHaveFocus();
+    fireEvent.keyDown(bot, { key: "ArrowUp" });
+    expect(screen.getByRole("menuitem", { name: "算盘" })).toHaveFocus();
+  });
 });

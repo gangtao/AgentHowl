@@ -72,8 +72,18 @@ await page.waitForTimeout(200);
 await page.screenshot({ path: `${OUT}/02-lobby-3-scroll.png` });
 log("step 3");
 
-// 390 宽：第 2 步列表回退
+// 1100 宽：第 2 步档案列上移、圆桌保持 480px；第 1 步剧本牌单列
 await page.locator('button:has-text("← 上一步 · 分配座位")').click();
+await page.setViewportSize({ width: 1100, height: 900 });
+await page.waitForTimeout(300);
+await page.screenshot({ path: `${OUT}/02-lobby-2-seats-1100.png` });
+await page.locator('button:has-text("① 选择剧本")').click();
+await page.waitForTimeout(200);
+await page.screenshot({ path: `${OUT}/02-lobby-1-preset-1100.png` });
+await page.locator('button:has-text("下一步 · 分配座位")').click();
+log("1100");
+
+// 390 宽：第 2 步列表回退
 await page.setViewportSize({ width: 390, height: 844 });
 await page.waitForTimeout(300);
 await page.screenshot({ path: `${OUT}/02-lobby-2-seats-390.png`, fullPage: true });

@@ -224,6 +224,22 @@
   line-height: 1.5;
 }
 
+/* 900–1280px：三栏放不下 360px 档案列 + 480px 圆桌 + 300px 卡；档案列上移成整行，剧本牌改单列。 */
+@media (max-width: 1280px) {
+  .page[data-step='2'] {
+    grid-template-columns: minmax(0, 1fr) 300px;
+  }
+
+  .agentCol {
+    grid-column: 1 / -1;
+  }
+
+  .presets {
+    grid-template-columns: 1fr;
+    max-width: 560px;
+  }
+}
+
 @media (max-width: 900px) {
   .page,
   .page[data-step='2'],
