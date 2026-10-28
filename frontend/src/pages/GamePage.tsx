@@ -27,6 +27,7 @@ import type { PlayerObservation, YourTurn } from "../api/player";
 import type { ViewerHint } from "../api/tokens";
 import { useLiveEvents } from "../api/ws";
 import { replayControls } from "../lib/replayControls";
+import { usePrefs } from "../store/prefs";
 import { useVoice } from "../store/voice";
 import { isNight } from "../engine/phases";
 import {
@@ -52,11 +53,13 @@ import ErrorState from "../components/ErrorState/ErrorState";
 import type { ErrorKind } from "../components/ErrorState/ErrorState";
 import EventDrawer from "../components/EventDrawer/EventDrawer";
 import GameOverScreen from "../components/GameOverScreen/GameOverScreen";
+import CardBoard from "../components/GameTable/CardBoard";
 import GameTable from "../components/GameTable/GameTable";
 import type { BubbleKind } from "../components/GameTable/SpeechBubble";
 import IdentityCard from "../components/IdentityCard/IdentityCard";
 import InfoRail from "../components/InfoRail/InfoRail";
 import PhaseBar from "../components/PhaseBar/PhaseBar";
+import TableStyleToggle from "../components/PhaseBar/TableStyleToggle";
 import PhasePlaque from "../components/PhasePlaque/PhasePlaque";
 import ReplayBar from "../components/ReplayBar/ReplayBar";
 import SpeechFeed from "../components/SpeechFeed/SpeechFeed";
@@ -412,6 +415,8 @@ export default function GamePage({ gameId, token, share, viewer }: GamePageProps
   );
 
   // ---- 目标座位（受控）：桌上点座位与 HUD 胶囊等价 ----
+  // 桌面皮肤偏好（规格 §7）：只决定桌子区画圆桌还是牌阵。
+  const tableStyle = usePrefs((s) => s.tableStyle);
   const [selectedTarget, setSelectedTarget] = useState<number | null>(null);
   const [selectable, setSelectable] = useState<number[] | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -625,6 +630,7 @@ export default function GamePage({ gameId, token, share, viewer }: GamePageProps
 
   const headerExtra = (
     <>
+      <TableStyleToggle />
       {isPlayer && <VoiceToggle />}
       {isPlayer && over && (
         <button type="button" className="btn btn-ghost" onClick={goGlobalReplay}>
@@ -724,14 +730,25 @@ export default function GamePage({ gameId, token, share, viewer }: GamePageProps
           <div className={styles.plaque}>
             <PhasePlaque state={view} events={visibleEvents} cursor={cursor} total={totalSeq} />
           </div>
-          <GameTable
-            seats={seats}
-            night={night}
-            center={center}
-            speech={speech}
-            avatars={avatars}
-            onSelectSeat={setSelectedTarget}
-          />
+          {tableStyle === "cards" ? (
+            <CardBoard
+              seats={seats}
+              night={night}
+              center={center}
+              speech={speech}
+              avatars={avatars}
+              onSelectSeat={setSelectedTarget}
+            />
+          ) : (
+            <GameTable
+              seats={seats}
+              night={night}
+              center={center}
+              speech={speech}
+              avatars={avatars}
+              onSelectSeat={setSelectedTarget}
+            />
+          )}
         </div>
         <div className={styles.rail}>{rail}</div>
         <EventDrawer

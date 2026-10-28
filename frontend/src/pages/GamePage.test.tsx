@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import fixture from "../engine/__fixtures__/std_9_kill_side-3.json";
 import type { Event, GameMeta } from "../engine/types";
 import { useGameStore } from "../store/game";
+import { usePrefs } from "../store/prefs";
 import { useTurn } from "../store/turn";
 import { useVoice } from "../store/voice";
 import GamePage from "./GamePage";
@@ -37,6 +38,23 @@ afterEach(() => {
   useTurn.getState().reset();
   vi.unstubAllGlobals();
   useGameStore.getState().reset();
+  usePrefs.setState({ tableStyle: "round" });
+});
+
+describe("GamePage 桌面皮肤（规格 §7）", () => {
+  it("偏好 cards 时桌子区渲染 CardBoard，切回 round 渲染圆桌；座位契约不变", async () => {
+    usePrefs.setState({ tableStyle: "cards" });
+    stubFetch(() => jsonResponse(200, meta));
+    vi.stubGlobal("WebSocket", vi.fn());
+    render(<GamePage gameId="g_x" token="t" viewer="GM" />);
+    await screen.findByText(new RegExp(`▶ 回放 · ${events.length} 条事件`));
+    expect(await screen.findByTestId("card-board")).toBeInTheDocument();
+    const seatsOnCards = document.querySelectorAll("button[data-seat]").length;
+    expect(seatsOnCards).toBe(9);
+    fireEvent.change(screen.getByLabelText("桌面皮肤"), { target: { value: "round" } });
+    expect(screen.queryByTestId("card-board")).toBeNull();
+    expect(document.querySelectorAll("button[data-seat]").length).toBe(9);
+  });
 });
 
 describe("GamePage 发言高亮跟随配音（issue #110）", () => {
