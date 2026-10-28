@@ -164,3 +164,10 @@ export function townNews(events: readonly Event[], state: GameState): NewsRow[] 
   return rows;
 }
 
+/** 结算页的结局文案：存活 → 「存活」，否则墓地里的 when（「第 N 天放逐」等）。 */
+export function fateOf(seat: number, events: readonly Event[], state: GameState): string {
+  const p = state.players.find((x) => x.seat === seat);
+  if (p?.alive) return "存活";
+  const row = graveyard(events, state).find((r) => r.seat === seat);
+  return row?.when ?? "出局";
+}
