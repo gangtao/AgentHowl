@@ -1,0 +1,146 @@
+/* LaunchScroll（规格 §5 第 3 步）：640px 羊皮纸卷轴，顶部木轴条。 */
+
+.scroll {
+  position: relative;
+  width: min(100%, 640px);
+  margin: 24px auto 0;
+  padding: 36px 44px 40px;
+  border-radius: 4px;
+  box-shadow:
+    0 30px 80px rgba(0, 0, 0, 0.6),
+    inset 0 0 80px rgba(120, 90, 40, 0.15);
+}
+
+.roller {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -14px;
+  height: 28px;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #6b4a2e, var(--ah-wood-hi));
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.5);
+}
+
+.title {
+  margin: 8px 0 0;
+  text-align: center;
+  font-family: var(--font-heading);
+  font-weight: var(--font-heading-weight);
+  font-size: 32px;
+  color: var(--ah-parch-ink);
+}
+
+.subtitle {
+  margin: 4px 0 24px;
+  text-align: center;
+  font-size: 12px;
+  letter-spacing: 3px;
+  color: var(--ah-parch-muted);
+}
+
+.table {
+  display: grid;
+  grid-template-columns: 110px minmax(0, 1fr);
+  gap: 12px 20px;
+  margin: 0;
+  padding: 18px 0;
+  border-top: 1px solid var(--ah-parch-edge);
+  border-bottom: 1px solid var(--ah-parch-edge);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.table > dt {
+  color: var(--ah-parch-muted);
+}
+
+.table > dd {
+  margin: 0;
+  min-width: 0;
+}
+
+.mono {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ah-parch-muted);
+}
+
+.muted {
+  color: var(--ah-parch-muted);
+}
+
+.seats {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.tagAgent {
+  background: var(--ah-parch-hi);
+  color: var(--ah-parch-ink);
+  border: 1px solid var(--ah-parch-edge);
+}
+
+.inline {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.input {
+  max-width: 260px;
+}
+
+.inputNum {
+  width: 96px;
+}
+
+.error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 16px;
+  padding: 8px 10px;
+  border-radius: 4px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--ah-wolf);
+  background: rgba(201, 70, 61, 0.1);
+  border: 1px solid rgba(201, 70, 61, 0.35);
+}
+
+.foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  margin-top: 26px;
+}
+
+.back {
+  border-color: transparent;
+}
+
+.launch {
+  padding: 13px 36px;
+  font-family: var(--font-heading);
+  font-weight: var(--font-heading-weight);
+  font-size: 20px;
+  letter-spacing: 0.06em;
+}
+
+@media (max-width: 900px) {
+  .scroll {
+    padding: 28px 18px 28px;
+  }
+  .table {
+    grid-template-columns: 84px minmax(0, 1fr);
+  }
+  .foot {
+    flex-direction: column-reverse;
+    align-items: stretch;
+  }
+}
