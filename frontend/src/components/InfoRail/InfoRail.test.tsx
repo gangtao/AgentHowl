@@ -111,7 +111,7 @@ describe("NightFlow", () => {
     const st = {
       ...blank,
       phase: "NIGHT" as const,
-      config: { ...rest, roles: [] } as GameState["config"],
+      config: { ...rest, roles: [] } as unknown as GameState["config"],
     };
     render(<InfoRail {...base} state={st} cards={["nightFlow", "news"]} />);
     expect(screen.queryByText("夜晚流程")).toBeNull();
