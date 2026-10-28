@@ -1,54 +1,154 @@
-/* AgentCard（设计稿 2b 网格卡 / 2a 侧栏精简卡）。 */
+/* AgentCard：完整卡 = 角色牌（规格 §6，设计稿 1k）；下方是大厅回退用的精简卡。 */
 
 .card {
-  padding: var(--space-4);
-  gap: var(--space-3);
-  min-height: 160px;
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--radius-lg);
+  background: linear-gradient(180deg, var(--ah-wood-hi), var(--ah-wood-lo));
+  border: 2px solid var(--ah-wood-edge);
+  box-shadow:
+    0 10px 30px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 rgba(255, 220, 160, 0.15);
+  overflow: hidden;
+  text-align: center;
+  color: var(--ah-text);
 }
 
-.head {
+/* 顶部篝火光晕 + 72px 首字圆 + 名字 + 金色人格行 */
+.crown {
   display: flex;
-  align-items: flex-start;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 16px 12px 10px;
+  background: radial-gradient(ellipse at 50% 0%, rgba(227, 166, 72, 0.18), transparent 70%);
+}
+
+.crown > :first-child {
+  border: 3px solid var(--ah-wood-btn-edge);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.5);
+  font-family: var(--font-heading);
+  color: var(--ah-text-bright);
+}
+
+.name {
+  margin: 4px 0 0;
+  font-size: 22px;
+  color: var(--ah-text-bright);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+.title {
+  font-size: 12px;
+  letter-spacing: 2px;
+  color: var(--ah-gold);
+}
+
+.lower {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 12px 12px;
+  margin-top: auto;
+}
+
+/* 羊皮纸三行 */
+.strip {
+  padding: 8px 10px;
+  border-radius: 3px;
+  box-shadow: none;
+  font-size: 11px;
+  line-height: 1.6;
+  text-align: left;
+}
+
+.stripRow {
+  display: flex;
   justify-content: space-between;
   gap: 8px;
 }
 
-.headMain {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
+.stripRow > :first-child {
+  color: var(--ah-parch-muted);
+  flex: none;
 }
 
-.nameRow {
-  display: flex;
-  align-items: center;
-  gap: 6px;
+.stripVal {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.name {
-  font-size: 20px;
-  font-weight: 500;
-  letter-spacing: -0.01em;
+.skills {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  justify-content: center;
 }
+
+.skill {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  border: 1px solid var(--ah-wood-edge);
+  color: var(--ah-text);
+}
+
+.more {
+  font-size: 10.5px;
+  color: var(--ah-text-muted);
+}
+
+.meta {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--ah-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.actions {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+}
+
+.action {
+  background: none;
+  border: 0;
+  padding: 2px 4px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--ah-fire);
+  cursor: pointer;
+}
+
+.action:hover {
+  color: var(--ah-gold);
+  text-decoration: underline;
+}
+
+.del {
+  color: var(--ah-text-muted);
+}
+
+.del:hover {
+  color: var(--ah-wolf);
+}
+
+/* ---- 精简版（大厅 <900px 回退列表） ---- */
 
 .mono {
   font-size: 11.5px;
-  color: var(--color-neutral-400);
-  font-family: ui-monospace, Menlo, monospace;
+  color: var(--ah-text-dim);
+  font-family: var(--font-mono);
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-.sub {
-  font-size: 10.5px;
-  color: var(--color-neutral-500);
-}
-
-.temp {
-  font-size: 10.5px;
-  color: var(--color-neutral-500);
-  white-space: nowrap;
 }
 
 .tags {
@@ -58,53 +158,16 @@
   align-items: center;
 }
 
-.more {
-  font-size: 10.5px;
-  color: var(--color-neutral-500);
-}
-
-.body {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  font-size: 12px;
-}
-
-.summary {
-  color: var(--color-neutral-300);
-}
-
 .memory {
-  color: var(--color-accent-300);
+  color: var(--ah-gold);
   font-size: 11px;
 }
 
 .rating {
   font-size: 11.5px;
-  color: var(--color-neutral-400);
+  color: var(--ah-text-dim);
   font-variant-numeric: tabular-nums;
 }
-
-.actions {
-  display: flex;
-  gap: 2px;
-}
-
-.actions button {
-  font-size: 12px;
-  padding: 2px 6px;
-}
-
-.del {
-  color: var(--color-neutral-500);
-}
-
-.del:hover {
-  color: var(--ah-err);
-  background: color-mix(in srgb, var(--ah-err) 10%, transparent);
-}
-
-/* ---- 精简版 ---- */
 
 .compact {
   padding: var(--space-3);
@@ -113,11 +176,11 @@
 }
 
 .compact:hover {
-  box-shadow: inset 0 0 0 1px var(--color-accent-700);
+  box-shadow: inset 0 0 0 1px var(--ah-wood-btn-edge);
 }
 
 .selected {
-  box-shadow: inset 0 0 0 1px var(--color-accent);
+  box-shadow: inset 0 0 0 1px var(--ah-fire);
 }
 
 .compactHead {
@@ -149,5 +212,5 @@
   justify-content: space-between;
   gap: 8px;
   font-size: 11px;
-  color: var(--color-neutral-500);
+  color: var(--ah-text-muted);
 }

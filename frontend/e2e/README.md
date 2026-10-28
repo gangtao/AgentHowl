@@ -8,12 +8,15 @@
 | `play.mjs` | 真人坐 0 号 + 随机 bot 打完一整局：登录 → 建局 → 按角色策略行动（狼刀 / 查验 / 救毒 / 守护 / 开枪 / 上警 / 投票 / 遗言 / 自爆）→ 赛后检查；每局输出一行 `SUMMARY` JSON，`finished: true` 且 `rejected` 为空即通过 |
 | `screens.mjs` | 用一局已结束的对局，以上帝 / 观众视角打开回放，拖到夜晚 / 竞选 / 发言 / 投票 / 终局截图，并截 1100 / 390 宽 |
 | `lobby-shots.mjs` | 走完大厅三步（不开局）截第 1 / 2 / 3 步与打开木牌菜单的第 2 步，再截 390 宽的列表回退（UI 改版 PR ③） |
+| `pages-shots.mjs` | 历史 / 档案库（含打开编辑器）/ 模型服务 / 用户管理（需管理员会话 `AH_SESSION` + `PAGES=admin`）截图；空库时临时造数据并清理（UI 改版 PR ④） |
 
 ```bash
 cd frontend/e2e
 AH_BASE_URL=http://localhost:5173 AH_USER=e2e_player AH_PASS=… AH_SEED=2 RUN=wolf SPEECH_SEC=15 ACTION_SEC=15 node play.mjs
 AH_BASE_URL=http://localhost:5173 AH_USER=e2e_player AH_PASS=… AH_GAME=g_xxxxxxxx SHOT_DIR=../../docs/design/ui-gamified-2026-10-28 node screens.mjs
 AH_BASE_URL=http://localhost:5173 AH_USER=e2e_player AH_PASS=… SHOT_DIR=../../docs/design/ui-gamified-2026-10-28 node lobby-shots.mjs
+AH_BASE_URL=http://localhost:5173 AH_USER=e2e_player AH_PASS=… SHOT_DIR=../../docs/design/ui-gamified-2026-10-28 node pages-shots.mjs
+AH_BASE_URL=http://localhost:5173 AH_SESSION=<管理员会话 cookie> PAGES=admin SHOT_DIR=… node pages-shots.mjs
 ```
 
 大厅段（PR ③ 起）只靠这些控件：剧本牌文本 → `#lobby-seed` → 「下一步 · 分配座位 →」→ `button[aria-label="入座 0号"]` →

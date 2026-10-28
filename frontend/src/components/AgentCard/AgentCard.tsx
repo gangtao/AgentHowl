@@ -1,8 +1,10 @@
-// AgentCard（设计稿 2b 网格卡 / 2a 档案库侧栏精简版）。
+// AgentCard：完整卡 = 「村民名册」角色牌（规格 §6，设计稿 1k）——篝火光晕 + 首字渐变圆 + 名字 +
+// 金色人格摘要 + 羊皮纸三行（声望 / 战绩 / 性情）+ 技能签 + 模型行 + 操作；精简卡（大厅 <900px 回退）不变。
 // 性格摘要复用 personality_summary 口径（lib/personality.ts 抄录自后端）。
 
 import type { StoredAgent } from "../../api/agents";
 import { personalitySummary, type PersonalitySpecShape } from "../../lib/personality";
+import { nameGradientCss } from "../../lib/pagesLook";
 import { ratingLine } from "../../lib/rating";
 import Avatar from "../Avatar/Avatar";
 import styles from "./AgentCard.module.css";
@@ -87,59 +89,82 @@ export default function AgentCard({
     );
   }
 
+  const r = stored.rating;
+  const record =
+    r.games === 0 ? "尚无战绩" : `${r.games} 局 · 胜率 ${Math.round((r.wins / r.games) * 100)}%`;
   return (
-    <div className={`card elev-sm ${styles.card}`}>
-      <div className={styles.head}>
-        <div className={styles.headMain}>
-          <div className={styles.nameRow}>
-            <Avatar avatar={p.avatar ?? null} name={p.name ?? ""} seat={null} size={32} />
-            <span className={styles.name}>{p.name}</span>
+    <article className={styles.card} data-agent-id={stored.agent_id}>
+      <div className={styles.crown}>
+        <Avatar
+          avatar={p.avatar ?? null}
+          name={p.name ?? ""}
+          seat={null}
+          size={72}
+          color={nameGradientCss(p.name)}
+        />
+        <h3 className={styles.name}>{p.name}</h3>
+        {summary !== "" && <span className={styles.title}>「{summary}」</span>}
+      </div>
+      <div className={styles.lower}>
+        <div className={`ah-parch ${styles.strip}`}>
+          <div className={styles.stripRow}>
+            <span>声望</span>
+            <b>{Math.round(r.rating)}</b>
           </div>
-          <span className={styles.mono}>{p.model}</span>
-          <span className={styles.sub}>
-            {providerName ? `服务 ${providerName}` : "兼容模式 · 无 provider"}
-            {subModels ? ` · ${subModels}` : ""}
-          </span>
+          <div className={styles.stripRow}>
+            <span>战绩</span>
+            <span>{record}</span>
+          </div>
+          <div className={styles.stripRow}>
+            <span>性情</span>
+            <span className={styles.stripVal}>{summary || "—"}</span>
+          </div>
         </div>
-        <span className={styles.temp}>T={p.temperature ?? 0.3}</span>
-      </div>
-      <div className={styles.tags}>
-        {shown.length === 0 ? (
-          <span className={styles.more}>无技能</span>
-        ) : (
-          shown.map((s) => (
-            <span key={s} className="tag tag-neutral" style={{ padding: "1px 8px", fontSize: 10.5 }}>
-              {s}
-            </span>
-          ))
-        )}
-        {more > 0 && <span className={styles.more}>+{more}</span>}
-      </div>
-      <div className={styles.body}>
-        <span className={styles.summary}>{summary || "—"}</span>
-        {p.memory_id && <span className={styles.memory}>记忆 {p.memory_id}</span>}
-      </div>
-      <div className={styles.rating}>{ratingLine(stored.rating)}</div>
-      <div className="card-meta" style={{ marginTop: "auto", justifyContent: "space-between" }}>
-        <span>更新于 {formatTime(stored.updated_at)}</span>
-        <span className={styles.actions}>
-          {onEdit && (
-            <button type="button" className="btn btn-ghost" onClick={onEdit}>
-              编辑
-            </button>
+        <div className={styles.skills}>
+          {shown.length === 0 ? (
+            <span className={styles.more}>无技能</span>
+          ) : (
+            shown.map((s) => (
+              <span key={s} className={styles.skill}>
+                {s}
+              </span>
+            ))
           )}
-          {onDuplicate && (
-            <button type="button" className="btn btn-ghost" onClick={onDuplicate}>
-              复制
-            </button>
-          )}
-          {onDelete && (
-            <button type="button" className={`btn btn-ghost ${styles.del}`} onClick={onDelete}>
-              删除
-            </button>
-          )}
+          {more > 0 && <span className={styles.more}>+{more}</span>}
+        </div>
+        <span
+          className={styles.meta}
+          title={[
+            providerName ? `服务 ${providerName}` : "兼容模式 · 无 provider",
+            subModels,
+            p.memory_id ? `记忆 ${p.memory_id}` : null,
+            `更新于 ${formatTime(stored.updated_at)}`,
+          ]
+            .filter((x): x is string => !!x)
+            .join(" · ")}
+        >
+          {p.model} · T={p.temperature ?? 0.3}
         </span>
+        {(onEdit || onDuplicate || onDelete) && (
+          <div className={styles.actions}>
+            {onEdit && (
+              <button type="button" className={styles.action} onClick={onEdit}>
+                编辑
+              </button>
+            )}
+            {onDuplicate && (
+              <button type="button" className={styles.action} onClick={onDuplicate}>
+                复制
+              </button>
+            )}
+            {onDelete && (
+              <button type="button" className={`${styles.action} ${styles.del}`} onClick={onDelete}>
+                删除
+              </button>
+            )}
+          </div>
+        )}
       </div>
-    </div>
+    </article>
   );
 }

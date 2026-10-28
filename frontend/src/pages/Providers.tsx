@@ -1,5 +1,5 @@
-// Providers 页（设计稿 3a / 3d）：ProviderCard 网格（引用数由 useAgentLibrary 计算）+
-// ProviderEditor 抽屉 + 删除被引用（409）只读对话框 + 空态。
+// Providers「炼金工坊」（规格 §6，设计稿 1l 左）：药剂木牌网格（引用数由 useAgentLibrary 计算）+
+// 虚线「+ 新建药剂（provider）」+ ProviderEditor 抽屉 + 删除被引用（409）只读对话框 + 空态。
 
 import { useEffect, useState } from "react";
 import type { ProviderInput, ProviderPublic, ProviderTestResult } from "../api/providers";
@@ -88,8 +88,8 @@ export default function Providers(): JSX.Element {
     <div className={styles.page}>
       <div className={styles.head}>
         <div>
-          <h3 className={styles.title}>模型服务</h3>
-          <p className="text-muted" style={{ fontSize: 13, margin: 0 }}>
+          <h2 className={styles.title}>炼金工坊 · 模型服务</h2>
+          <p className={styles.lead}>
             {items.length} 个 provider · 存于 data/providers/（本地 0600）· 密钥永不回传
           </p>
         </div>
@@ -110,13 +110,11 @@ export default function Providers(): JSX.Element {
       {error && <div className={styles.error}>{error}</div>}
 
       {loading && items.length === 0 ? (
-        <p className="text-muted" style={{ fontSize: 13 }}>
-          载入中…
-        </p>
+        <p className={styles.lead}>载入中…</p>
       ) : items.length === 0 ? (
         <div className={styles.empty}>
           <div className={styles.emptyIcon}>⌁</div>
-          <span className={styles.emptyTitle}>还没有模型服务</span>
+          <span className={styles.emptyTitle}>工坊里还没有药剂</span>
           <span className={styles.emptyDesc}>
             Ollama 用户：安装后点「新建」选择 Ollama，地址保持默认即可。
           </span>
@@ -146,6 +144,16 @@ export default function Providers(): JSX.Element {
               onDelete={() => setDeleting(p)}
             />
           ))}
+          <button
+            type="button"
+            className={styles.addCard}
+            onClick={() => {
+              setSaveError(null);
+              setEditing({ provider: null });
+            }}
+          >
+            + 新建药剂（provider）
+          </button>
         </div>
       )}
 

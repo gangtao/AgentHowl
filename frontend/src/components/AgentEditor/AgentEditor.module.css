@@ -1,15 +1,69 @@
-/* AgentEditor 抽屉（设计稿 2c）。 */
+/* AgentEditor「招募告示」（规格 §6，设计稿 4e）：羊皮纸抽屉里的四节。 */
 
 .groups {
   display: flex;
   flex-direction: column;
-  gap: 22px;
+  gap: 24px;
 }
 
 .group {
   display: flex;
   flex-direction: column;
+  gap: 12px;
+}
+
+/* 分节眉题：一 · 身份 / 三 · 人格 / 四 · 声线（二由 SkillPicker 自带） */
+.kicker {
+  font-size: 11px;
+  letter-spacing: 2px;
+  color: var(--ah-parch-link);
+}
+
+.identity {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.identity > :first-child {
+  border: 3px solid var(--ah-wood-btn-edge);
+  font-family: var(--font-heading);
+  color: var(--ah-text-bright);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.3);
+}
+
+.identityMain {
+  display: flex;
+  flex-direction: column;
   gap: 10px;
+  min-width: 0;
+}
+
+.avatarRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.remove {
+  color: var(--ah-wolf);
+  border-color: transparent;
+}
+
+.twoCol {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 10px 20px;
+  align-items: start;
+}
+
+.sideCol {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
 }
 
 .err {
@@ -29,7 +83,7 @@
 
 .hint {
   font-size: 11.5px;
-  color: var(--color-neutral-500);
+  color: var(--ah-parch-muted);
   line-height: 1.5;
 }
 
@@ -38,37 +92,42 @@
   flex: 1;
 }
 
-.tempRow {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 20px;
-  align-items: center;
-}
-
 .tempValue {
-  color: var(--color-neutral-300);
+  color: var(--ah-parch-ink);
 }
 
 .range {
   width: 100%;
-  accent-color: var(--color-accent);
+  accent-color: var(--ah-fire-lo);
+}
+
+.rangeEnds {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10px;
+  color: var(--ah-parch-muted);
+  margin-top: 2px;
 }
 
 .toggle {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  font-size: 13px;
+  font-size: 12px;
   cursor: pointer;
 }
 
+.toggleKey {
+  color: var(--ah-parch-muted);
+}
+
 .toggle input {
-  accent-color: var(--color-accent);
+  accent-color: var(--ah-fire-lo);
 }
 
 .toggleHint {
-  font-size: 10.5px;
-  color: var(--color-neutral-500);
+  font-size: 11px;
+  color: var(--ah-parch-ink-2);
 }
 
 .memRow {
@@ -79,15 +138,8 @@
 }
 
 .mono {
-  font-family: ui-monospace, Menlo, monospace;
+  font-family: var(--font-mono);
   font-size: 12.5px;
-}
-
-.avatarRow {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  flex-wrap: wrap;
 }
 
 .anchorRow {
@@ -101,4 +153,11 @@
 .anchorRow audio {
   height: 32px;
   max-width: 260px;
+}
+
+@media (max-width: 900px) {
+  .identity,
+  .twoCol {
+    grid-template-columns: 1fr;
+  }
 }

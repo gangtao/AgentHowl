@@ -406,7 +406,8 @@ select.input {
 .seg-opt:not(:has(input:checked)):hover {
   background: rgba(227, 166, 72, 0.1);
 }
-.seg-opt:has(input:focus-visible) {
+.seg-opt:has(input:focus-visible),
+.seg-opt:focus-visible {
   outline: 2px solid var(--ah-fire);
   outline-offset: -2px;
 }

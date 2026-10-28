@@ -73,7 +73,7 @@ export default function ModelSelect({ providers, value, onChange }: ModelSelectP
     <div className={styles.root}>
       <div className={styles.grid2}>
         <div className="field">
-          <label htmlFor={`${listId}-prov`}>模型服务</label>
+          <label htmlFor={`${listId}-prov`}>模型服务（药剂）</label>
           <select
             id={`${listId}-prov`}
             className="input"
@@ -99,7 +99,7 @@ export default function ModelSelect({ providers, value, onChange }: ModelSelectP
                 disabled={fetching}
                 onClick={() => void fetchModels(current.provider_id)}
               >
-                ↻ 拉取模型列表
+                ↻ 拉取列表
               </button>
             )}
           </label>
@@ -159,7 +159,9 @@ export default function ModelSelect({ providers, value, onChange }: ModelSelectP
             <code>{`${PROVIDER_PREFIX[current.kind]}/${value.model || "…"}`}</code>
           </>
         ) : (
-          <>模型串需含前缀（如 <code>ollama/qwen2.5:7b</code>）；凭据走环境变量，行为与之前相同。</>
+          <>
+            模型串需含前缀（如 <code>ollama/qwen2.5:7b</code>）；凭据走环境变量，行为与之前相同。
+          </>
         )}
       </span>
     </div>

@@ -1,4 +1,9 @@
-/* 历史对局表格（issue #98）：nocturne `.table` + 座位列截断。 */
+/* 历史对局「村志」账本（规格 §6）：羊皮纸容器 + 全局 .table-parch。 */
+
+.ledger {
+  padding: 22px 28px;
+  overflow-x: auto;
+}
 
 .nowrap {
   white-space: nowrap;
@@ -6,9 +11,26 @@
 
 .gameId {
   display: block;
-  font-family: ui-monospace, Menlo, monospace;
-  font-size: 10.5px;
-  color: var(--color-neutral-500);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ah-parch-muted);
+}
+
+/* 直播中：篝火实底 + 墨字（全局 .tag-accent-2 是夜色上的浅金，羊皮纸上不可读） */
+.tagLive {
+  background: var(--ah-fire);
+  color: #2b1a08;
+}
+
+.tagAborted {
+  border: 1px solid var(--ah-parch-muted);
+  color: var(--ah-parch-ink-2);
+}
+
+.winner {
+  font-family: var(--font-heading);
+  font-weight: var(--font-heading-weight);
+  font-size: 15px;
 }
 
 .seats {
@@ -16,18 +38,40 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: color-mix(in srgb, var(--color-text) 75%, transparent);
-  font-size: 12.5px;
+  color: var(--ah-parch-ink-2);
+  font-size: 12px;
 }
 
 .hint {
   font-size: 12px;
-  color: var(--color-neutral-500);
+  color: var(--ah-parch-muted);
   white-space: nowrap;
 }
 
-.deleteBtn {
+/* 操作列：木签「回放 / 观看」、描边「分享」、红字「删除」；小号。 */
+.act {
+  padding: 4px 12px;
+  font-size: 12px;
+  min-height: 0;
+}
+
+.hint + .act,
+.act + .act {
   margin-left: 8px;
+}
+
+.share {
+  border-color: var(--ah-parch-muted);
+  color: var(--ah-parch-ink-2);
+}
+
+.del {
+  border-color: transparent;
+  color: var(--ah-wolf);
+}
+
+.del:disabled {
+  color: var(--ah-parch-muted);
 }
 
 .empty {
@@ -43,26 +87,22 @@
   width: 72px;
   height: 72px;
   border-radius: 50%;
-  border: 1px dashed var(--color-neutral-700);
+  border: 1px dashed var(--ah-parch-muted);
   display: grid;
   place-items: center;
-  color: var(--color-neutral-600);
+  color: var(--ah-parch-muted);
   font-size: 24px;
   margin-bottom: 6px;
 }
 
 .emptyTitle {
-  font-size: 16px;
-  font-weight: 500;
-}
-
-.emptyTitle a {
-  color: var(--color-accent);
+  font-family: var(--font-heading);
+  font-size: 18px;
 }
 
 .emptyDesc {
   font-size: 12.5px;
-  color: var(--color-neutral-500);
+  color: var(--ah-parch-muted);
   line-height: 1.6;
   max-width: 320px;
 }

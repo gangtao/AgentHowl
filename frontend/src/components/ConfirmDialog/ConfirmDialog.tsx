@@ -32,7 +32,10 @@ export default function ConfirmDialog({
         aria-label={title}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="dialog-title" style={{ fontSize: 17 }}>
+        <div
+          className="dialog-title"
+          style={{ fontSize: 20, color: danger ? "var(--ah-wolf)" : undefined }}
+        >
           {title}
         </div>
         <div className="dialog-body">{body}</div>

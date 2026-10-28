@@ -1,4 +1,4 @@
-/* ModelSelect（设计稿 3c）。 */
+/* ModelSelect（规格 §6 招募告示 · 身份节）：药剂下拉 + mono 模型。 */
 
 .root {
   display: flex;
@@ -19,18 +19,18 @@
 }
 
 .mono {
-  font-family: ui-monospace, Menlo, monospace;
+  font-family: var(--font-mono);
   font-size: 12.5px;
 }
 
 .note {
   font-size: 11px;
-  color: var(--color-neutral-500);
+  color: var(--ah-parch-muted);
   line-height: 1.5;
 }
 
 .note code {
-  font-family: ui-monospace, Menlo, monospace;
+  font-family: var(--font-mono);
 }
 
 @media (max-width: 900px) {

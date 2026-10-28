@@ -37,6 +37,12 @@ describe("History 删除", () => {
     useHistory.setState({ items: [], loading: false, error: null });
   });
 
+  it("标题「村志 · 历史对局」", async () => {
+    stubFetch();
+    render(<History />);
+    expect(await screen.findByRole("heading", { name: "村志 · 历史对局" })).toBeInTheDocument();
+  });
+
   it("确认后删除并移除该行", async () => {
     const fetchMock = stubFetch();
     render(<History />);
@@ -62,7 +68,9 @@ describe("History 删除", () => {
     expect(screen.queryByRole("alertdialog")).toBeNull();
     expect(screen.getByText(/g_done/)).toBeInTheDocument();
     expect(
-      fetchMock.mock.calls.some((c) => (c as unknown as [string, RequestInit])[1]?.method === "DELETE"),
+      fetchMock.mock.calls.some(
+        (c) => (c as unknown as [string, RequestInit])[1]?.method === "DELETE",
+      ),
     ).toBe(false);
   });
 });
@@ -76,7 +84,15 @@ describe("History 副标题（issue #120）", () => {
     await waitFor(() => expect(screen.getByText(/局可回放/)).toBeInTheDocument());
     expect(screen.queryByText(/只显示你创建的对局/)).toBeNull();
     useAuth.setState({
-      user: { user_id: "u", username: "a", email: "a@x", role: "admin", status: "active", email_verified: true, created_at: "t" },
+      user: {
+        user_id: "u",
+        username: "a",
+        email: "a@x",
+        role: "admin",
+        status: "active",
+        email_verified: true,
+        created_at: "t",
+      },
       status: "authed",
     });
     await waitFor(() => expect(screen.getByText(/全部用户的对局/)).toBeInTheDocument());

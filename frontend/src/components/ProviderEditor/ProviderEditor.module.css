@@ -1,4 +1,4 @@
-/* ProviderEditor 抽屉（设计稿 3b）。 */
+/* ProviderEditor「配 方」羊皮纸抽屉（规格 §6）：类型 chips 选中篝火描边。 */
 
 .body {
   display: flex;
@@ -17,24 +17,25 @@
   border-radius: var(--radius-md);
   font: inherit;
   font-size: 12.5px;
-  color: var(--color-neutral-400);
+  color: var(--ah-parch-ink-2);
   background: transparent;
   border: 0;
-  box-shadow: inset 0 0 0 1px var(--color-divider);
+  box-shadow: inset 0 0 0 1px var(--ah-parch-edge);
   cursor: pointer;
 }
 
 .kind:hover {
-  color: var(--color-text);
+  color: var(--ah-parch-ink);
 }
 
 .kindOn {
-  color: var(--color-accent);
-  box-shadow: inset 0 0 0 1px var(--color-accent);
+  color: var(--ah-parch-ink);
+  background: rgba(227, 166, 72, 0.12);
+  box-shadow: inset 0 0 0 1px var(--ah-fire);
 }
 
 .mono {
-  font-family: ui-monospace, Menlo, monospace;
+  font-family: var(--font-mono);
   font-size: 12.5px;
 }
 
@@ -57,7 +58,7 @@
   display: block;
   margin-top: 4px;
   font-size: 11px;
-  color: var(--color-neutral-500);
+  color: var(--ah-parch-muted);
   line-height: 1.5;
 }
 
@@ -80,7 +81,7 @@
   flex: 1;
   min-width: 0;
   font-size: 11.5px;
-  color: var(--color-neutral-500);
+  color: var(--ah-parch-muted);
 }
 
 .testBox {
@@ -110,8 +111,8 @@
 .testMeta {
   margin-left: auto;
   font-size: 11px;
-  color: var(--color-neutral-500);
-  font-family: ui-monospace, Menlo, monospace;
+  color: var(--ah-parch-muted);
+  font-family: var(--font-mono);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -121,11 +122,11 @@
   margin: 0;
   padding: 10px 12px;
   border-radius: var(--radius-md);
-  background: var(--color-bg);
-  font-family: ui-monospace, Menlo, monospace;
+  background: var(--ah-parch-hi);
+  font-family: var(--font-mono);
   font-size: 11.5px;
   line-height: 1.6;
-  color: var(--color-neutral-300);
+  color: var(--ah-parch-ink);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }

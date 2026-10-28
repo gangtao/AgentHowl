@@ -1,5 +1,5 @@
-// AgentLibrary 页（设计稿 2b / 2d）：网格 AgentCard + 新建 / 导入 JSON / 导出全部 /
-// 编辑 / 复制 / 删除（确认框）+ 空态。
+// AgentLibrary「村民名册」（规格 §6，设计稿 1k）：角色牌网格 + 招募 / 导入 JSON / 导出全部 /
+// 编辑 / 复制 / 删除（确认框）+ 空态。排序分段「声望 / 最近更新」只在页面内存里。
 
 import { useEffect, useRef, useState } from "react";
 import type { AgentProfile, StoredAgent } from "../api/agents";
@@ -131,36 +131,36 @@ export default function AgentLibrary(): JSX.Element {
     <div className={styles.page}>
       <div className={styles.head}>
         <div>
-          <h3 className={styles.title}>Agent 档案库</h3>
-          <p className="text-muted" style={{ fontSize: 13, margin: 0 }}>
+          <h2 className={styles.title}>村民名册 · Agent 档案库</h2>
+          <p className={styles.lead}>
             {items.length} 个档案 · 存于 data/agents/ · 同一 memory_id 跨局累积经验
           </p>
         </div>
         <div className={styles.headActions}>
-          <div className={styles.sortGroup} role="group" aria-label="排序">
+          <span className={`seg ${styles.sortGroup}`} role="group" aria-label="排序">
             <button
               type="button"
-              className={`btn btn-ghost ${sort === "updated" ? styles.sortOn : ""}`}
+              className="seg-opt"
+              aria-pressed={sort === "rating"}
+              onClick={() => setSort("rating")}
+            >
+              声望
+            </button>
+            <button
+              type="button"
+              className="seg-opt"
               aria-pressed={sort === "updated"}
               onClick={() => setSort("updated")}
             >
               最近更新
             </button>
-            <button
-              type="button"
-              className={`btn btn-ghost ${sort === "rating" ? styles.sortOn : ""}`}
-              aria-pressed={sort === "rating"}
-              onClick={() => setSort("rating")}
-            >
-              积分
-            </button>
-          </div>
-          <button type="button" className="btn btn-secondary" onClick={() => fileRef.current?.click()}>
+          </span>
+          <button type="button" className="btn btn-ghost" onClick={() => fileRef.current?.click()}>
             导入 JSON
           </button>
           <button
             type="button"
-            className="btn btn-secondary"
+            className="btn btn-ghost"
             disabled={items.length === 0}
             onClick={exportAll}
           >
@@ -174,7 +174,7 @@ export default function AgentLibrary(): JSX.Element {
               setEditing({ stored: null });
             }}
           >
-            + 新建
+            + 招募
           </button>
           <input
             ref={fileRef}
@@ -194,21 +194,19 @@ export default function AgentLibrary(): JSX.Element {
       {notice && <div className={styles.notice}>{notice}</div>}
 
       {loading && items.length === 0 ? (
-        <p className="text-muted" style={{ fontSize: 13 }}>
-          载入中…
-        </p>
+        <p className={styles.lead}>载入中…</p>
       ) : items.length === 0 ? (
         <div className={styles.empty}>
           <div className={styles.emptyIcon}>?</div>
-          <span className={styles.emptyTitle}>还没有 Agent</span>
-          <span className={styles.emptyDesc}>先建一个：名字、模型、人格、技能与记忆标识。</span>
+          <span className={styles.emptyTitle}>名册还是空的</span>
+          <span className={styles.emptyDesc}>先招募一位：名字、模型、人格、技能与记忆标识。</span>
           <button
             type="button"
             className="btn btn-primary"
             style={{ marginTop: 8 }}
             onClick={() => setEditing({ stored: null })}
           >
-            + 新建 Agent
+            + 招募
           </button>
         </div>
       ) : (
@@ -236,7 +234,7 @@ export default function AgentLibrary(): JSX.Element {
               setEditing({ stored: null });
             }}
           >
-            + 新建 Agent
+            + 招募
           </button>
         </div>
       )}

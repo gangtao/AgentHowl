@@ -1,17 +1,29 @@
-/* 管理员用户页（issue #114）：页面容器与 History 页同形。 */
+/* 管理员用户页「长老名册」（规格 §6，设计稿 1l 右）：羊皮纸表。 */
 
 .page {
   display: flex;
   flex-direction: column;
-  gap: var(--space-6);
-  padding: 36px var(--space-8) 32px 56px;
+  gap: var(--space-5);
+  padding: 36px 56px 32px;
   min-height: 0;
   overflow-y: auto;
 }
 
 .title {
-  font-size: 22px;
-  margin: 0 0 4px;
+  margin: 0;
+  font-size: 30px;
+  color: var(--ah-text-bright);
+}
+
+.lead {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--ah-text-muted);
+}
+
+.ledger {
+  padding: 18px 22px;
+  overflow-x: auto;
 }
 
 .error {
@@ -22,14 +34,55 @@
   background: color-mix(in srgb, var(--ah-err) 10%, transparent);
 }
 
+.mono {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--ah-parch-ink-2);
+}
+
+.role[data-role='admin'] {
+  color: var(--ah-parch-link);
+  font-weight: 600;
+}
+
+.muted {
+  color: var(--ah-parch-muted);
+}
+
 .nowrap {
   white-space: nowrap;
 }
 
 .actions {
   display: flex;
-  gap: 8px;
+  gap: 10px;
   flex-wrap: wrap;
+}
+
+/* 操作：禁用红字、提升 / 降级与标记验证墨色 */
+.action {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  font-size: 12px;
+  color: var(--ah-wood-hi);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.action:hover {
+  text-decoration: underline;
+}
+
+.action:disabled {
+  color: var(--ah-parch-muted);
+  cursor: default;
+  text-decoration: none;
+}
+
+.danger {
+  color: var(--ah-wolf);
 }
 
 @media (max-width: 900px) {

@@ -1,4 +1,4 @@
-// 历史对局页（issue #98 设计 §3）：列出 data/games/ 里的全部对局，已结束的可回放。
+// 历史对局页「村志」（规格 §6，设计稿 1j）：列出 data/games/ 里的全部对局，已结束的可回放。
 // 删除（issue #100）：行内「删除」→ ConfirmDialog → store.remove；服务端 409/404 落到页面错误条。
 
 import { useEffect, useState } from "react";
@@ -40,14 +40,20 @@ export default function History(): JSX.Element {
     <div className={styles.page}>
       <div className={styles.head}>
         <div>
-          <h3 className={styles.title}>历史对局</h3>
-          <p className="text-muted" style={{ fontSize: 13, margin: 0 }}>
+          <h2 className={styles.title}>村志 · 历史对局</h2>
+          <p className={styles.lead}>
             {items.length} 局 · {finished} 局可回放
-            {user !== null && (user.role === "admin" ? " · 全部用户的对局" : " · 只显示你创建的对局")}
+            {user !== null &&
+              (user.role === "admin" ? " · 全部用户的对局" : " · 只显示你创建的对局")}
           </p>
         </div>
         <div className={styles.headActions}>
-          <button type="button" className="btn" disabled={loading} onClick={() => void refresh()}>
+          <button
+            type="button"
+            className="btn btn-ghost"
+            disabled={loading}
+            onClick={() => void refresh()}
+          >
             刷新
           </button>
         </div>
@@ -56,9 +62,7 @@ export default function History(): JSX.Element {
       {error !== null && <div className={styles.error}>{error}</div>}
 
       {loading && items.length === 0 ? (
-        <p className="text-muted" style={{ fontSize: 13 }}>
-          载入中…
-        </p>
+        <p className={styles.lead}>载入中…</p>
       ) : (
         <HistoryTable
           items={items}
@@ -86,8 +90,8 @@ export default function History(): JSX.Element {
           title="删除这局？"
           body={
             <>
-              将删除 <code>{deleting.game_id}</code> 的事件文件，回放随之不可用，不可恢复。
-              Agent 的跨局记忆不受影响。
+              将删除 <code>{deleting.game_id}</code> 的事件文件，回放随之不可用，不可恢复。 Agent
+              的跨局记忆不受影响。
             </>
           }
           confirmLabel="确认删除"
