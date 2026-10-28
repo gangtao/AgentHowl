@@ -1,10 +1,10 @@
-/* AgentLibrary 页（设计稿 2b / 2d）。 */
+/* AgentLibrary「村民名册」（规格 §6，设计稿 1k）：六列角色牌。 */
 
 .page {
   display: flex;
   flex-direction: column;
-  gap: var(--space-6);
-  padding: 36px var(--space-8) 32px 56px;
+  gap: var(--space-5);
+  padding: 36px 56px 32px;
   min-height: 0;
   overflow-y: auto;
 }
@@ -16,51 +16,60 @@
   flex-wrap: wrap;
 }
 
-.sortGroup {
-  display: inline-flex;
-  gap: 2px;
-  margin-right: 8px;
-}
-
-.sortOn {
-  color: var(--color-accent);
-  box-shadow: inset 0 0 0 1px var(--color-accent-700);
-}
-
 .title {
-  font-size: 22px;
-  margin: 0 0 4px;
+  margin: 0;
+  font-size: 30px;
+  color: var(--ah-text-bright);
+}
+
+.lead {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--ah-text-muted);
+}
+
+.sortGroup {
+  margin-right: 4px;
+}
+
+.sortGroup > button {
+  background: none;
+  border: 0;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
 }
 
 .headActions {
   margin-left: auto;
   display: flex;
-  gap: 8px;
+  align-items: center;
+  gap: 10px;
   flex-wrap: wrap;
 }
 
 .grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: var(--space-4);
+  grid-template-columns: repeat(auto-fill, minmax(196px, 1fr));
+  gap: 16px;
 }
 
 .addCard {
-  border: 1px dashed var(--color-neutral-800);
-  border-radius: var(--radius-md);
+  border: 2px dashed var(--ah-wood-edge);
+  border-radius: var(--radius-lg);
   background: transparent;
   display: grid;
   place-items: center;
-  color: var(--color-neutral-500);
+  color: var(--ah-text-muted);
   font: inherit;
   font-size: 13px;
-  min-height: 160px;
+  min-height: 220px;
   cursor: pointer;
 }
 
 .addCard:hover {
-  color: var(--color-accent);
-  border-color: var(--color-accent-700);
+  color: var(--ah-gold);
+  border-color: var(--ah-fire);
 }
 
 .error {
@@ -73,10 +82,11 @@
 
 .notice {
   font-size: 12px;
-  color: var(--color-neutral-300);
+  color: var(--ah-text);
   padding: 8px 10px;
   border-radius: var(--radius-sm);
-  background: var(--color-surface);
+  background: rgba(227, 166, 72, 0.1);
+  border: 1px solid var(--ah-wood-edge);
 }
 
 .empty {
@@ -92,28 +102,24 @@
   width: 72px;
   height: 72px;
   border-radius: 50%;
-  border: 1px dashed var(--color-neutral-700);
+  border: 1px dashed var(--ah-wood-edge);
   display: grid;
   place-items: center;
-  color: var(--color-neutral-600);
+  color: var(--ah-text-muted);
+  font-family: var(--font-heading);
   font-size: 26px;
   margin-bottom: 6px;
 }
 
 .emptyTitle {
-  font-size: 16px;
-  font-weight: 500;
+  font-family: var(--font-heading);
+  font-size: 18px;
+  color: var(--ah-text-bright);
 }
 
 .emptyDesc {
   font-size: 12.5px;
-  color: var(--color-neutral-500);
-}
-
-@media (max-width: 1100px) {
-  .grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
+  color: var(--ah-text-muted);
 }
 
 @media (max-width: 900px) {
@@ -122,7 +128,7 @@
   }
 
   .grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .headActions {

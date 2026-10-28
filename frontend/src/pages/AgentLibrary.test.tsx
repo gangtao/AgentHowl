@@ -7,7 +7,13 @@ import { useAgentLibrary } from "../store/agents";
 import { useProviders } from "../store/providers";
 import AgentLibrary from "./AgentLibrary";
 
-function agent(id: string, name: string, rating: number, games: number, updated: string): StoredAgent {
+function agent(
+  id: string,
+  name: string,
+  rating: number,
+  games: number,
+  updated: string,
+): StoredAgent {
   return {
     agent_id: id,
     profile: { name, model: "m", skills: [] },
@@ -48,13 +54,16 @@ describe("AgentLibrary 排序", () => {
   });
   afterEach(() => vi.unstubAllGlobals());
 
-  it("默认最近更新；点「积分」后按积分排，再点「最近更新」恢复", async () => {
+  it("默认最近更新；点「声望」后按积分排，再点「最近更新」恢复", async () => {
     stubFetch();
     render(<AgentLibrary />);
     await screen.findByText("顶尖");
     expect(cardNames()).toEqual(["新人", "中坚", "老将", "顶尖"]);
-    const byRating = screen.getByRole("button", { name: "积分" });
-    expect(screen.getByRole("button", { name: "最近更新" })).toHaveAttribute("aria-pressed", "true");
+    const byRating = screen.getByRole("button", { name: "声望" });
+    expect(screen.getByRole("button", { name: "最近更新" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
     fireEvent.click(byRating);
     expect(cardNames()).toEqual(["顶尖", "老将", "中坚", "新人"]);
     expect(byRating).toHaveAttribute("aria-pressed", "true");
