@@ -229,6 +229,7 @@ export default function AgentEditor({
 
   return (
     <Drawer
+      kicker="招 募 告 示"
       title={stored ? `编辑 Agent · ${stored.profile.name ?? ""}` : "新建 Agent"}
       idTag={stored?.agent_id ?? null}
       width={620}

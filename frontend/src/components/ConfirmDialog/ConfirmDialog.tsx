@@ -1,7 +1,6 @@
-// 确认框（设计稿 2d 删除确认 / 3d 删除被引用只读版）。用 tokens.css 的 .dialog 全局类。
+// 确认框（删除确认 / 删除被引用只读版）。用 global.css 的木牌 .dialog 全局类；危险操作用血色 .btn-danger。
 
 import type { ReactNode } from "react";
-import styles from "./ConfirmDialog.module.css";
 
 export interface ConfirmDialogProps {
   title: string;
@@ -45,7 +44,7 @@ export default function ConfirmDialog({
           )}
           <button
             type="button"
-            className={`btn btn-primary ${danger ? styles.danger : ""}`}
+            className={danger ? "btn btn-danger" : "btn btn-primary"}
             onClick={onConfirm}
           >
             {readOnly ? "知道了" : confirmLabel}

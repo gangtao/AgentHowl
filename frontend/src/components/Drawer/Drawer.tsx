@@ -1,13 +1,20 @@
-// 右侧抽屉（设计稿 2c AgentEditor 620px / 3b ProviderEditor 560px）。
-// 只负责壳：遮罩、标题行（标题 + 可选 id tag + ✕）、可滚动主体、底部操作区；Esc 关闭。
+// 右侧抽屉（设计稿 4e「招募告示」羊皮纸抽屉 / 木牌变体）。
+// 只负责壳：遮罩、左侧木轴、标题行（kicker + 标题 + 可选 id 签 + ✕）、可滚动主体、底部操作区；Esc 关闭。
+// tone="parch"（缺省）时根节点带全局类 .ah-parch，内部 .input 自动换浅底。
 
 import { useEffect, type CSSProperties, type ReactNode } from "react";
 import styles from "./Drawer.module.css";
 
+export type DrawerTone = "wood" | "parch";
+
 export interface DrawerProps {
   title: string;
-  /** 标题右侧的等宽 id 徽标（如 `a_3f9c1e2b`）。 */
+  /** 标题上方的小字眉题，如「招 募 告 示」。 */
+  kicker?: string;
+  /** 标题右侧的等宽 id 签（如 `a_3f9c1e2b`）。 */
   idTag?: string | null;
+  /** 羊皮纸（缺省）或木牌。 */
+  tone?: DrawerTone;
   width?: number;
   onClose(): void;
   footer: ReactNode;
@@ -16,7 +23,9 @@ export interface DrawerProps {
 
 export default function Drawer({
   title,
+  kicker,
   idTag,
+  tone = "parch",
   width = 620,
   onClose,
   footer,
@@ -34,19 +43,22 @@ export default function Drawer({
     <>
       <div className={styles.backdrop} onClick={onClose} />
       <div
-        className={styles.panel}
+        className={`${styles.panel} ${tone === "parch" ? "ah-parch" : ""}`}
+        data-tone={tone}
         style={{ "--drawer-width": `${width}px` } as CSSProperties}
         role="dialog"
         aria-modal="true"
         aria-label={title}
       >
+        <span className={styles.spine} aria-hidden="true" />
         <div className={styles.head}>
-          <span className={styles.title}>{title}</span>
-          {idTag && (
-            <span className="tag tag-neutral" style={{ fontFamily: "ui-monospace, Menlo, monospace" }}>
-              {idTag}
+          <div className={styles.heading}>
+            {kicker && <span className={styles.kicker}>{kicker}</span>}
+            <span className={styles.title}>
+              {title}
+              {idTag && <span className={styles.idTag}>{idTag}</span>}
             </span>
-          )}
+          </div>
           <button type="button" className={styles.close} onClick={onClose} aria-label="关闭">
             ✕
           </button>

@@ -1,17 +1,27 @@
-/* ShareDialog（设计稿 1b）。 */
+/* 分享对话框（设计稿 4f「传 · 分享对局」）：木牌 .dialog 之上的说明行、链接行与羊皮纸提示条。 */
+
+.lead {
+  margin: -4px 0 0;
+  font-size: 12px;
+  color: var(--ah-text-muted);
+}
 
 .row {
   display: flex;
-  gap: 6px;
+  gap: 8px;
+  align-items: center;
 }
 
-.row button {
-  flex: none;
+.row :global(.input) {
+  flex: 1;
+  min-width: 0;
 }
 
 .mono {
-  font-family: ui-monospace, Menlo, monospace;
+  font-family: var(--font-mono);
   font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
   text-overflow: ellipsis;
 }
 
@@ -20,6 +30,15 @@
   gap: 8px;
   align-items: flex-start;
   font-size: 12px;
-  color: var(--ah-warn);
-  line-height: 1.5;
+  line-height: 1.6;
+  padding: 8px 10px;
+  border-radius: 4px;
+  background: var(--ah-parch);
+  color: var(--ah-parch-ink-2);
+  border: 1px solid var(--ah-parch-edge);
+}
+
+.warn > span:first-child:not(:only-child) {
+  color: var(--ah-parch-danger);
+  flex: none;
 }

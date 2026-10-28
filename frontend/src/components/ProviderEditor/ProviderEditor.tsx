@@ -147,6 +147,7 @@ export default function ProviderEditor({
 
   return (
     <Drawer
+      kicker="配 方"
       title={provider ? `编辑模型服务 · ${provider.name}` : "新建模型服务"}
       idTag={provider?.provider_id ?? null}
       width={560}

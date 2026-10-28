@@ -1,10 +1,10 @@
-/* 右侧抽屉（设计稿 2c / 3b）：遮罩 + 固定右侧面板，grid-rows auto 1fr auto。 */
+/* 右侧抽屉（设计稿 4e）：遮罩 + 固定右侧面板 + 左侧木轴，grid-rows auto 1fr auto。 */
 
 .backdrop {
   position: fixed;
   inset: 0;
   z-index: 40;
-  background: color-mix(in srgb, var(--color-neutral-900) 45%, transparent);
+  background: rgba(6, 8, 13, 0.55);
 }
 
 .panel {
@@ -14,76 +14,124 @@
   bottom: 0;
   z-index: 41;
   width: min(var(--drawer-width, 620px), 100vw);
-  background: var(--color-surface);
-  box-shadow: var(--shadow-lg);
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
+  border-radius: 0;
+  box-shadow: -30px 0 80px rgba(0, 0, 0, 0.7);
+}
+
+/* 羊皮纸（缺省，.ah-parch 已给底色 / 字色 / 内阴影） */
+.panel[data-tone='parch'] {
+  --drawer-line: var(--ah-wood-hi);
+  --drawer-kicker: var(--ah-parch-muted);
+  --drawer-foot: #e2d4b6;
+  --drawer-close: var(--ah-parch-muted);
+  --drawer-close-hover: var(--ah-parch-ink);
+}
+
+/* 木牌 */
+.panel[data-tone='wood'] {
+  --drawer-line: var(--ah-wood-edge);
+  --drawer-kicker: var(--ah-text-muted);
+  --drawer-foot: rgba(0, 0, 0, 0.25);
+  --drawer-close: var(--ah-text-muted);
+  --drawer-close-hover: var(--ah-text-bright);
+  background: linear-gradient(180deg, var(--ah-wood-hi), var(--ah-wood-lo));
+  color: var(--ah-text);
+}
+
+.spine {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 14px;
+  background: linear-gradient(90deg, var(--ah-wood-btn-hi), var(--ah-wood-hi));
+  pointer-events: none;
 }
 
 .head {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
+  justify-content: space-between;
   gap: 12px;
-  padding: 20px 28px 14px;
-  background: linear-gradient(
-      to right,
-      transparent,
-      var(--color-divider) 48px,
-      var(--color-divider) calc(100% - 48px),
-      transparent
-    )
-    no-repeat bottom / 100% 1px;
+  padding: 26px 32px 14px 40px;
+  border-bottom: 2px solid var(--drawer-line);
+}
+
+.heading {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.kicker {
+  font-size: 11px;
+  letter-spacing: 3px;
+  color: var(--drawer-kicker);
 }
 
 .title {
-  font-size: 18px;
-  font-weight: 500;
+  font-family: var(--font-heading);
+  font-size: 30px;
+  line-height: 1.15;
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.idTag {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--drawer-kicker);
 }
 
 .close {
-  margin-left: auto;
-  color: var(--color-neutral-500);
+  flex: none;
+  color: var(--drawer-close);
   background: none;
   border: 0;
   cursor: pointer;
-  font-size: 15px;
+  font-size: 20px;
   line-height: 1;
-  padding: 4px 6px;
+  padding: 2px 6px;
 }
-
 .close:hover {
-  color: var(--color-text);
+  color: var(--drawer-close-hover);
 }
 
 .body {
-  padding: 20px 28px;
+  padding: 18px 32px 18px 40px;
   min-height: 0;
   overflow-y: auto;
+  font-size: 13px;
+  line-height: 1.6;
 }
 
 .foot {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 14px 28px 20px;
-  background: linear-gradient(
-      to right,
-      transparent,
-      var(--color-divider) 48px,
-      var(--color-divider) calc(100% - 48px),
-      transparent
-    )
-    no-repeat top / 100% 1px;
+  gap: 12px;
+  padding: 16px 32px 20px 40px;
+  border-top: 2px solid var(--drawer-line);
+  background: var(--drawer-foot);
 }
 
 @media (max-width: 900px) {
   .panel {
     width: 100vw;
   }
-
+  .spine {
+    display: none;
+  }
   .head,
   .body,
   .foot {
     padding-inline: 16px;
+  }
+  .title {
+    font-size: 24px;
   }
 }

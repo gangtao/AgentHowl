@@ -1,49 +1,230 @@
+/* 登录页「村口木牌」（设计稿 1b）：夜空 + 月亮 + 村庄剪影 + 品牌 + 两根木柱吊着的木牌表单。 */
+
 .page {
-  display: grid;
-  place-items: center;
-  padding: 48px 16px;
+  position: relative;
+  min-height: 100%;
   overflow: auto;
+  display: grid;
+  justify-items: center;
+  align-content: start;
+  padding: 300px 16px 200px;
+  background: radial-gradient(ellipse at 50% 0%, #1c2440 0%, var(--ah-night) 60%);
 }
 
-.card {
-  width: 100%;
-  max-width: 400px;
+/* ---- 月亮 ---- */
+.moon {
+  position: absolute;
+  top: 90px;
+  left: 50%;
+  width: 160px;
+  height: 160px;
+  margin-left: -80px;
+  border-radius: 50%;
+  background: var(--ah-moon);
+  box-shadow: 0 0 80px 30px rgba(241, 234, 214, 0.18);
+  pointer-events: none;
+}
+
+/* ---- 村庄剪影 ---- */
+.scene {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 260px;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.hills {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 60% 100% at 20% 100%, #0a0c12 60%, transparent 61%),
+    radial-gradient(ellipse 70% 90% at 75% 100%, #0a0c12 60%, transparent 61%);
+}
+
+.ground {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 120px;
+  background: var(--ah-night-deep);
+}
+
+.houseL,
+.houseR {
+  position: absolute;
+  bottom: 140px;
+  display: flex;
+  gap: 6px;
+  align-items: flex-end;
+}
+.houseL {
+  left: 21%;
+}
+.houseR {
+  right: 22%;
+}
+.houseL i,
+.houseR i {
+  display: block;
+  background: #0a0d14;
+}
+.houseL i:nth-child(1) {
+  width: 40px;
+  height: 70px;
+}
+.houseL i:nth-child(2) {
+  width: 60px;
+  height: 110px;
+}
+.houseL i:nth-child(3) {
+  width: 30px;
+  height: 50px;
+}
+.houseR i:nth-child(1) {
+  width: 50px;
+  height: 60px;
+}
+.houseR i:nth-child(2) {
+  width: 36px;
+  height: 140px;
+}
+.houseR i:nth-child(3) {
+  width: 70px;
+  height: 90px;
+}
+
+.lamp {
+  position: absolute;
+  right: 23%;
+  bottom: 200px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--ah-fire-hi);
+  box-shadow: 0 0 24px 8px rgba(227, 166, 72, 0.5);
+  animation: ah-flicker 2.4s ease-in-out infinite;
+}
+
+/* ---- 品牌与木牌 ---- */
+.hero {
+  position: relative;
+  z-index: 1;
+  width: min(400px, calc(100% - 32px));
+  text-align: center;
+}
+
+.brand {
+  font-family: var(--font-heading);
+  font-size: 54px;
+  letter-spacing: 4px;
+  line-height: 1.1;
+  color: var(--ah-text-bright);
+  text-shadow: 0 0 30px rgba(241, 234, 214, 0.3);
+}
+
+.tagline {
+  font-size: 13px;
+  letter-spacing: 6px;
+  color: var(--ah-text-muted);
+  margin: -2px 0 26px;
+}
+
+.posts {
+  display: flex;
+  justify-content: center;
+  gap: 40px;
+  height: 28px;
+}
+.posts i {
+  display: block;
+  width: 2px;
+  background: var(--ah-wood-edge);
+}
+
+.plaque {
   display: grid;
   gap: 14px;
-  padding: 24px;
-  border: 1px solid var(--ah-border, rgba(127, 127, 127, 0.3));
-  border-radius: var(--radius-sm);
-  background: var(--ah-surface, transparent);
+  padding: 26px 30px 24px;
+  text-align: left;
+  background: linear-gradient(180deg, var(--ah-wood-hi), var(--ah-wood-lo));
+  border: 2px solid var(--ah-wood-edge);
+  border-radius: 8px;
+  box-shadow:
+    0 20px 50px rgba(0, 0, 0, 0.6),
+    inset 0 1px 0 rgba(255, 220, 160, 0.15);
 }
 
 .title {
-  margin: 0;
-  font-size: 18px;
+  margin: 0 0 4px;
+  text-align: center;
+  font-size: 26px;
+  letter-spacing: 0.4em;
+  text-indent: 0.4em; /* 抵消末字右侧的字距，视觉居中 */
+  color: var(--ah-gold);
 }
 
 .error {
   font-size: 12px;
-  color: var(--ah-err);
+  color: var(--ah-parch-danger);
   padding: 8px 10px;
-  border-radius: var(--radius-sm);
-  background: color-mix(in srgb, var(--ah-err) 10%, transparent);
+  border-radius: 4px;
+  background: var(--ah-parch);
+  border: 1px solid var(--ah-parch-edge);
 }
 
 .notice {
   font-size: 12px;
+  color: var(--ah-parch-ink);
   padding: 8px 10px;
-  border-radius: var(--radius-sm);
-  background: color-mix(in srgb, currentColor 8%, transparent);
+  border-radius: 4px;
+  background: var(--ah-parch);
+  border: 1px solid var(--ah-parch-edge);
 }
 
 .actions {
-  display: flex;
+  display: grid;
   gap: 8px;
+  margin-top: 4px;
+}
+.actions :global(.btn-primary) {
+  font-size: 15px;
+  letter-spacing: 0.5em;
+  text-indent: 0.5em;
+  padding: 11px;
 }
 
 .links {
   display: flex;
+  justify-content: space-between;
   flex-wrap: wrap;
   gap: 12px;
-  font-size: 13px;
+  font-size: 12px;
+}
+
+@media (max-width: 600px) {
+  .page {
+    padding-top: 200px;
+  }
+  .moon {
+    width: 110px;
+    height: 110px;
+    margin-left: -55px;
+    top: 60px;
+  }
+  .brand {
+    font-size: 40px;
+  }
+  .houseL {
+    left: 4%;
+  }
+  .houseR {
+    right: 4%;
+  }
+  .lamp {
+    right: 6%;
+  }
 }
