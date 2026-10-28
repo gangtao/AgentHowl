@@ -1,5 +1,5 @@
 // Hash 路由（规格 §7.1）：#/ Lobby、#/agents 档案库、#/providers 模型服务、#/g/{id} 对局页。
-// `#/g/…` 不显示顶部导航——对局页有自己的顶栏（PhaseBar）。
+// `#/g/…` 不显示顶部导航——对局页有自己的顶栏（PhaseBar）。导航是设计稿 1c 的木栏：品牌 / 居中链接 / 「用户名 · 离村」。
 
 import { useEffect, useState } from "react";
 import { setUnauthorizedHandler } from "./api/rest";
@@ -127,24 +127,29 @@ export default function App(): JSX.Element {
     <div style={{ height: "100%", display: "grid", gridTemplateRows: "56px minmax(0, 1fr)" }}>
       <nav className="nav">
         <span className="nav-brand">AgentHowl</span>
-        {NAV.map((n) => (
-          <a
-            key={n.href}
-            href={n.href}
-            {...(hash.route === n.route ? { "aria-current": "page" as const } : {})}
-          >
-            {n.label}
-          </a>
-        ))}
-        <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 12 }}>
+        <div className="nav-links">
+          {NAV.map((n) => (
+            <a
+              key={n.href}
+              href={n.href}
+              {...(hash.route === n.route ? { "aria-current": "page" as const } : {})}
+            >
+              {n.label}
+            </a>
+          ))}
+          {user?.role === "admin" && (
+            <a href="#/admin" {...(hash.route === "admin" ? { "aria-current": "page" as const } : {})}>
+              用户
+            </a>
+          )}
+        </div>
+        <div className="nav-user">
           {user ? (
             <>
-              <span>
-                {user.username}
-                {user.role === "admin" ? " · admin" : ""}
-              </span>
-              {user.role === "admin" && <a href="#/admin">用户</a>}
+              <span>{user.username}</span>
+              <span aria-hidden="true">·</span>
               <button
+                type="button"
                 className="btn btn-ghost"
                 onClick={() => {
                   void useAuth
@@ -158,7 +163,7 @@ export default function App(): JSX.Element {
                     });
                 }}
               >
-                登出
+                离村
               </button>
             </>
           ) : (

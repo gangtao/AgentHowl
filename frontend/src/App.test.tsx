@@ -54,3 +54,28 @@ describe("App 登录态下的认证路由（issue #120）", () => {
     expect(sessionStorage.getItem("agenthowl.next")).toBeNull();
   });
 });
+
+describe("App 导航（设计稿 1c 木栏）", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    window.location.hash = "";
+  });
+
+  it("登录态：当前路由高亮、右侧显示「用户名 · 离村」", async () => {
+    const me = { user_id: "u", username: "alice", email: "a@x", role: "user", status: "active", email_verified: true, created_at: "t" };
+    useAuth.setState({ user: me as never, status: "authed" });
+    window.location.hash = "#/history";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) =>
+        new Response(JSON.stringify(url.includes("/auth/me") ? me : []), { status: 200, headers: { "Content-Type": "application/json" } }),
+      ),
+    );
+    render(<App />);
+    expect(screen.getByRole("link", { name: "历史对局" })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("link", { name: "新的一局" })).not.toHaveAttribute("aria-current");
+    expect(screen.getByText("alice")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "离村" })).toBeInTheDocument();
+    await waitFor(() => expect(useAuth.getState().status).toBe("authed"));
+  });
+});
