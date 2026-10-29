@@ -18,8 +18,26 @@ from app.runtime.tts import (
     TtsError,
     concat_wav,
     split_sentences,
+    trim_trailing_silence,
     wav_duration,
 )
+
+
+def _tone_then_silence(tone_sec: float, tail_sec: float, rate: int = 24000) -> bytes:
+    """前 tone_sec 秒方波（有声）+ 后 tail_sec 秒全零（静音），16-bit 单声道。"""
+    import struct
+
+    frames = bytearray()
+    for i in range(int(rate * tone_sec)):
+        frames += struct.pack("<h", 8000 if (i // 50) % 2 == 0 else -8000)
+    frames += b"\x00\x00" * int(rate * tail_sec)
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(rate)
+        w.writeframes(bytes(frames))
+    return buf.getvalue()
 
 
 def _wav(seconds: float, rate: int = 24000) -> bytes:
@@ -435,3 +453,40 @@ def test_concat_wav_rejects_truncated_and_empty_data() -> None:
     empty = _riff((b"fmt ", _fmt()), (b"data", b""))
     with pytest.raises(TtsError):
         concat_wav([full, empty])
+
+
+def test_trim_trailing_silence_cuts_long_tail() -> None:
+    """真机复现：一句 96s 的 WAV 只有前 20s 有声，其余是模型吐出的静音，播放时像卡住。"""
+    out = trim_trailing_silence(_tone_then_silence(1.0, 5.0))
+    assert 1.0 <= wav_duration(out) <= 1.45  # 有声部分 + ≤ 0.4s 尾巴
+    assert out[:4] == b"RIFF" and _parts_ok(out)
+
+
+def test_trim_trailing_silence_keeps_short_tail_and_all_silent() -> None:
+    short = _tone_then_silence(1.0, 0.1)
+    assert trim_trailing_silence(short) == short
+    silent = _wav(0.5)
+    assert trim_trailing_silence(silent) == silent  # 全静音不猜，原样返回
+    assert trim_trailing_silence(b"not a wav") == b"not a wav"
+
+
+@pytest.mark.asyncio
+async def test_synthesize_sentences_trims_trailing_silence() -> None:
+    def handler(req: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200, content=_tone_then_silence(1.0, 5.0), headers={"content-type": "audio/wav"}
+        )
+
+    c = _client("mlx_audio", handler)
+    parts = [
+        p
+        async for p in c.synthesize_sentences(
+            "第一句话很长很长。", VoiceSpec(mode="preset", speaker="dylan")
+        )
+    ]
+    assert len(parts) == 1 and parts[0].duration_sec <= 1.45
+
+
+def _parts_ok(wav: bytes) -> bool:
+    with wave.open(io.BytesIO(wav)) as w:
+        return w.getnframes() > 0 and w.getsampwidth() == 2
