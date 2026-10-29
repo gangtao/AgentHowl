@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 from collections.abc import Iterable, Mapping
 
@@ -56,20 +57,51 @@ class GameReflection(BaseModel):
     lessons: list[str] = []
     opponent_notes: dict[int, list[str]] = {}
 
+    @field_validator("lessons", mode="before")
+    @classmethod
+    def _loose_lessons(cls, value: object) -> list[str]:
+        """issue #167：模型把 lessons 当字符串返回（常是数组文本 + 泄漏的 </invoke> 残片）；
+        一个字段形态不对不该让整局反思丢失，宽松成列表。"""
+        return _coerce_str_list(value)
+
     @field_validator("opponent_notes", mode="before")
     @classmethod
-    def _loose_seat_keys(cls, value: object) -> dict[int, object]:
+    def _loose_seat_keys(cls, value: object) -> dict[int, list[str]]:
         """issue #69：键宽松解析——「3号」「seat 3」「"3"」→ 3；解析不了的键丢弃而非报错，
-        否则一个坏键让整个响应校验失败，本局 lessons 也一起丢。单条字符串值包成列表。"""
+        否则一个坏键让整个响应校验失败，本局 lessons 也一起丢。值同样宽松成列表（#167）。"""
         if not isinstance(value, Mapping):
             return {}
-        out: dict[int, object] = {}
+        out: dict[int, list[str]] = {}
         for key, notes in value.items():
             seat = key if isinstance(key, int) else _seat_from_key(str(key))
             if seat is None:
                 continue
-            out[seat] = [notes] if isinstance(notes, str) else notes
+            out[seat] = _coerce_str_list(notes)
         return out
+
+
+_TAG_FRAGMENT = re.compile(r"</?\s*(parameter|invoke|function_calls?|tool_call|antml:[\w-]+)[^>]*>")
+
+
+def _coerce_str_list(value: object) -> list[str]:
+    """任意形态 → 字符串列表：None → []；列表元素转 str；字符串先剥掉 tool-call 标签残片，
+    是 JSON 数组文本就解析，否则按换行 / 「；」拆条；空白丢弃。"""
+    if value is None:
+        return []
+    if isinstance(value, str):
+        text = _TAG_FRAGMENT.sub("", value).strip()
+        if text.startswith("["):
+            try:
+                parsed = json.loads(text)
+            except ValueError:
+                parsed = None
+            if isinstance(parsed, list):
+                return _coerce_str_list(parsed)
+        parts = re.split(r"[\n;；]+", text)
+        return [p.strip() for p in parts if p.strip()]
+    if isinstance(value, (list, tuple)):
+        return [str(item) for item in value if item is not None]
+    return [str(value)]
 
 
 def _seat_from_key(key: str) -> int | None:

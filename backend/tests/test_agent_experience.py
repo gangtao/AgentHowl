@@ -116,6 +116,32 @@ def test_reflection_response_ignores_extra_and_coerces_seat_keys() -> None:
     assert r.opponent_notes == {3: ["x"]}
 
 
+def test_reflection_lessons_string_with_tool_call_fragments_is_parsed() -> None:
+    """issue #167：模型把 lessons 当字符串返回（数组文本 + 泄漏的 </parameter></invoke> 残片）。"""
+    raw = '["当队友悍跳预言家时跟票", "首夜别空刀"]</parameter>\n</invoke>\n'
+    refl = GameReflection(lessons=raw)
+    assert refl.lessons == ["当队友悍跳预言家时跟票", "首夜别空刀"]
+
+
+def test_reflection_lessons_plain_string_splits_by_lines_or_semicolons() -> None:
+    assert GameReflection(lessons="别轻信金水\n多看票型").lessons == ["别轻信金水", "多看票型"]
+    assert GameReflection(lessons="别轻信金水；多看票型").lessons == ["别轻信金水", "多看票型"]
+    assert GameReflection(lessons="单独一条").lessons == ["单独一条"]
+    assert GameReflection(lessons="   ").lessons == []
+
+
+def test_reflection_lessons_non_string_items_are_coerced() -> None:
+    assert GameReflection(lessons=["a", 3, {"k": "v"}, None]).lessons == ["a", "3", "{'k': 'v'}"]
+    assert GameReflection(lessons=None).lessons == []
+
+
+def test_reflection_opponent_notes_values_accept_array_text() -> None:
+    refl = GameReflection(
+        opponent_notes={"3": '["爱跟票", "发言短"]</invoke>', "5号": "稳", 7: ["a", 2]}
+    )
+    assert refl.opponent_notes == {3: ["爱跟票", "发言短"], 5: ["稳"], 7: ["a", "2"]}
+
+
 def test_build_reveal_requires_game_over_and_derives_won() -> None:
     state = _finished_state()
     me = state.players[2]
