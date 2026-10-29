@@ -1,0 +1,162 @@
+<div class="dv-opt" id="8b">
+<div class="dv-olabel">
+<a class="dv-oid" href="#8b">8b</a>玩家 · 白天发言 · 轮到我 — 发言台切成我的头像，输入框在 HUD，历史已累计 6 条</div>
+<div class="dv-card" style="width:1440px;height:900px;position:relative;background:radial-gradient(ellipse at 35% 40%,#1a1f30,#0c0f17 70%);overflow:hidden">
+<div style="position:absolute;left:0;right:0;top:0;height:48px;display:flex;align-items:center;padding:0 20px;gap:16px;background:linear-gradient(180deg,rgba(58,42,30,.95),rgba(36,24,15,.95));border-bottom:2px solid #5a4330">
+<div style="font-family:'ZCOOL XiaoWei',serif;font-size:20px;color:#f1ead6;letter-spacing:2px">AgentHowl</div>
+<div style="font:12px 'IBM Plex Mono',monospace;color:#8a7d66">g_a39a7c82</div>
+<div style="flex:1">
+</div>
+<div style="font-size:12px;color:#c9463d">● 直播 · seq 155</div>
+<div style="display:flex;border:1px solid #5a4330;border-radius:5px;overflow:hidden;font-size:13px">
+<div style="padding:5px 12px;color:#c9bca0">上帝</div>
+<div style="padding:5px 12px;color:#c9bca0;border-left:1px solid #5a4330">观众</div>
+<div style="padding:5px 12px;color:#2b1a08;background:#e3a648;font-weight:700">玩家 0号</div>
+</div>
+</div>
+<div style="position:absolute;left:20px;top:62px;padding:6px 16px;background:linear-gradient(180deg,#3a2a1e,#24180f);border:2px solid #5a4330;border-radius:4px;font-family:'ZCOOL XiaoWei',serif;font-size:20px;color:#f0c060;box-shadow:0 6px 0 #140c06;white-space:nowrap;z-index:2">第 3 轮 · 白天 · 发言<div style="font-family:'Noto Serif SC',serif;font-size:12px;color:#a79f8c">无警长 · 顺时针 · 9/12 存活</div>
+</div>
+<div style="position:absolute;left:150px;top:180px;width:500px;height:500px;border-radius:50%;background:radial-gradient(circle at 50% 45%,#4a3524,#2a1d14 70%,#1a110a);border:6px solid #5a4330;box-shadow:0 30px 80px rgba(0,0,0,.7),inset 0 0 60px rgba(0,0,0,.6)">
+</div>
+<div style="position:absolute;left:360px;top:350px;width:80px;height:80px;border-radius:50%;background:radial-gradient(circle,#f0b85a 0%,#c9842c 40%,#5a3a12 70%,transparent 72%);box-shadow:0 0 50px 20px rgba(227,166,72,.22)">
+</div>
+<div style="position:absolute;left:270px;top:445px;width:260px;text-align:center;font-size:11px;line-height:1.7;color:#a79f8c">
+<div>昨夜 <span style="color:#5a9a5a">平安夜</span> · 昨日票型 <span style="color:#e8dfca">4号 ·4 ｜ 8号 ·2</span>
+</div>
+<div>发言进度 <span style="color:#f0c060">9</span> / 9 · 最后一位</div>
+</div>
+<sc-for list="{{ logSeatsMe }}" as="s" hint-placeholder-count="12">
+<div style="position:absolute;left:{{ s.x }}px;top:{{ s.y }}px;width:64px;text-align:center;opacity:{{ s.alpha }}">
+<div style="width:64px;height:64px;border-radius:50%;display:grid;place-items:center;font-family:'ZCOOL XiaoWei',serif;font-size:26px;background:{{ s.bg }};color:{{ s.fg }};border:3px solid {{ s.ringColor }};box-shadow:{{ s.glow }};position:relative">
+<sc-if value="{{ s.hasIcon }}" hint-placeholder-val="{{ false }}">
+<svg viewBox="0 0 24 24" width="32" height="32" style="display:block">
+<path d="{{ s.icon }}" fill="currentColor" fill-rule="evenodd">
+</path>
+</svg>
+</sc-if>
+<sc-if value="{{ s.noIcon }}" hint-placeholder-val="{{ true }}">{{ s.initial }}</sc-if>
+<div style="position:absolute;left:-6px;top:-6px;width:22px;height:22px;border-radius:50%;background:#e9dcc2;color:#2b2116;font:700 11px 'IBM Plex Mono',monospace;display:grid;place-items:center;border:1px solid #8a7d66">{{ s.no }}</div>
+</div>
+<div style="font-size:11px;color:#e8dfca;margin-top:4px;white-space:nowrap">{{ s.name }}</div>
+<div style="font-size:10px;color:{{ s.stateColor }};white-space:nowrap">{{ s.state }}</div>
+</div>
+</sc-for>
+<div style="position:absolute;left:690px;top:64px;width:700px;bottom:198px;display:grid;grid-template-rows:auto minmax(0,1fr);gap:12px">
+<div style="padding:14px 18px;border-radius:8px;background:linear-gradient(180deg,rgba(58,42,30,.95),rgba(36,24,15,.95));border:2px solid #e3a648;box-shadow:0 0 30px rgba(227,166,72,.22);display:flex;gap:18px;align-items:center">
+<div style="width:84px;height:84px;border-radius:50%;padding:4px;background:conic-gradient(#f0c060 0 48%,#2a1d14 48%);flex:none">
+<div style="width:76px;height:76px;border-radius:50%;display:grid;place-items:center;background:radial-gradient(circle at 35% 30%,#7a2c26,#3d1512);color:#f6d7d2;border:3px solid #24180f">
+<svg viewBox="0 0 24 24" width="36" height="36" style="display:block">
+<path d="M4 3l5 5h6l5-5-1 9-7 10L5 12z M9.5 11h2v2h-2z M12.5 11h2v2h-2z" fill="currentColor" fill-rule="evenodd">
+</path>
+</svg>
+</div>
+</div>
+<div style="flex:1">
+<div style="display:flex;align-items:center;gap:10px">
+<span style="font-family:'ZCOOL XiaoWei',serif;font-size:20px;color:#f1ead6">0号 · Gang</span>
+<span style="padding:2px 10px;border-radius:10px;background:#e3a648;color:#2b1a08;font-size:11px;font-weight:700">轮到你</span>
+<span style="font-size:12px;color:#a79f8c">最后一位发言 · 发完即进入投票</span>
+</div>
+<div style="font-size:13px;color:#c9bca0;margin-top:6px;line-height:1.6">提示：5号 已跳警长、2号 跳预言家互指；1号 盯 4号。你的队友 3号 已踩 2号。</div>
+</div>
+<div style="text-align:right">
+<div style="font:28px 'IBM Plex Mono',monospace;color:#f0c060;line-height:1">29s</div>
+<div style="font-size:11px;color:#8a7d66">剩余</div>
+</div>
+</div>
+<div style="border-radius:8px;background:rgba(22,27,40,.9);border:1px solid #2a3042;display:grid;grid-template-rows:auto minmax(0,1fr);overflow:hidden">
+<div style="display:flex;align-items:center;gap:12px;padding:10px 16px;border-bottom:1px solid #2a3042;font-size:12px;color:#a79f8c">
+<span style="font-family:'ZCOOL XiaoWei',serif;font-size:15px;color:#e8dfca">对局记录</span>
+<span>你可见的全部事件 · 最新在上</span>
+<div style="flex:1">
+</div>
+<span style="padding:2px 8px;border-radius:3px;background:#2a3042;color:#e8dfca">全部</span>
+<span style="padding:2px 8px">发言</span>
+<span style="padding:2px 8px">投票</span>
+<span style="padding:2px 8px">夜晚</span>
+<span style="padding:2px 8px">我的验人</span>
+</div>
+<div style="overflow:hidden;padding:6px 16px;display:flex;flex-direction:column">
+<sc-for list="{{ timelineMe }}" as="m" hint-placeholder-count="8">
+<div>
+<sc-if value="{{ m.day }}" hint-placeholder-val="{{ false }}">
+<div style="display:flex;align-items:center;gap:10px;padding:8px 0 2px;font-size:11px;color:#8a7d66">
+<span style="flex:1;height:1px;background:#2a3042">
+</span>
+<span style="font-family:'ZCOOL XiaoWei',serif;font-size:13px;color:#a79f8c">{{ m.day }}</span>
+<span style="flex:1;height:1px;background:#2a3042">
+</span>
+</div>
+</sc-if>
+<sc-if value="{{ m.isEvent }}" hint-placeholder-val="{{ false }}">
+<div style="display:grid;grid-template-columns:40px 1fr;gap:12px;padding:6px 0;align-items:center">
+<div style="width:36px;text-align:center;font-size:16px;color:{{ m.color }}">{{ m.icon }}</div>
+<div style="display:flex;align-items:center;gap:8px;font-size:12px">
+<span style="padding:1px 7px;border-radius:3px;background:rgba(0,0,0,.35);border:1px solid {{ m.color }};color:{{ m.color }};font-size:11px;flex:none">{{ m.kind }}</span>
+<span style="color:#c9c2b0;line-height:1.6">{{ m.text }}</span>
+<span style="font:11px 'IBM Plex Mono',monospace;color:#5a5f6a;margin-left:auto;flex:none">{{ m.time }}</span>
+</div>
+</div>
+</sc-if>
+<sc-if value="{{ m.isSpeech }}" hint-placeholder-val="{{ true }}">
+<div style="display:grid;grid-template-columns:40px 1fr;gap:12px;padding:8px 0;border-top:1px dashed #2a3042">
+<div style="width:36px;height:36px;border-radius:50%;display:grid;place-items:center;font-family:'ZCOOL XiaoWei',serif;font-size:16px;background:radial-gradient(circle at 35% 30%,{{ m.hi }},{{ m.lo }});color:#f1ead6;border:2px solid #8a6238">{{ m.initial }}</div>
+<div>
+<div style="display:flex;align-items:center;gap:8px;font-size:12px;margin-bottom:3px">
+<span style="color:#f0c060">{{ m.no }} {{ m.name }}</span>
+<sc-if value="{{ m.tag }}" hint-placeholder-val="{{ false }}">
+<span style="padding:1px 6px;border-radius:3px;border:1px solid {{ m.tagColor }};color:{{ m.tagColor }};font-size:10px">{{ m.tag }}</span>
+</sc-if>
+<span style="font:11px 'IBM Plex Mono',monospace;color:#5a5f6a;margin-left:auto">{{ m.time }}</span>
+</div>
+<div style="font-size:13px;line-height:1.7;color:#c9c2b0">{{ m.text }}</div>
+</div>
+</div>
+</sc-if>
+</div>
+</sc-for>
+</div>
+</div>
+</div>
+<div style="position:absolute;left:0;right:0;bottom:0;height:150px;background:linear-gradient(180deg,#24180f,#1a110a);border-top:2px solid #e3a648;display:grid;grid-template-columns:260px 1fr 320px;gap:20px;padding:16px 24px;align-items:center">
+<div style="display:flex;gap:14px;align-items:center">
+<div style="width:84px;height:112px;border-radius:6px;background:radial-gradient(circle at 50% 30%,#7a2c26,#3d1512);border:2px solid #c9463d;display:grid;place-items:center;color:#f6d7d2;box-shadow:0 0 24px rgba(201,70,61,.4)">
+<svg viewBox="0 0 24 24" width="40" height="40" style="display:block">
+<path d="M4 3l5 5h6l5-5-1 9-7 10L5 12z M9.5 11h2v2h-2z M12.5 11h2v2h-2z" fill="currentColor" fill-rule="evenodd">
+</path>
+</svg>
+</div>
+<div>
+<div style="font-size:11px;color:#a79f8c">0号 · Gang</div>
+<div style="font-family:'ZCOOL XiaoWei',serif;font-size:22px;color:#f0c060">狼人</div>
+<div style="font-size:12px;color:#c9bca0;line-height:1.5">队友 <span style="color:#c9463d">3号 · 9号</span>
+<br>目标：屠边</div>
+</div>
+</div>
+<div>
+<div style="display:flex;gap:8px;margin-bottom:8px;align-items:center">
+<div style="padding:4px 14px;border-radius:12px;background:#e3a648;color:#2b1a08;font-size:12px;font-weight:700">发言</div>
+<div style="padding:4px 14px;border-radius:12px;border:1px solid #5a4330;color:#c9bca0;font-size:12px">自爆</div>
+<div style="flex:1">
+</div>
+<div style="font-size:12px;color:#c9bca0">声明身份：<span style="padding:2px 8px;border-radius:3px;background:#e9dcc2;color:#2b2116">不声明 ▾</span>
+</div>
+</div>
+<div style="height:58px;border-radius:5px;background:#e9dcc2;border:1px solid #b9a582;box-shadow:inset 0 2px 4px rgba(0,0,0,.18);padding:8px 12px;color:#2b2116;font-size:14px;line-height:1.6">5号 是真警长我认，但 1号 的"排练论"有点太急——4号 跟票可以解释，2号 的剧本却解释不了<span style="display:inline-block;width:2px;height:16px;background:#c9842c;vertical-align:-3px">
+</span>
+</div>
+</div>
+<div style="display:flex;flex-direction:column;gap:10px;align-items:flex-end">
+<div style="display:flex;align-items:center;gap:10px">
+<div style="width:160px;height:10px;border-radius:5px;background:#2a1d14;overflow:hidden">
+<div style="width:48%;height:100%;background:linear-gradient(90deg,#c9842c,#f0b85a);box-shadow:0 0 10px #f0b85a">
+</div>
+</div>
+<span style="font:18px 'IBM Plex Mono',monospace;color:#f0c060">29s</span>
+</div>
+<div style="padding:11px 30px;border-radius:6px;background:linear-gradient(#f0b85a,#c9842c);color:#2b1a08;font-weight:700;border:1px solid #7a4f1c;box-shadow:0 0 18px rgba(227,166,72,.35),0 3px 0 #5a3a12;font-size:15px">发送发言</div>
+</div>
+</div>
+</div>
+</div>
+

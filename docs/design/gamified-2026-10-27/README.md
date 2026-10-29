@@ -1,10 +1,10 @@
 # AgentHowl 游戏化改版 · 暗夜村庄（Claude Design 导出，2026-10-27）
 
-来源：Claude Design 项目 `AgentHowl 游戏化`（`AgentHowl 游戏化.dc.html` + `support.js`）。
+来源：Claude Design 项目 `AgentHowl 游戏化`（`AgentHowl 游戏化.dc.html` + `support.js`），2026-10-28 重新导出（新增第 8 轮）。
 实施规格见 `docs/superpowers/specs/2026-10-28-ui-gamification-design.md`。
 
 - `AgentHowl-gamified.dc.html`：原始画布文件。**注意**：导出接口对单文件有 256 KiB 上限，文件末尾的
-  mock 数据脚本（`<script data-dc-script>`）被截断，模板部分（全部 34 个方案块）完整。直接用浏览器打开
+  mock 数据脚本（`<script data-dc-script>`）被整段截掉，模板部分（全部 37 个方案块）完整。直接用浏览器打开
   时 `{{ … }}` 占位不会被填充，但布局、配色、尺寸与真实渲染一致；`support.js` 是画布运行时（需联网拉
   React / Babel）。
 - `options/<id>.html`：按方案块拆出的模板片段，便于逐块对照实现。
@@ -28,5 +28,6 @@
 | t5 | **5a**–**5c** | 夜晚狼人行动、白天投票、上帝回放（均基于 3a） | 定稿 |
 | t6 | **6a** / **6b** | 圆桌 / 卡牌两套桌面皮肤共用同一骨架 | 定稿（PR ⑤） |
 | t7 | **7a**–**7e** | 预言家 / 女巫 / 猎人夜视角、观众端直播、卡牌皮肤 × 四种状态 | 定稿 |
+| t8 | **8a**–**8c** | 发言阶段重排：圆桌只留状态行，发言气泡与事件流抽屉改为右栏「发言台 + 对局记录」（8a 旁听 / 8b 轮到我 / 8c 卡牌皮肤）；取代 3a / 3d 的座位气泡 | 定稿（规格 `2026-10-28-speech-stage-game-log-design.md`） |
 
 手机端没有设计稿（画布「下一步」明确留待以后）。
