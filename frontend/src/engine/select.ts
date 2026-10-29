@@ -67,6 +67,32 @@ export function currentSpeaker(state: GameState): number | null {
   return state.speech_order[state.speech_idx] ?? null;
 }
 
+export type SpeechDirection = "LEFT" | "RIGHT";
+
+/**
+ * 本轮**实际**的发言方向，与后端 engine._speech_order 同一套规则：
+ * - SHERIFF_DECIDES：警长在场且已定向时，奇数轮用基准方向、偶数轮换手；否则退回 death-next（顺时针）。
+ * - ODD_EVEN_CLOCK：奇数轮顺时针、偶数轮逆时针。
+ * - FIXED_CLOCKWISE / DEATH_NEXT：恒为顺时针。
+ * - BIDDING：没有方向（返回 null）。
+ * state.sheriff_speech_direction 只是警长定下的**基准**，直接拿它当标签会在偶数轮和
+ * speech_order 对不上（用户反馈：第 2 轮顺序 [2,1,0,8,7,6,3] 却标着「顺时针」）。
+ */
+export function effectiveSpeechDirection(state: GameState): SpeechDirection | null {
+  const rule = state.config.speech_order_rule;
+  const odd = state.round % 2 === 1;
+  if (rule === "BIDDING") return null;
+  if (rule === "ODD_EVEN_CLOCK") return odd ? "RIGHT" : "LEFT";
+  if (rule === "SHERIFF_DECIDES" || rule === undefined) {
+    const base = state.sheriff_speech_direction;
+    if (state.sheriff_seat !== null && (base === "LEFT" || base === "RIGHT")) {
+      const opposite: SpeechDirection = base === "RIGHT" ? "LEFT" : "RIGHT";
+      return odd ? base : opposite;
+    }
+  }
+  return "RIGHT";
+}
+
 /**
  * state 里是否已有真实角色（ROLES_ASSIGNED 已应用）——「角色牌是否翻面」的唯一依据。
  *
