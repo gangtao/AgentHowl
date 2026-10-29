@@ -15,6 +15,14 @@ describe("ErrorState（设计稿 4f）", () => {
     expect(screen.getByRole("link", { name: "去登录" })).toHaveAttribute("href", "#/login");
   });
 
+  it("auth + 已登录：不再指向登录页（会原地循环，issue #170），改为回到村志", () => {
+    render(<ErrorState kind="auth" authed />);
+    expect(screen.getByText("村口有人守着")).toBeInTheDocument();
+    expect(screen.getByText(/这局不是你建的，也没有分享给你/)).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "去登录" })).toBeNull();
+    expect(screen.getByRole("link", { name: "回到村志" })).toHaveAttribute("href", "#/history");
+  });
+
   it("locked：以玩家身份进入链接", () => {
     render(<ErrorState kind="locked" playerHref="#/g/g_1?token=t" />);
     expect(screen.getByRole("link", { name: /以玩家身份进入/ })).toHaveAttribute(

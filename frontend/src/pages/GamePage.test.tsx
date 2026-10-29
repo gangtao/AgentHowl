@@ -4,6 +4,7 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest";
 import fixture from "../engine/__fixtures__/std_9_kill_side-3.json";
 import type { Event, GameMeta } from "../engine/types";
+import { useAuth } from "../store/auth";
 import { useGameStore } from "../store/game";
 import { usePrefs } from "../store/prefs";
 import { useTurn } from "../store/turn";
@@ -114,6 +115,19 @@ describe("GamePage 凭据模式（issue #114）", () => {
     render(<GamePage gameId="g_x" viewer="GM" />);
     expect(await screen.findByText("村口有人守着")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "去登录" })).toHaveAttribute("href", "#/login");
+  });
+
+  it("已登录用户遇到 401/403：按钮是「回到村志」而不是会循环的「去登录」（issue #170）", async () => {
+    useAuth.setState({ status: "authed", user: { username: "alice" } as never });
+    try {
+      stubFetch(() => jsonResponse(401, { detail: "未登录" }));
+      render(<GamePage gameId="g_x" viewer="GM" />);
+      expect(await screen.findByText("村口有人守着")).toBeInTheDocument();
+      expect(screen.queryByRole("link", { name: "去登录" })).toBeNull();
+      expect(screen.getByRole("link", { name: "回到村志" })).toHaveAttribute("href", "#/history");
+    } finally {
+      useAuth.setState({ status: "anon", user: null });
+    }
   });
 });
 

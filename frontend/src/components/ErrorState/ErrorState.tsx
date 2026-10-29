@@ -14,6 +14,8 @@ export interface ErrorStateProps {
   detail?: string | null;
   /** locked 态的「以玩家身份进入」链接。 */
   playerHref?: string;
+  /** 已登录（issue #170）：auth 态不再指向登录页（登录页会回跳到本页原地循环），改为回到村志。 */
+  authed?: boolean;
 }
 
 type Art = "moon" | "card" | "fire";
@@ -56,6 +58,7 @@ export default function ErrorState({
   attempt,
   detail,
   playerHref,
+  authed = false,
 }: ErrorStateProps): JSX.Element {
   if (kind === "4409") {
     return (
@@ -133,17 +136,31 @@ export default function ErrorState({
         code="4401 / 4403"
         title="村口有人守着"
         desc={
-          <>
-            这局不对外公开。请登录，
-            <br />
-            或使用建局者给你的分享链接。
-          </>
+          authed ? (
+            <>
+              这局不是你建的，也没有分享给你。
+              <br />
+              回村志看看自己的对局，或向建局者要分享链接。
+            </>
+          ) : (
+            <>
+              这局不对外公开。请登录，
+              <br />
+              或使用建局者给你的分享链接。
+            </>
+          )
         }
         detail={detail}
         action={
-          <a className={`btn btn-primary ${styles.action}`} href="#/login">
-            去登录
-          </a>
+          authed ? (
+            <a className={`btn btn-secondary ${styles.action}`} href="#/history">
+              回到村志
+            </a>
+          ) : (
+            <a className={`btn btn-primary ${styles.action}`} href="#/login">
+              去登录
+            </a>
+          )
         }
       />
     );
