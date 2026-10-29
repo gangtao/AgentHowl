@@ -66,6 +66,9 @@ class AgentConfig(BaseModel):
     temperature: float = 0.3
     agent_seed: int = 0
     deadline_margin_s: float = 2.0  # 剩余时间低于此不再发起 LLM 调用
+    # issue #177：装配（反思 / 技能 / prompt）之后剩余预算低于此也不发起调用——否则 wait_for 会在
+    # 几十毫秒内取消协程，litellm 把取消记成「Connection timed out」，误导排查
+    min_call_s: float = 1.0
     reflection_min_remaining_s: float = 10.0  # 剩余时间高于此才做惰性反思
     # 结构化输出校验失败的最大重试次数（issue #86）：实际次数还会按剩余预算收紧——
     # 一次生成慢模型要 20–60s，三连重试会吃满整个发言窗口、记成「超时」
@@ -249,8 +252,10 @@ class AgentPlayerPort:
             self._last_rejection = None
 
         budget = deadline_ts - time.time() - self._cfg.deadline_margin_s
-        if budget <= 0:
-            raise TimeoutError(f"座位 {self._seat} 装配后已无调用预算")
+        if budget < self._cfg.min_call_s:
+            raise TimeoutError(
+                f"座位 {self._seat} 装配后调用预算不足（{budget:.2f}s < {self._cfg.min_call_s}s）"
+            )
         started = time.monotonic()
         decision = await asyncio.wait_for(
             self._client.complete_structured(

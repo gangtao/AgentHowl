@@ -151,6 +151,28 @@ async def test_deadline_margin_raises_without_llm_call() -> None:
     assert client.calls == []
 
 
+async def test_budget_below_min_call_raises_without_llm_call() -> None:
+    """issue #177：剩余刚过 margin（2.0s）但装配后预算只剩几十毫秒——不发起注定被 wait_for
+    取消的调用（litellm 会把取消记成「Connection timed out」），直接按预算不足落默认。"""
+
+    def script(rm: type[BaseModel], system: str, user: str) -> BaseModel:
+        raise AssertionError("不应发起 LLM 调用")
+
+    port, client = _port(script)
+    with pytest.raises(TimeoutError, match="预算"):
+        await port.act(_obs("NIGHT_WEREWOLF"), time.time() + 2.05)  # 预算 ≈ 0.05s < min_call_s
+    assert client.calls == []
+
+
+async def test_budget_at_least_min_call_still_calls() -> None:
+    def script(rm: type[BaseModel], system: str, user: str) -> BaseModel:
+        return WolfDeliberation(analysis="x", proposed_target=3)
+
+    port, client = _port(script, agent_config=AgentConfig(model="scripted", min_call_s=0.5))
+    await port.act(_obs("NIGHT_WEREWOLF"), time.time() + 2.0 + 0.9)  # 预算 ≈ 0.9s ≥ 0.5s
+    assert len(client.calls) == 1
+
+
 async def test_llm_exception_propagates() -> None:
     def script(rm: type[BaseModel], system: str, user: str) -> BaseModel:
         raise RuntimeError("provider down")
