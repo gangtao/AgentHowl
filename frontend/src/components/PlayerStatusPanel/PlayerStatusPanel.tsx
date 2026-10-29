@@ -3,7 +3,7 @@
 // 空则不渲染，有则照实渲染。
 
 import { DIRECTION_ZH, factionColorVar } from "../../engine/phases";
-import { wolfSeats } from "../../engine/select";
+import { effectiveSpeechDirection, wolfSeats } from "../../engine/select";
 import type { GameState } from "../../engine/types";
 import styles from "./PlayerStatusPanel.module.css";
 
@@ -20,7 +20,8 @@ export default function PlayerStatusPanel({
   const order = state.speech_order;
   const badgeFlows = Object.entries(state.badge_flow_claims);
   const wolves = wolfSeats(state);
-  const direction = state.sheriff_speech_direction;
+  // 本轮实际方向（偶数轮换手），不是警长定下的基准方向——否则和下面的顺序对不上号
+  const direction = effectiveSpeechDirection(state);
 
   return (
     <section className={styles.root}>

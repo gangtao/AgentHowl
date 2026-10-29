@@ -34,4 +34,18 @@ describe("PlayerStatusPanel 发言顺序状态", () => {
     expect(statusOf(5)).toBe("发言中");
     expect(statusOf(6)).toBe("待发言");
   });
+
+  it("方向标签按本轮实际方向：基准顺时针的第 2 轮显示「逆时针」（用户反馈：顺序和标签对不上号）", () => {
+    const even: GameState = {
+      ...state,
+      round: 2,
+      sheriff_seat: 3,
+      sheriff_speech_direction: "RIGHT",
+      speech_order: [2, 1, 0, 8, 7, 6, 3],
+      speech_idx: 0,
+      config: { ...state.config, speech_order_rule: "SHERIFF_DECIDES" },
+    };
+    render(<PlayerStatusPanel state={even} speakingSeat={2} />);
+    expect(screen.getByText(/警长 3号 · 逆时针/)).toBeInTheDocument();
+  });
 });
