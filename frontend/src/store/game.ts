@@ -56,6 +56,8 @@ interface GameStoreState {
   setCursor(seq: number | null): void;
   setMode(mode: PlaybackMode): void;
   viewState(): GameState | null;
+  /** 直播开语音时的展示状态（issue #193）：按 seq 从最近检查点重放，与 cursor 回放同源；seq ≥ 最后一条取 head。 */
+  viewAt(seq: number): GameState | null;
   /** 服务端 phase_change 帧（issue #128）：非 GM 视角看不到夜间 PHASE_CHANGED / ROUND_STARTED
    * （GM_ONLY），阶段与轮次由这条帧补上；GM 的全量事件流自带，忽略。零过滤：值原样来自服务端。 */
   applyPhase(to: string, round: number): void;
@@ -70,6 +72,9 @@ interface GameStoreState {
   setReplayGate(gate: ((seq: number) => Promise<void> | null) | null): void;
   reset(): void;
 }
+
+/** viewAt(seq) 的记忆化缓存（同 viewCache 的理由），key 为 (seq, events.length)。 */
+let viewAtCache: { seq: number; eventsLength: number; value: GameState | null } | null = null;
 
 /** viewState() 的记忆化缓存：模块级、非响应式，key 为 (cursor, events.length)。 */
 let viewCache: { cursor: number | null; eventsLength: number; value: GameState | null } | null =
@@ -156,6 +161,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
   load(meta, opts) {
     clearPlayTimer();
     viewCache = null;
+    viewAtCache = null;
     const mode = opts?.mode ?? "live";
     set({
       meta,
@@ -207,6 +213,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
 
     if (appliedAny) {
       viewCache = null;
+    viewAtCache = null;
       set({ events, head, checkpoints, gap });
     } else {
       set({ gap });
@@ -234,6 +241,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     if (state.head.phase === "GAME_OVER" || state.head.winner !== null) return;
     if (state.head.phase === to && state.head.round === round) return;
     viewCache = null;
+    viewAtCache = null;
     set({ head: { ...state.head, phase: to as Phase, round } });
   },
 
@@ -254,6 +262,24 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     const slice = state.events.filter((e) => e.seq > baseSeq && e.seq <= (state.cursor as number));
     const value = reduceAll(baseState, slice);
     viewCache = { cursor: state.cursor, eventsLength: state.events.length, value };
+    return value;
+  },
+
+  viewAt(seq) {
+    const state = get();
+    if (state.events.length === 0 || seq >= lastSeqOf(state.events)) return state.head;
+    if (
+      viewAtCache !== null &&
+      viewAtCache.seq === seq &&
+      viewAtCache.eventsLength === state.events.length
+    ) {
+      return viewAtCache.value;
+    }
+    if (state.meta === null) return null;
+    const { baseSeq, baseState } = nearestCheckpoint(state.checkpoints, state.meta, seq);
+    const slice = state.events.filter((e) => e.seq > baseSeq && e.seq <= seq);
+    const value = reduceAll(baseState, slice);
+    viewAtCache = { seq, eventsLength: state.events.length, value };
     return value;
   },
 
@@ -315,6 +341,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     clearPlayTimer();
     gating = false;
     viewCache = null;
+    viewAtCache = null;
     set({
       gameId: null,
       token: null,

@@ -30,7 +30,7 @@ import { createDwell } from "../lib/dwell";
 import { readingDwellMs } from "../lib/readingDwell";
 import { replayControls } from "../lib/replayControls";
 import { usePrefs } from "../store/prefs";
-import { useVoice } from "../store/voice";
+import { firstPendingSeq, useVoice } from "../store/voice";
 import { isNight } from "../engine/phases";
 import {
   currentSpeaker,
@@ -395,10 +395,28 @@ export default function GamePage({ gameId, token, share, viewer }: GamePageProps
   // ---- 派生视图 ----
   // viewState() 内部按 (cursor, events.length) 记忆化，同一状态下多次调用返回同一对象，
   // 可安全用作 zustand 选择器（useSyncExternalStore 要求快照稳定）。
-  const view = useGameStore((s) => s.viewState());
+  const voicingSeq = useVoice((s) => s.voicingSeq);
+  const voicePlaying = useVoice((s) => s.playing !== null);
+  const voiceEnabled = useVoice((s) => s.enabled);
+  const voiceAvailable = useVoice((s) => s.available);
+  const voiceFinishedSeq = useVoice((s) => s.finishedSeq);
+  const voiceBegun = useVoice((s) => s.begun);
+  // 直播开语音的展示门控（issue #193）：服务端开始合成某句就发 begin，事件帧却早已到达；展示游标只推进到
+  // 最早「已开始、未播完」的那条，之后的事件 / 状态压住，播完再放行。语音关 / 本局无音频 / 回放不门控。
+  const presentSeq = useMemo<number | null>(
+    () =>
+      mode === "live" && voiceEnabled && voiceAvailable
+        ? firstPendingSeq({ begun: voiceBegun, finishedSeq: voiceFinishedSeq })
+        : null,
+    [mode, voiceEnabled, voiceAvailable, voiceBegun, voiceFinishedSeq],
+  );
+  const view = useGameStore((s) =>
+    s.cursor === null && presentSeq !== null ? s.viewAt(presentSeq) : s.viewState(),
+  );
+  const shownUpTo = cursor ?? presentSeq;
   const visibleEvents = useMemo<Event[]>(
-    () => (cursor === null ? events : events.filter((e) => e.seq <= cursor)),
-    [events, cursor],
+    () => (shownUpTo === null ? events : events.filter((e) => e.seq <= shownUpTo)),
+    [events, shownUpTo],
   );
   // 发言台只看游标之前的发言：回放时「最后一句」必须是游标处的，不是全局最后一条（终审 Important 5）。
   const standItems = useMemo(() => speechItems(visibleEvents), [visibleEvents]);
@@ -413,11 +431,6 @@ export default function GamePage({ gameId, token, share, viewer }: GamePageProps
     view !== null && SPEAKING_PHASES.has(view.phase) ? currentSpeaker(view) : null;
   // 正在出声的发言优先于"轮到谁"：引擎提交发言后立刻把发言权交给下一位，而音频还在播上一位，
   // 高亮若只看 state 会跑到下一位身上（issue #103 用户反馈）。零过滤：seq 来自服务端帧。
-  const voicingSeq = useVoice((s) => s.voicingSeq);
-  const voicePlaying = useVoice((s) => s.playing !== null);
-  const voiceEnabled = useVoice((s) => s.enabled);
-  const voiceAvailable = useVoice((s) => s.available);
-  const voiceFinishedSeq = useVoice((s) => s.finishedSeq);
   // 座位（发言/遗言事件）/ "GM"（其它任何事件，含带 actor_seat 的 HUNTER_SHOT 等进程事件，
   // issue #110）/ null（找不到事件 → 退回轮到谁）。只看事件类型与 actor_seat，不看 kind。
   const voicingActor = useMemo<number | "GM" | null>(() => {

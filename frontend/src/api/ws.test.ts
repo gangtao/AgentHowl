@@ -188,6 +188,9 @@ describe("useLiveEvents", () => {
     // game store 不受影响：speech_audio 不是游戏事件，不进 appendEvents
     expect(useGameStore.getState().events).toHaveLength(0);
 
+    socket.emit({ type: "speech_audio_begin", seq: 4, kind: "speech" });
+    expect(useVoice.getState().begun.has(4)).toBe(true); // issue #193：压住 seq 4 之后的展示
+
     socket.emit({ type: "speech_audio_end", seq: 3, parts: 1 });
 
     // end 帧只记「这句的分段都推完了」，队列不变（语音关着，第 0 段还留在队列里）

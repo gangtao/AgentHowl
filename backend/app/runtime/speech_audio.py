@@ -176,6 +176,13 @@ class SpeechAudioSink:
         _check_game_id(game_id)
         expected_finish: float | None = None  # 最后一句预计播完的时刻
         count = 0
+        # issue #193：开始合成就先发 begin——事件帧总是先于音频到达，客户端据此压住该 seq
+        # 之后的展示，直到 end 到且全部播完；因此发了 begin 就必须发 end（哪怕一句都没合成
+        # 出来，parts=0）。
+        if connections is not None:
+            await connections.broadcast_frame(
+                {"type": "speech_audio_begin", "seq": seq, "kind": kind}, event
+            )
         try:
             async for part in parts:
                 path = self._dir / game_id / f"{seq}-{part.index}.wav"
@@ -202,7 +209,7 @@ class SpeechAudioSink:
             logger.warning(
                 "game=%s seq=%d %s 配音失败（已推 %d 句）：%s", game_id, seq, kind, count, exc
             )
-        if count and connections is not None:
+        if connections is not None:
             await connections.broadcast_frame(
                 {"type": "speech_audio_end", "seq": seq, "parts": count, "kind": kind}, event
             )

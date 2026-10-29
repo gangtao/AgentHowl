@@ -108,8 +108,15 @@ async def test_speak_writes_parts_pushes_frames_and_waits(tmp_path: Path) -> Non
     assert elapsed >= 0.4 + AUDIO_TAIL_SEC - 0.05  # Σduration + 尾巴
     names = sorted(p.name for p in (tmp_path / "audio" / "g1").glob("*.wav"))
     assert names == ["57-0.wav", "57-1.wav"]
-    assert [f["type"] for f in frames] == ["speech_audio", "speech_audio", "speech_audio_end"]
-    assert frames[0] == {
+    # issue #193：开始合成就先发 begin（客户端据此压住该 seq 之后的展示，直到 end 且播完）
+    assert [f["type"] for f in frames] == [
+        "speech_audio_begin",
+        "speech_audio",
+        "speech_audio",
+        "speech_audio_end",
+    ]
+    assert frames[0] == {"type": "speech_audio_begin", "seq": 57, "kind": "speech"}
+    assert frames[1] == {
         "type": "speech_audio",
         "seq": 57,
         "part": 0,
@@ -117,7 +124,7 @@ async def test_speak_writes_parts_pushes_frames_and_waits(tmp_path: Path) -> Non
         "duration": pytest.approx(0.2, abs=0.01),
         "kind": "speech",
     }
-    assert frames[2] == {"type": "speech_audio_end", "seq": 57, "parts": 2, "kind": "speech"}
+    assert frames[3] == {"type": "speech_audio_end", "seq": 57, "parts": 2, "kind": "speech"}
     m = sink.manifest("g1")
     assert list(m) == ["57"] and [p["part"] for p in m["57"]] == [0, 1]
     assert sink.path_for("g1", 57, 1) is not None and sink.path_for("g1", 57, 9) is None
@@ -149,8 +156,8 @@ async def test_speak_failure_midway_keeps_pushed_parts_and_returns(tmp_path: Pat
     cm.subscribe_frames("GM", sub)
     sink = SpeechAudioSink(tmp_path / "audio", FakeTts(per_sentence=0.1, fail_at=1))
     await sink.speak("g1", 3, "随便说点什么都行吧。再来一句凑数的。", VOICE, cm, _public(3))
-    assert [f["type"] for f in frames] == ["speech_audio", "speech_audio_end"]
-    assert frames[1]["parts"] == 1
+    assert [f["type"] for f in frames] == ["speech_audio_begin", "speech_audio", "speech_audio_end"]
+    assert frames[2]["parts"] == 1
     assert sink.manifest("g1") == {"3": [{"part": 0, "duration": pytest.approx(0.1, abs=0.01)}]}
 
 
@@ -161,6 +168,24 @@ async def test_speak_total_failure_and_no_connections(tmp_path: Path) -> None:
     await sink.speak("g1", 1, "完全失败的一句话。", VOICE, None, _public(1))  # 不抛、不等
     assert time.monotonic() - t0 < 0.2
     assert sink.manifest("g1") == {}
+
+
+@pytest.mark.asyncio
+async def test_speak_total_failure_still_closes_begin_with_end(tmp_path: Path) -> None:
+    """issue #193：发了 begin 就必须发 end（parts=0），否则客户端会一直压住后面的展示。"""
+    cm = ConnectionManager(state_provider=_state)
+    frames: list[dict] = []
+
+    async def sub(f: dict) -> None:
+        frames.append(f)
+
+    cm.subscribe_frames("GM", sub)
+    sink = SpeechAudioSink(tmp_path / "audio", FakeTts(fail_at=0))
+    await sink.speak("g1", 1, "完全失败的一句话。", VOICE, cm, _public(1))
+    assert frames == [
+        {"type": "speech_audio_begin", "seq": 1, "kind": "speech"},
+        {"type": "speech_audio_end", "seq": 1, "parts": 0, "kind": "speech"},
+    ]
 
 
 def test_manifest_ignores_junk_and_delete_is_idempotent(tmp_path: Path) -> None:
@@ -267,7 +292,8 @@ async def test_narrate_pushes_frames_with_kind_and_caches(tmp_path: Path) -> Non
     )
     await sink.narrate("g1", _public(5), cm)
     assert tts.calls == ["投票开始。"]
-    assert frames[0]["kind"] == "narration" and frames[0]["seq"] == 5 and frames[0]["part"] == 0
+    assert frames[0] == {"type": "speech_audio_begin", "seq": 5, "kind": "narration"}
+    assert frames[1]["kind"] == "narration" and frames[1]["seq"] == 5 and frames[1]["part"] == 0
     assert frames[-1] == {"type": "speech_audio_end", "seq": 5, "parts": 1, "kind": "narration"}
     assert sink.manifest("g1") == {"5": [{"part": 0, "duration": pytest.approx(0.05, abs=0.01)}]}
     assert cache.get("uncle_fu", "投票开始。") is not None
@@ -318,7 +344,8 @@ async def test_narrate_filtered_frames_follow_event_visibility(tmp_path: Path) -
         narration_cache=NarrationCache(tmp_path / "narr"),
     )
     await sink.narrate("g1", _public(2, EventType.ROUND_STARTED), cm)  # GM_ONLY
-    assert got["GM"] == ["speech_audio", "speech_audio_end"] and got["SPECTATOR"] == []
+    assert got["GM"] == ["speech_audio_begin", "speech_audio", "speech_audio_end"]
+    assert got["SPECTATOR"] == []
 
 
 @pytest.mark.asyncio
@@ -347,7 +374,9 @@ async def test_narrate_tts_failure_skips_and_no_frames(tmp_path: Path) -> None:
         narration_cache=NarrationCache(tmp_path / "narr"),
     )
     await sink.narrate("g1", _public(5), cm)  # 不抛
-    assert frames == [] and sink.manifest("g1") == {}
+    # 没有音频，但 begin / end 成对，客户端不会被压住（issue #193）
+    assert [f["type"] for f in frames] == ["speech_audio_begin", "speech_audio_end"]
+    assert frames[1]["parts"] == 0 and sink.manifest("g1") == {}
 
 
 @pytest.mark.asyncio
@@ -372,7 +401,7 @@ async def test_narrate_plays_even_if_cache_put_fails(
         tmp_path / "audio", CountingTts(), narration=_narr(tmp_path), narration_cache=cache
     )
     await sink.narrate("g1", _public(5), cm)
-    assert [f["type"] for f in frames] == ["speech_audio", "speech_audio_end"]
+    assert [f["type"] for f in frames] == ["speech_audio_begin", "speech_audio", "speech_audio_end"]
 
 
 @pytest.mark.asyncio
