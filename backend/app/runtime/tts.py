@@ -174,6 +174,61 @@ def _wav_chunks(wav: bytes) -> tuple[bytes, bytes]:
     raise TtsError("WAV 头缺少 fmt/data 块")
 
 
+SILENCE_THRESHOLD = 300  # 16-bit 采样绝对值低于此视为静音（模型吐出的尾巴通常是全零）
+SILENCE_TAIL_SEC = 0.3  # 裁掉尾部静音后保留的呼吸间隙
+
+
+def trim_trailing_silence(
+    wav: bytes, *, threshold: int = SILENCE_THRESHOLD, tail_sec: float = SILENCE_TAIL_SEC
+) -> bytes:
+    """裁掉 WAV 尾部的长静音；只处理 16-bit PCM。
+
+    真机复现：Qwen3-TTS 偶尔给一句话返回 96s 的 WAV，前 20s 有声、后面全是静音，
+    播放时像整局卡住。只裁尾部、保留 tail_sec 的间隙；全静音 / 尾巴本来就短 / 不是
+    16-bit WAV 一律原样返回，不猜。
+    """
+    try:
+        fmt, data = _wav_chunks(wav)
+    except TtsError:
+        return wav
+    if len(fmt) < 16:
+        return wav
+    channels = int.from_bytes(fmt[2:4], "little")
+    rate = int.from_bytes(fmt[4:8], "little")
+    bits = int.from_bytes(fmt[14:16], "little")
+    if bits != 16 or channels < 1 or rate <= 0:
+        return wav
+    frame_bytes = 2 * channels
+    n_frames = len(data) // frame_bytes
+    samples = memoryview(data)[: n_frames * frame_bytes].cast("h")
+    last_loud = -1
+    for i in range(len(samples) - 1, -1, -1):
+        v = samples[i]
+        if v > threshold or v < -threshold:
+            last_loud = i // channels
+            break
+    if last_loud < 0:
+        return wav
+    keep_frames = min(n_frames, last_loud + 1 + int(rate * tail_sec))
+    if keep_frames >= n_frames:
+        return wav
+    trimmed = bytes(data[: keep_frames * frame_bytes])
+    fmt_pad = b"\x00" if len(fmt) & 1 else b""
+    data_pad = b"\x00" if len(trimmed) & 1 else b""
+    body = (
+        b"WAVE"
+        + b"fmt "
+        + len(fmt).to_bytes(4, "little")
+        + fmt
+        + fmt_pad
+        + b"data"
+        + len(trimmed).to_bytes(4, "little")
+        + trimmed
+        + data_pad
+    )
+    return b"RIFF" + len(body).to_bytes(4, "little") + body
+
+
 def concat_wav(parts: list[bytes]) -> bytes:
     """同采样率 / 声道 / 位宽的多段 WAV → 一段（直接拼 data 块）。单段原样返回。"""
     if not parts:
@@ -326,7 +381,15 @@ class HttpTtsClient:
             for i, sentence in enumerate(sentences):
                 # 单句失败只丢这一句，后面的照常出声——以前一句超时整段发言就哑了
                 try:
-                    wav = await self._post_speech(client, self._body(sentence, voice, ref_audio))
+                    raw = await self._post_speech(client, self._body(sentence, voice, ref_audio))
+                    wav = trim_trailing_silence(raw)
+                    if len(wav) != len(raw):
+                        logger.info(
+                            "第 %d 句裁掉尾部静音：%.1fs → %.1fs",
+                            i,
+                            wav_duration(raw),
+                            wav_duration(wav),
+                        )
                     yield AudioPart(index=i, wav=wav, duration_sec=wav_duration(wav))
                 except TtsError as exc:
                     failures += 1
