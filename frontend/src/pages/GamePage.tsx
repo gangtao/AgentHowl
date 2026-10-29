@@ -46,6 +46,7 @@ import { currentClaims, logEntries } from "../lib/gameLog";
 import { identityLines } from "../lib/identityLines";
 import { railCards } from "../lib/railCards";
 import { seatModel } from "../lib/seatModel";
+import { speakingSeat } from "../lib/speakingSeat";
 import { stageContent } from "../lib/stageContent";
 import { currentSpeechItem } from "../lib/tableText";
 import { graveyard } from "../lib/village";
@@ -414,6 +415,9 @@ export default function GamePage({ gameId, token, share, viewer }: GamePageProps
   // 高亮若只看 state 会跑到下一位身上（issue #103 用户反馈）。零过滤：seq 来自服务端帧。
   const voicingSeq = useVoice((s) => s.voicingSeq);
   const voicePlaying = useVoice((s) => s.playing !== null);
+  const voiceEnabled = useVoice((s) => s.enabled);
+  const voiceAvailable = useVoice((s) => s.available);
+  const voiceFinishedSeq = useVoice((s) => s.finishedSeq);
   // 座位（发言/遗言事件）/ "GM"（其它任何事件，含带 actor_seat 的 HUNTER_SHOT 等进程事件，
   // issue #110）/ null（找不到事件 → 退回轮到谁）。只看事件类型与 actor_seat，不看 kind。
   const voicingActor = useMemo<number | "GM" | null>(() => {
@@ -423,9 +427,23 @@ export default function GamePage({ gameId, token, share, viewer }: GamePageProps
     if (e.type === "PLAYER_SPOKE" || e.type === "LAST_WORDS") return e.actor_seat ?? "GM";
     return "GM";
   }, [events, voicingSeq]);
-  let speaking: number | null = null;
-  if (typeof voicingActor === "number") speaking = voicingActor;
-  else if (voicingActor === null) speaking = turnSpeaker;
+  // 直播开语音：发言事件先到、音频几秒后才到（合成 + 分段推送）；这段空档里 state 已把发言权交给下一位，
+  // 只看 voicingSeq 会把发言台跳到下一位再跳回来——那句音频播完前台上仍是这一位（lib/speakingSeat）。
+  const lastSpeech = useMemo<{ seq: number; actor: number | null } | null>(() => {
+    for (let i = visibleEvents.length - 1; i >= 0; i -= 1) {
+      const e = visibleEvents[i] as Event;
+      if (e.type === "PLAYER_SPOKE") return { seq: e.seq, actor: e.actor_seat };
+      if (e.type === "LAST_WORDS") return { seq: e.seq, actor: (e.payload as { seat: number }).seat };
+    }
+    return null;
+  }, [visibleEvents]);
+  const speaking = speakingSeat({
+    voicingActor,
+    turnSpeaker,
+    lastSpeech,
+    voice: { enabled: voiceEnabled, available: voiceAvailable, finishedSeq: voiceFinishedSeq },
+    live: mode === "live",
+  });
 
   // 票数小标与座位状态行的「已投 N号」只在投票类阶段——否则会把上一轮遗留的票箱画在座位上。
   const ballot = useMemo<{

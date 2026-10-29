@@ -173,7 +173,7 @@ describe("useLiveEvents", () => {
     expect(FakeWebSocket.instances).toHaveLength(2); // 全程只重连过一次
   });
 
-  it("speech_audio 帧 → useVoice.enqueue，url 带本连接的 token；speech_audio_end 被忽略", () => {
+  it("speech_audio 帧 → useVoice.enqueue，url 带本连接的 token；speech_audio_end → markEnd", () => {
     renderHook(() => useLiveEvents({ gameId: "g1", auth: { token: "tok" }, enabled: true }));
     const socket = FakeWebSocket.instances[0]!;
 
@@ -190,7 +190,8 @@ describe("useLiveEvents", () => {
 
     socket.emit({ type: "speech_audio_end", seq: 3, parts: 1 });
 
-    // 忽略：队列/available 均不因 speech_audio_end 改变
+    // end 帧只记「这句的分段都推完了」，队列不变（语音关着，第 0 段还留在队列里）
+    expect(useVoice.getState().ended.has(3)).toBe(true);
     expect(useVoice.getState().queue).toEqual([
       { seq: 3, part: 0, url: "/a/3/0?token=tok", duration: 1.5, kind: "speech" },
     ]);
