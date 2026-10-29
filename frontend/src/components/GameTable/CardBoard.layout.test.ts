@@ -20,6 +20,9 @@ describe("CardBoard.module.css", () => {
     }
     expect(cards).toMatch(/\.root \.grid \.piece\[data-selected\][^{]*{[^}]*opacity:\s*1/);
   });
+  it("准星 / 水晶（data-orb）在卡牌模式下缩到 140px 以内（issue #176）", () => {
+    expect(cards).toMatch(/\.center > \[data-orb\]\s*{[^}]*width:\s*1[0-4]\dpx/);
+  });
   it("桌心容器不再固定 min-height，桌心内容改为跟随文档流", () => {
     expect(cards).not.toMatch(/\.center\s*{[^}]*min-height/);
     expect(cards).toMatch(/\.center > \*\s*{[^}]*position:\s*static/);

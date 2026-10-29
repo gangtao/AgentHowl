@@ -106,7 +106,7 @@ export function TableCenter({ content, seats }: TableCenterProps): JSX.Element |
 
     case "crystal":
       return (
-        <div className={`${styles.center} ${styles.crystal}`}>
+        <div className={`${styles.center} ${styles.crystal}`} data-orb="crystal">
           <div className={styles.orbKicker}>查 验</div>
           <div className={styles.orbSeat}>{content.seat}号</div>
           <div className={styles.orbSub}>确认后天亮前揭晓</div>
@@ -115,7 +115,7 @@ export function TableCenter({ content, seats }: TableCenterProps): JSX.Element |
 
     case "crosshair":
       return (
-        <div className={`${styles.center} ${styles.crosshair}`}>
+        <div className={`${styles.center} ${styles.crosshair}`} data-orb="crosshair">
           <div className={styles.orbKicker}>准 星</div>
           <div className={styles.orbSeat}>{content.seat}号</div>
           <div className={styles.orbSub}>{seatOf(content.seat)?.name ?? ""}</div>
