@@ -285,6 +285,18 @@
   max-width: 420px;
 }
 
+/* 准星 / 水晶是为 560px 圆桌中央设计的大圆：牌阵下方缩成 140px（issue #176） */
+.center > [data-orb] {
+  width: 140px;
+  max-width: 140px;
+}
+
+.center > [data-orb] > :first-child,
+.center > [data-orb] > :last-child {
+  margin-top: 22px;
+  margin-bottom: 22px;
+}
+
 @media (max-width: 560px) {
   .grid {
     grid-template-columns: repeat(3, 96px);

@@ -170,4 +170,13 @@ describe("CardBoard（规格 §7 卡牌皮肤）", () => {
     rerender(<CardBoard {...base} seats={many(4)} center={{ kind: "moon", sub: "x" }} />);
     expect(screen.getByTestId("card-center")).toBeInTheDocument();
   });
+
+  it("准星 / 水晶在卡牌模式下带 data-orb，供 CSS 缩成小圆（issue #176）", () => {
+    const { rerender } = render(
+      <CardBoard {...base} seats={many(4)} center={{ kind: "crosshair", seat: 2 }} />,
+    );
+    expect(screen.getByTestId("card-center").querySelector("[data-orb]")).not.toBeNull();
+    rerender(<CardBoard {...base} seats={many(4)} center={{ kind: "crystal", seat: 2 }} />);
+    expect(screen.getByTestId("card-center").querySelector("[data-orb]")).not.toBeNull();
+  });
 });
