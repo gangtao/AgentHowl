@@ -151,23 +151,19 @@ describe("CardBoard（规格 §7 卡牌皮肤）", () => {
     expect(screen.getByText(/已投 1\/3|1\/3/)).toBeInTheDocument();
   });
 
-  it("发言阶段没有上轮票型时不渲染桌心容器（否则空盒子把发言条挤出视口）；有票型才渲染", () => {
+  it("篝火不渲染桌心容器（空盒子会把下方内容挤出视口）；发言进度一行与月亮都渲染", () => {
     const { rerender } = render(
-      <CardBoard
-        {...base}
-        seats={many(4)}
-        center={{ kind: "bubble", speaker: 1, lastTally: null }}
-      />,
+      <CardBoard {...base} seats={many(4)} center={{ kind: "campfire", note: "x" }} />,
     );
     expect(screen.queryByTestId("card-center")).toBeNull();
     rerender(
       <CardBoard
         {...base}
         seats={many(4)}
-        center={{ kind: "bubble", speaker: 1, lastTally: "4号 ·4 ← 2 5" }}
+        center={{ kind: "speechProgress", lastNight: null, lastTally: null, done: 2, total: 4, next: 3 }}
       />,
     );
-    expect(screen.getByTestId("card-center")).toBeInTheDocument();
+    expect(screen.getByTestId("card-center")).toHaveTextContent("发言进度 2 / 4 · 下一位 3号");
     rerender(<CardBoard {...base} seats={many(4)} center={{ kind: "moon", sub: "x" }} />);
     expect(screen.getByTestId("card-center")).toBeInTheDocument();
   });

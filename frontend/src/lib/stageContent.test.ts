@@ -53,9 +53,9 @@ describe("stageContent（规格 §4.4）", () => {
     ],
     ["VOTE → tally", (s: GameState) => s.phase === "VOTE", "tally"],
     [
-      "DAY_SPEECH 有发言者 → bubble",
+      "DAY_SPEECH 有发言者 → speechProgress",
       (s: GameState) => s.phase === "DAY_SPEECH" && s.speech_order.length > 0,
-      "bubble",
+      "speechProgress",
     ],
     ["GAME_OVER → none", (s: GameState) => s.phase === "GAME_OVER", "none"],
     [
@@ -162,14 +162,25 @@ describe("stageContent（规格 §4.4）", () => {
     }
   });
 
-  it("bubble.lastTally 取上一轮 VOTE_RESULT 摘要", () => {
+  it("speechProgress：昨夜 / 上一轮票型 / 发言进度", () => {
     const { state, events: ev } = at((s) => s.phase === "DAY_SPEECH" && s.round === 3);
     const c = stageContent({ state, events: ev, mode: "live" });
-    expect(c.kind).toBe("bubble");
-    if (c.kind === "bubble") {
-      expect(c.lastTally).toMatch(/^\d+号 ·[\d.]+ ← [\d ]+/);
-      expect(c.speaker).toBe(state.speech_order[state.speech_idx]);
+    expect(c.kind).toBe("speechProgress");
+    if (c.kind === "speechProgress") {
+      expect(c.lastTally).toMatch(/^\d+号 ·[\d.]+( ｜ \d+号 ·[\d.]+)*$/);
+      expect(c.lastNight === "平安夜" || /死亡$/.test(c.lastNight ?? "")).toBe(true);
+      expect(c.done).toBe(state.speech_idx);
+      expect(c.total).toBe(state.speech_order.length);
+      expect(c.next).toBe(state.speech_order[state.speech_idx + 1] ?? null);
     }
+  });
+
+  it("speechProgress：第一次发言阶段还没有票型时 lastTally 为 null", () => {
+    const { state, events: ev } = at((s) => s.phase === "DAY_SPEECH");
+    expect(ev.some((e) => e.type === "VOTE_RESULT")).toBe(false);
+    const c = stageContent({ state, events: ev, mode: "live" });
+    expect(c.kind).toBe("speechProgress");
+    expect(c.kind === "speechProgress" && c.lastTally).toBeNull();
   });
 
   it("tally 行按被投者分组并带投票人", () => {

@@ -2,7 +2,7 @@
 // YourTurn / 已选目标；不收 viewer——狼队密议只在 state 里有 wolf_proposals 时出现，观众的 state 没有。
 //
 // 匹配顺序即规格表格顺序：none → wolfCouncil → witchTarget → crystal → crosshair → gmNotes → moon →
-// tally / pkStage → bubble → campfire。
+// tally / pkStage → speechProgress → campfire。
 
 import type { YourTurn } from "../api/player";
 import { PHASE_ZH, isNight } from "../engine/phases";
@@ -13,13 +13,8 @@ import {
   voteTally,
   type NightSummaryRow,
 } from "../engine/select";
-import type {
-  Event,
-  GameState,
-  RoleType,
-  VoteCastPayload,
-  VoteResultPayload,
-} from "../engine/types";
+import type { Event, GameState, RoleType, VoteResultPayload } from "../engine/types";
+import { townNews } from "./village";
 
 export interface StageInput {
   state: GameState;
@@ -71,7 +66,17 @@ export type StageContent =
       election: boolean;
     }
   | { kind: "pkStage"; a: PkSide; b: PkSide; cast: number; voters: number }
-  | { kind: "bubble"; speaker: number; lastTally: string | null }
+  | {
+      kind: "speechProgress";
+      /** 村镇公告「昨夜」行：「平安夜」/「3号、7号 死亡」，没有则 null。 */
+      lastNight: string | null;
+      /** 上一轮票型「4号 ·4 ｜ 8号 ·2」，没有则 null。 */
+      lastTally: string | null;
+      done: number;
+      total: number;
+      /** 当前发言人之后的下一位；最后一位时 null。 */
+      next: number | null;
+    }
   | { kind: "gmNotes"; round: number; rows: NightSummaryRow[] }
   | { kind: "campfire"; note: string };
 
@@ -102,32 +107,14 @@ function groupRows(
   }));
 }
 
-/** 上一轮 VOTE_RESULT 的一行摘要：`4号 ·4 ← 2 5 9 7 ｜ 8号 ·2 ← 1 3`；没有则 null。 */
-function lastVoteSummary(events: readonly Event[]): string | null {
-  let resultIdx = -1;
-  events.forEach((e, i) => {
-    if (e.type === "VOTE_RESULT") resultIdx = i;
-  });
-  if (resultIdx === -1) return null;
-  let startIdx = -1;
-  for (let i = resultIdx - 1; i >= 0; i -= 1) {
-    if (events[i]?.type === "VOTE_STARTED") {
-      startIdx = i;
-      break;
-    }
+/** 上一轮 VOTE_RESULT 的票型一行：`4号 ·4 ｜ 8号 ·2`（投票人在对局记录里，这里不重复）；没有则 null。 */
+function lastVoteTally(events: readonly Event[]): string | null {
+  let last: VoteResultPayload | null = null;
+  for (const e of events) {
+    if (e.type === "VOTE_RESULT") last = e.payload as VoteResultPayload;
   }
-  const from = new Map<number, number[]>();
-  for (const e of events.slice(startIdx + 1, resultIdx)) {
-    if (e.type !== "VOTE_CAST") continue;
-    const c = e.payload as VoteCastPayload;
-    if (c.target === null) continue;
-    from.set(c.target, [...(from.get(c.target) ?? []), c.voter]);
-  }
-  const tally = (events[resultIdx]?.payload as VoteResultPayload).tally;
-  if (tally.length === 0) return null;
-  return tally
-    .map(([target, n]) => `${target}号 ·${n} ← ${(from.get(target) ?? []).join(" ")}`.trimEnd())
-    .join(" ｜ ");
+  if (last === null || last.tally.length === 0) return null;
+  return last.tally.map(([target, n]) => `${target}号 ·${n}`).join(" ｜ ");
 }
 
 function campfireNote(state: GameState): string {
@@ -234,7 +221,15 @@ export function stageContent(input: StageInput): StageContent {
       phase === "SHERIFF_ELECTION" && state.election_stage !== "speech";
     const speaker = electionNonSpeech ? null : currentSpeaker(state);
     if (speaker !== null) {
-      return { kind: "bubble", speaker, lastTally: lastVoteSummary(events) };
+      const lastNight = townNews(events, state).find((r) => r.k === "昨夜")?.v ?? null;
+      return {
+        kind: "speechProgress",
+        lastNight,
+        lastTally: lastVoteTally(events),
+        done: state.speech_idx,
+        total: state.speech_order.length,
+        next: state.speech_order[state.speech_idx + 1] ?? null,
+      };
     }
   }
 

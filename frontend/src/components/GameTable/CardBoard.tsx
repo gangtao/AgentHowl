@@ -37,11 +37,9 @@ export default function CardBoard({
 }: GameTableProps): JSX.Element {
   const maxVotes = Math.max(0, ...seats.map((s) => s.badges.votes ?? 0));
   const speaker = speech === null ? null : (seats.find((s) => s.seat === speech.speaker) ?? null);
-  // 桌心内容：只有 TableCenter 真会画东西时才挂容器——空盒子会把发言条挤出视口（评审 PR ⑤）
-  const showCenter =
-    center.kind !== "none" &&
-    center.kind !== "campfire" &&
-    !(center.kind === "bubble" && center.lastTally === null);
+  // 桌心内容：只有 TableCenter 真会画东西时才挂容器——空盒子会把下方内容挤出视口（评审 PR ⑤）；
+  // speechProgress（发言进度一行，设计稿 8c）永远有内容。
+  const showCenter = center.kind !== "none" && center.kind !== "campfire";
 
   return (
     <div className={styles.root} data-night={night ? "true" : undefined} data-testid="card-board">

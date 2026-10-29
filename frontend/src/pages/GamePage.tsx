@@ -592,7 +592,8 @@ export default function GamePage({ gameId, token, share, viewer }: GamePageProps
         : "speech";
   const speechLimit =
     typeof view.config.speech_time_limit === "number" ? view.config.speech_time_limit : null;
-  const bubbleSpeaker = center.kind === "bubble" ? (speaking ?? center.speaker) : null;
+  // 过渡（Task 9 整体换成发言台）：发言阶段气泡跟着「正在出声 / 轮到谁」的座位走
+  const bubbleSpeaker = center.kind === "speechProgress" ? speaking : null;
   const speech =
     bubbleSpeaker === null
       ? null
