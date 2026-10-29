@@ -550,6 +550,15 @@ def meta_endpoint(
     meta = games.store.load_meta(game_id)
     data = meta.model_dump(mode="json")
     data.pop("agent_ids", None)  # 归因 id 不随分享链接外泄（issue #123）
+    # issue #168：建局者 user_id 与档案的 provider id 是内部标识，只给建局者本人；分享链接 /
+    # 其他用户（含 admin）拿到的 meta 不含 owner_id、provider 置空。档案其余字段（模型 / 技能 /
+    # 人格 / memory_id）是 issue #64 刻意开放的 GM 层信息，不动。
+    is_owner = info.user_id is not None and info.user_id == meta.owner_id
+    if not is_owner:
+        data.pop("owner_id", None)
+        for profile in data.get("agents", {}).values():
+            if isinstance(profile, dict) and "provider" in profile:
+                profile["provider"] = None
     return {**data, "viewer": viewer_of(info)}
 
 

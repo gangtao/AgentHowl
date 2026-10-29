@@ -351,6 +351,48 @@ def test_meta_endpoint_gated_until_game_over_and_echoes_effective_agents() -> No
     assert one["skills"] == ["logic-chain"] and one["memory_id"] == "alice"
 
 
+def test_meta_endpoint_hides_owner_id_and_provider_from_non_owners() -> None:
+    """issue #168：分享链接 / 非建局者拿 /meta 不含 owner_id、档案 provider 置空；建局者照旧。"""
+
+    from app.runtime.player_port import BotPlayerPort
+
+    app = make_app(
+        store=InMemoryEventStore(),
+        timeouts=RunnerTimeouts(speech_sec=5.0, action_sec=5.0),
+        agent_port_factory=lambda seat, h: BotPlayerPort(state_provider=h.live_state),
+    )
+    with TestClient(app) as alice, TestClient(app) as anon, TestClient(app) as root:
+        login_as(alice, "alice")
+        login_as(root, "root", role="admin")
+        provider = {"name": "mine", "kind": "openai_compatible", "api_base": "http://x"}
+        pa = alice.post("/api/v1/providers", json={**provider, "api_key": "k"}).json()[
+            "provider_id"
+        ]
+        body = {
+            "preset": "std_9_kill_side",
+            "config_override": {"seed": 11},
+            "agents": {"1": {"model": "m", "provider": pa, "memory_id": "alice-mem"}},
+        }
+        created = alice.post("/api/v1/games", json=body).json()
+        gid, host, spec = created["game_id"], created["host_token"], created["share_token"]
+        started = alice.post(f"/api/v1/games/{gid}/start", json={}, headers=_auth(host))
+        assert started.status_code == 200
+        wait_game_done(alice, gid)
+
+        shared = anon.get(f"/api/v1/games/{gid}/meta", params={"share": spec}).json()
+        assert "owner_id" not in shared and "agent_ids" not in shared
+        assert shared["agents"]["1"]["provider"] is None
+        # issue #64 刻意开放的 GM 层信息（memory_id 等）不动
+        assert shared["agents"]["1"]["memory_id"] == "alice-mem"
+
+        mine = alice.get(f"/api/v1/games/{gid}/meta").json()
+        assert mine["owner_id"] is not None and mine["agents"]["1"]["provider"] == pa
+
+        # admin 不是建局者：同样不给内部 id
+        theirs = root.get(f"/api/v1/games/{gid}/meta").json()
+        assert "owner_id" not in theirs and theirs["agents"]["1"]["provider"] is None
+
+
 def test_events_endpoint_filters_skills_meta_from_spectators_but_replay_not() -> None:
     """issue #60：/events（观众）不外泄 skills meta；/replay（终局后）保留。"""
 
