@@ -726,7 +726,7 @@ export default function GamePage({ gameId, token, share, viewer }: GamePageProps
       />
 
       <div className={styles.stage}>
-        <div className={styles.tableArea}>
+        <div className={styles.tableArea} data-table={tableStyle}>
           <div className={styles.plaque}>
             <PhasePlaque state={view} events={visibleEvents} cursor={cursor} total={totalSeq} />
           </div>

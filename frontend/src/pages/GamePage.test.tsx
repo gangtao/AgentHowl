@@ -331,6 +331,38 @@ describe("GamePage 玩家视角（issue #115）", () => {
     expect(screen.getByRole("button", { name: "0号" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByRole("button", { name: "确认投票 · 0号" })).toBeEnabled();
   });
+
+  it("投票中切换桌面皮肤：选中目标保留，卡牌上可选座位仍可点并同步 HUD，切回圆桌亦然（规格 §7）", async () => {
+    stubPlayerFetch(playerState);
+    stubSocket(true);
+    render(<GamePage gameId="g_x" token="P" />);
+    await screen.findByText("2号 · P2");
+    act(() =>
+      useTurn.getState().setPrompt({
+        observation: { ...playerState, phase: "VOTE" } as never,
+        available_tools: ["vote", "get_state"] as never,
+        deadline_ts: Date.now() / 1000 + 60,
+      }),
+    );
+    fireEvent.click(await screen.findByRole("button", { name: /^0号 P0/ }));
+    fireEvent.change(screen.getByLabelText("桌面皮肤"), { target: { value: "cards" } });
+    expect(await screen.findByTestId("card-board")).toBeInTheDocument();
+    expect(document.querySelector('button[data-seat="0"]')).toHaveAttribute(
+      "data-selected",
+      "true",
+    );
+    expect(screen.getByRole("button", { name: "确认投票 · 0号" })).toBeEnabled();
+    const card1 = document.querySelector('button[data-seat="1"][data-selectable]') as HTMLElement;
+    expect(card1).not.toBeNull();
+    fireEvent.click(card1);
+    expect(screen.getByRole("button", { name: "确认投票 · 1号" })).toBeEnabled();
+    fireEvent.change(screen.getByLabelText("桌面皮肤"), { target: { value: "round" } });
+    expect(screen.queryByTestId("card-board")).toBeNull();
+    expect(screen.getByRole("button", { name: /^1号 P1/ })).toHaveAttribute(
+      "data-selected",
+      "true",
+    );
+  });
 });
 
 describe("metaFromState 公开规则（issue #80）", () => {

@@ -150,49 +150,50 @@
   color: #5a5f6a;
 }
 
-/* ---- 状态 ---- */
-.piece[data-selectable] {
-  cursor: pointer;
-}
-
-.piece[data-selectable]:hover,
-.piece[data-selected] {
-  border-color: var(--ah-fire);
-  box-shadow: 0 0 24px rgba(227, 166, 72, 0.6);
-}
-
-.piece[data-me] {
-  border-color: var(--ah-fire);
-}
-
-.piece[data-speaking] {
-  transform: translateY(-8px);
-  border-color: var(--ah-gold);
-  box-shadow: 0 0 28px rgba(240, 192, 96, 0.55);
-}
-
-.piece[data-leader] {
-  border-color: var(--ah-gold);
-}
-
-.piece[data-dim] {
-  opacity: 0.55;
-}
-
-.piece[data-target] {
-  opacity: 1;
-  transform: translateY(-6px);
-  box-shadow: 0 0 24px rgba(201, 70, 61, 0.5);
-}
-
+/* ---- 状态（写在夜间牌背规则之后，用 .root .grid .piece[...] 保证特异性 ≥ 夜间规则） ---- */
 .root[data-night] .piece[data-face='back'] {
   background: linear-gradient(180deg, var(--ah-table-night), var(--ah-table-night-edge));
   border-color: #3a4260;
 }
 
 .root[data-night] .backText,
-.root[data-night] .name {
+.root[data-night] .piece[data-face='back'] .name {
   color: #8a92a8;
+}
+
+.root .grid .piece[data-selectable] {
+  cursor: pointer;
+}
+
+.root .grid .piece[data-dim] {
+  opacity: 0.55;
+}
+
+.root .grid .piece[data-me] {
+  border-color: var(--ah-fire);
+}
+
+.root .grid .piece[data-leader] {
+  border-color: var(--ah-gold);
+}
+
+.root .grid .piece[data-speaking] {
+  transform: translateY(-8px);
+  border-color: var(--ah-gold);
+  box-shadow: 0 0 28px rgba(240, 192, 96, 0.55);
+}
+
+.root .grid .piece[data-target] {
+  opacity: 1;
+  transform: translateY(-6px);
+  box-shadow: 0 0 24px rgba(201, 70, 61, 0.5);
+}
+
+.root .grid .piece[data-selectable]:hover,
+.root .grid .piece[data-selected] {
+  opacity: 1;
+  border-color: var(--ah-fire);
+  box-shadow: 0 0 24px rgba(227, 166, 72, 0.6);
 }
 
 /* ---- 徽章 ---- */
@@ -269,11 +270,19 @@
   background: var(--ah-wolf);
 }
 
-/* 桌心内容本是圆桌中央的绝对定位块：这里给它一个有高度的相对容器，落在牌阵下方 */
+/* 桌心内容本是圆桌中央的绝对定位块：卡牌模式下改成文档流，高度随内容 */
 .center {
   position: relative;
   width: 100%;
-  min-height: 150px;
+  display: flex;
+  justify-content: center;
+}
+
+.center > * {
+  position: static;
+  transform: none;
+  width: 100%;
+  max-width: 420px;
 }
 
 @media (max-width: 560px) {

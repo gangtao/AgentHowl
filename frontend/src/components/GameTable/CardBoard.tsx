@@ -37,7 +37,11 @@ export default function CardBoard({
 }: GameTableProps): JSX.Element {
   const maxVotes = Math.max(0, ...seats.map((s) => s.badges.votes ?? 0));
   const speaker = speech === null ? null : (seats.find((s) => s.seat === speech.speaker) ?? null);
-  const showCenter = center.kind !== "none" && center.kind !== "campfire";
+  // 桌心内容：只有 TableCenter 真会画东西时才挂容器——空盒子会把发言条挤出视口（评审 PR ⑤）
+  const showCenter =
+    center.kind !== "none" &&
+    center.kind !== "campfire" &&
+    !(center.kind === "bubble" && center.lastTally === null);
 
   return (
     <div className={styles.root} data-night={night ? "true" : undefined} data-testid="card-board">
@@ -133,7 +137,7 @@ export default function CardBoard({
       </div>
 
       {showCenter && (
-        <div className={styles.center}>
+        <div className={styles.center} data-testid="card-center">
           <TableCenter content={center} seats={seats} />
         </div>
       )}

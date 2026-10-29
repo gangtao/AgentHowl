@@ -67,7 +67,7 @@
 ## PR ⑤ 卡牌皮肤
 
 顶栏「桌面：圆桌 ▾ / 卡牌 ▾」切换并记在 `localStorage["agenthowl.tableStyle"]`。玩家视角截图来自
-`AH_TABLE=cards RUN=cards-wolf AH_SEED=2 RUN_SHERIFF=1 node play.mjs`（狼视角，g_5dd0074d：`finished: true / rejected: [] / mismatches: 0 / stalls: 0`）；
+`AH_TABLE=cards RUN=cards-wolf AH_SEED=2 RUN_SHERIFF=1 node play.mjs`（狼视角，g_0a185b1b：`finished: true / rejected: [] / mismatches: 0 / stalls: 0`）；
 上帝回放截图来自 `AH_TABLE=cards AH_GAME=g_16fe9066 node screens.mjs`。
 
 | 文件 | 画面 | 设计稿 |
@@ -77,4 +77,4 @@
 | `11-cards-vote-turn.png` | 投票：票数挂牌底篝火签，领先者金边；桌心票型在牌阵下方 | 7e |
 | `11-cards-day-speech-turn.png` | 白天发言：牌阵下方横向羊皮纸发言条（44px 徽记 + 头行 + 正文 + 进度条） | 6b |
 | `11-cards-gm-replay-{night,sheriff,speech,vote,over,drawer}.png` | 上帝回放：已知身份正面朝上、出局灰牌仍显身份 + ✕ 章 | 6a / 6b |
-| `11-cards-game-1100.png` / `11-cards-game-390.png` | 1100 / 390 宽的牌阵降级 | — |
+| `11-cards-game-1100.png` / `11-cards-game-390.png` | 1100 / 390 宽：牌阵顶对齐、放不下时纵向滚动（无横向溢出） | — |

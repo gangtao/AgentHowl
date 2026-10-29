@@ -149,4 +149,25 @@ describe("CardBoard（规格 §7 卡牌皮肤）", () => {
     );
     expect(screen.getByText(/已投 1\/3|1\/3/)).toBeInTheDocument();
   });
+
+  it("发言阶段没有上轮票型时不渲染桌心容器（否则空盒子把发言条挤出视口）；有票型才渲染", () => {
+    const { rerender } = render(
+      <CardBoard
+        {...base}
+        seats={many(4)}
+        center={{ kind: "bubble", speaker: 1, lastTally: null }}
+      />,
+    );
+    expect(screen.queryByTestId("card-center")).toBeNull();
+    rerender(
+      <CardBoard
+        {...base}
+        seats={many(4)}
+        center={{ kind: "bubble", speaker: 1, lastTally: "4号 ·4 ← 2 5" }}
+      />,
+    );
+    expect(screen.getByTestId("card-center")).toBeInTheDocument();
+    rerender(<CardBoard {...base} seats={many(4)} center={{ kind: "moon", sub: "x" }} />);
+    expect(screen.getByTestId("card-center")).toBeInTheDocument();
+  });
 });
