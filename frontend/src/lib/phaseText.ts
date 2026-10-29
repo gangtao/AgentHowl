@@ -1,7 +1,7 @@
 // 顶栏与阶段木牌的文案（规格 §4.1）：纯函数，只收 state / events / 游标 / 连接态，不收 viewer。
 
 import { DIRECTION_ZH, ELECTION_STAGE_ZH, PHASE_ZH, WINNER_ZH, isNight } from "../engine/phases";
-import { aliveSeats, voteTally } from "../engine/select";
+import { aliveSeats, effectiveSpeechDirection, voteTally } from "../engine/select";
 import type { Event, GameState, Phase, VoteResultPayload } from "../engine/types";
 import type { ConnectionState, PlaybackMode } from "../store/game";
 
@@ -50,7 +50,9 @@ export function plaqueLines(
   } else {
     title = `第 ${state.round} 轮 · ${PHASE_ZH[phase] ?? phase}`;
     const sheriff = state.sheriff_seat !== null ? `警长 ${state.sheriff_seat}号` : "无警长";
-    const direction = DIRECTION_ZH[state.sheriff_speech_direction ?? "RIGHT"] ?? "顺时针";
+    // 本轮实际方向（偶数轮换手），不是警长定下的基准方向——否则偶数轮和 speech_order 对不上号
+    const effective = effectiveSpeechDirection(state);
+    const direction = effective !== null ? (DIRECTION_ZH[effective] ?? "顺时针") : "顺时针";
     const weight =
       typeof state.config.sheriff.vote_weight === "number" ? state.config.sheriff.vote_weight : 1.5;
     switch (phase) {

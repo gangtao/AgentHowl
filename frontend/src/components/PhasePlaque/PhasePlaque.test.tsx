@@ -13,6 +13,18 @@ const daySpeech = states.find((s) => s.phase === "DAY_SPEECH" && s.round === 2) 
 const wolfNight = states.find((s) => s.phase === "NIGHT_WEREWOLF") as GameState;
 
 describe("plaqueLines（规格 §4.1 阶段木牌）", () => {
+
+  it("白天发言副标按本轮实际方向：基准顺时针的偶数轮标「逆时针」（用户反馈：顺序和标签对不上号）", () => {
+    const even: GameState = {
+      ...daySpeech,
+      round: 2,
+      sheriff_seat: 3,
+      sheriff_speech_direction: "RIGHT",
+      config: { ...daySpeech.config, speech_order_rule: "SHERIFF_DECIDES" },
+    };
+    expect(plaqueLines(even, [], null, 100).sub).toContain("警长 3号 · 逆时针");
+    expect(plaqueLines({ ...even, round: 3 }, [], null, 100).sub).toContain("警长 3号 · 顺时针");
+  });
   it("白天发言：标题与副标", () => {
     const l = plaqueLines(daySpeech, [], null, 100);
     expect(l.title).toBe("第 2 轮 · 白天 · 发言");
