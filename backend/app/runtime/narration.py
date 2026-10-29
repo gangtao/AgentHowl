@@ -22,15 +22,26 @@ from app.engine.events import (
     Event,
     EventType,
     GameOverPayload,
+    GuardProtectedPayload,
     HunterShotPayload,
+    IdiotRevealedPayload,
     NightResolvedPayload,
     PhaseChangedPayload,
     PlayerExiledPayload,
     RoundStartedPayload,
+    SeerCheckedPayload,
+    SheriffCandidacyPayload,
+    SheriffDirectionSetPayload,
     SheriffElectedPayload,
+    SheriffVoteCastPayload,
     SheriffVoteStartedPayload,
+    SheriffWithdrewPayload,
+    VoteCastPayload,
     VoteResultPayload,
     VoteStartedPayload,
+    WitchActedPayload,
+    WolfKillDecidedPayload,
+    WolfKillProposedPayload,
     WolfSelfDestructPayload,
 )
 from app.engine.phases import ElectionStage, Phase
@@ -44,20 +55,37 @@ SPEECH_EVENTS: frozenset[EventType] = frozenset({EventType.PLAYER_SPOKE, EventTy
 
 DEFAULT_NARRATION_EVENTS: frozenset[EventType] = frozenset(
     {
+        EventType.GAME_STARTED,
         EventType.ROUND_STARTED,
         EventType.PHASE_CHANGED,
         EventType.NIGHT_RESOLVED,
         EventType.DEATH_ANNOUNCED,
         EventType.ELECTION_STAGE_CHANGED,
+        EventType.SHERIFF_CANDIDACY,
+        EventType.SHERIFF_WITHDREW,
         EventType.SHERIFF_VOTE_STARTED,
+        EventType.SHERIFF_VOTE_CAST,
         EventType.SHERIFF_ELECTED,
+        EventType.SHERIFF_DIRECTION_SET,
+        EventType.SHERIFF_BADGE_LOST,
         EventType.BADGE_PASSED,
         EventType.VOTE_STARTED,
+        EventType.VOTE_CAST,
         EventType.VOTE_RESULT,
         EventType.PLAYER_EXILED,
+        EventType.IDIOT_REVEALED,
         EventType.HUNTER_SHOT,
         EventType.WOLF_SELF_DESTRUCT,
         EventType.GAME_OVER,
+        # 夜间私有事件：帧按来源事件可见性过滤（connection.broadcast_frame），上帝全听，
+        # 狼队听狼人提议，预言家 / 女巫 / 守卫只听自己的；旁观者听不到（用户反馈：上帝视角应全播）
+        EventType.GUARD_PROTECTED,
+        EventType.WOLF_KILL_PROPOSED,
+        EventType.WOLF_KILL_DECIDED,
+        EventType.WOLF_KILL_REVOTE,
+        EventType.WITCH_SAVED,
+        EventType.WITCH_POISONED,
+        EventType.SEER_CHECKED,
     }
 )
 
@@ -118,9 +146,71 @@ def _election_stage(p: ElectionStageChangedPayload) -> list[str]:
     raise KeyError(f"ElectionStage 缺少旁白模板：{p.stage}")
 
 
+_DIRECTION_LINE = {"RIGHT": "警长决定顺时针发言。", "LEFT": "警长决定逆时针发言。"}
+
+
+def _vote_line(voter: int, target: int | None) -> list[str]:
+    return [f"{voter}号投给{target}号。" if target is not None else f"{voter}号弃票。"]
+
+
+def _render_night(event: Event) -> list[str] | None:  # noqa: PLR0911
+    """夜间私有事件的模板；非夜间事件 → None。"""
+    p = event.payload
+    t = event.type
+    if t == EventType.GUARD_PROTECTED and isinstance(p, GuardProtectedPayload):
+        return [f"守卫守护{p.target}号。" if p.target is not None else "守卫空守。"]
+    if t == EventType.WOLF_KILL_PROPOSED and isinstance(p, WolfKillProposedPayload):
+        if p.target is not None:
+            return [f"{p.wolf_seat}号狼人提议刀{p.target}号。"]
+        return [f"{p.wolf_seat}号狼人提议空刀。"]
+    if t == EventType.WOLF_KILL_DECIDED and isinstance(p, WolfKillDecidedPayload):
+        return [f"狼人今夜刀{p.target}号。" if p.target is not None else "狼人今夜空刀。"]
+    if t == EventType.WOLF_KILL_REVOTE:
+        return ["狼队意见不一致，再商量一轮。"]
+    if t == EventType.WITCH_SAVED and isinstance(p, WitchActedPayload):
+        return ["女巫使用解药。"]
+    if t == EventType.WITCH_POISONED and isinstance(p, WitchActedPayload):
+        return [
+            f"女巫毒了{p.poison_target}号。" if p.poison_target is not None else "女巫没有用毒。"
+        ]
+    if t == EventType.SEER_CHECKED and isinstance(p, SeerCheckedPayload):
+        who = "狼人" if str(p.result) == "WOLF" else "好人"
+        return [f"预言家查验{p.target}号，是{who}。"]
+    return None
+
+
+def _render_election(event: Event) -> list[str] | None:  # noqa: PLR0911
+    """竞选 / 投票过程事件的模板；其它 → None。"""
+    p = event.payload
+    t = event.type
+    if t == EventType.SHERIFF_CANDIDACY and isinstance(p, SheriffCandidacyPayload):
+        return [f"{p.seat}号上警。"] if p.running else []  # 不上警不报，免得满场「不上警」
+    if t == EventType.SHERIFF_WITHDREW and isinstance(p, SheriffWithdrewPayload):
+        return [f"{p.seat}号退水。"]
+    if t == EventType.SHERIFF_VOTE_CAST and isinstance(p, SheriffVoteCastPayload):
+        return _vote_line(p.voter, p.target)
+    if t == EventType.VOTE_CAST and isinstance(p, VoteCastPayload):
+        return _vote_line(p.voter, p.target)
+    if t == EventType.SHERIFF_DIRECTION_SET and isinstance(p, SheriffDirectionSetPayload):
+        return [_DIRECTION_LINE.get(p.direction, "警长决定了发言方向。")]
+    if t == EventType.SHERIFF_BADGE_LOST:
+        return ["本局无警长。"]
+    if t == EventType.IDIOT_REVEALED and isinstance(p, IdiotRevealedPayload):
+        return [f"{p.seat}号翻牌白痴，免于放逐。"]
+    return None
+
+
 def _render(event: Event) -> list[str]:  # noqa: PLR0911
     p = event.payload
     t = event.type
+    night = _render_night(event)
+    if night is not None:
+        return night
+    election = _render_election(event)
+    if election is not None:
+        return election
+    if t == EventType.GAME_STARTED:
+        return ["游戏开始。"]
     if t == EventType.ROUND_STARTED and isinstance(p, RoundStartedPayload):
         return [f"第{p.round}轮，天黑请闭眼。"]
     if t == EventType.PHASE_CHANGED and isinstance(p, PhaseChangedPayload):
@@ -159,25 +249,8 @@ def _render(event: Event) -> list[str]:  # noqa: PLR0911
     raise KeyError(f"事件缺少旁白模板：{t}")
 
 
-# 有模板的事件类型；白名单校验只认这个集合（Task 2 的 NarrationConfig 用）
-TEMPLATED_EVENTS: frozenset[EventType] = frozenset(
-    {
-        EventType.ROUND_STARTED,
-        EventType.PHASE_CHANGED,
-        EventType.NIGHT_RESOLVED,
-        EventType.DEATH_ANNOUNCED,
-        EventType.ELECTION_STAGE_CHANGED,
-        EventType.SHERIFF_VOTE_STARTED,
-        EventType.SHERIFF_ELECTED,
-        EventType.BADGE_PASSED,
-        EventType.VOTE_STARTED,
-        EventType.VOTE_RESULT,
-        EventType.PLAYER_EXILED,
-        EventType.HUNTER_SHOT,
-        EventType.WOLF_SELF_DESTRUCT,
-        EventType.GAME_OVER,
-    }
-)
+# 有模板的事件类型 = 缺省白名单（白名单校验只认这个集合）
+TEMPLATED_EVENTS: frozenset[EventType] = DEFAULT_NARRATION_EVENTS
 
 
 def narrate(event: Event, events: frozenset[EventType]) -> list[str]:
