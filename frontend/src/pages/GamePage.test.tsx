@@ -613,3 +613,32 @@ describe("GamePage 终审修复（PR ② 评审）", () => {
     expect(screen.queryByRole("region", { name: "游戏结束" })).toBeNull();
   });
 });
+
+describe("GamePage 回放阅读停留（规格 §7 / issue #189）", () => {
+  it("语音关：发言 seq 的门控返回阅读等待，暂停后立即 resolve；非发言 seq 为 null", async () => {
+    stubFetch(() => jsonResponse(200, meta));
+    vi.stubGlobal("WebSocket", vi.fn());
+    useVoice.setState({ enabled: false });
+    render(<GamePage gameId="g_x" token="t" viewer="GM" />);
+    await screen.findByText(new RegExp(`▶ 回放 · ${events.length} 条事件`));
+    const gate = useGameStore.getState().replayGate;
+    expect(gate).not.toBeNull();
+    const spoke = events.find((e) => e.type === "PLAYER_SPOKE")!;
+    const vote = events.find((e) => e.type === "VOTE_CAST")!;
+    expect(gate!(vote.seq)).toBeNull();
+    const p = gate!(spoke.seq);
+    expect(p).not.toBeNull();
+    let done = false;
+    void p!.then(() => {
+      done = true;
+    });
+    await Promise.resolve();
+    expect(done).toBe(false);
+    // 先播放再暂停：暂停键要调用 controls.onPause → 取消阅读等待
+    fireEvent.click(screen.getByRole("button", { name: "播放" }));
+    fireEvent.click(screen.getByRole("button", { name: "暂停" }));
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(done).toBe(true);
+  });
+});

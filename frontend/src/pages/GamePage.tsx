@@ -26,6 +26,8 @@ import type { AudioPartInfo, GameAuth } from "../api/rest";
 import type { PlayerObservation, YourTurn } from "../api/player";
 import type { ViewerHint } from "../api/tokens";
 import { useLiveEvents } from "../api/ws";
+import { createDwell } from "../lib/dwell";
+import { readingDwellMs } from "../lib/readingDwell";
 import { replayControls } from "../lib/replayControls";
 import { usePrefs } from "../store/prefs";
 import { useVoice } from "../store/voice";
@@ -77,6 +79,17 @@ export interface GamePageProps {
 
 /** 未开局轮询间隔（毫秒，规格 §7.3：4409 每 2s 重试）。 */
 const POLL_MS = 2000;
+
+/** 回放阅读停留的可取消 sleep（模块级：与回放门控同生命周期，不需要响应式）。 */
+const dwell = createDwell();
+
+/** 回放控制条的「打断」：停配音 + 取消阅读等待（lib/replayControls 的 VoiceClearControl）。 */
+const stopPlayback = {
+  clear(): void {
+    useVoice.getState().clear();
+    dwell.cancel();
+  },
+};
 
 /** 会出现「当前发言者」的阶段。 */
 const SPEAKING_PHASES: ReadonlySet<Phase> = new Set([
@@ -320,15 +333,26 @@ export default function GamePage({ gameId, token, share, viewer }: GamePageProps
   // 就顺序播完它的全部分段再放行时钟继续（store/game.ts 的 makeTick 消费 replayGate）。
   // 直播模式不装（声音已经跟着 WS 帧实时播，不需要卡时钟）。依赖数组特意不含 manifest——
   // 见上面 manifestRef 声明处的注释。
+  // 规格 §7（issue #189）：有配音且语音开着 → 播配音；否则发言 / 遗言按字数等阅读时长（readingDwellMs），
+  // 其它事件不卡。阅读等待可被 stopPlayback() 取消（暂停 / 拖动 / 单步 / 回到直播）。
   useEffect(() => {
     if (mode !== "replay" || !gameId) return;
     useGameStore.getState().setReplayGate((seq) => {
       const parts = manifestRef.current[String(seq)];
-      return parts ? useVoice.getState().playSeq(gameId, seq, parts, auth) : null;
+      if (parts && useVoice.getState().enabled) {
+        return useVoice.getState().playSeq(gameId, seq, parts, auth);
+      }
+      const { events: all, speed: spd } = useGameStore.getState();
+      const ms = readingDwellMs(
+        all.find((e) => e.seq === seq),
+        spd,
+      );
+      return ms > 0 ? dwell.sleep(ms) : null;
     });
     return () => {
       useGameStore.getState().setReplayGate(null);
       useVoice.getState().clear();
+      dwell.cancel();
     };
   }, [mode, gameId, auth]);
 
@@ -574,8 +598,8 @@ export default function GamePage({ gameId, token, share, viewer }: GamePageProps
   const amber = view.phase === "HUNTER_SHOOT";
 
   const store = useGameStore.getState();
-  // 游标拖动/翻页/暂停时打断仍在播的配音（fix round 2，见 lib/replayControls.ts 头注释）。
-  const controls = replayControls(store, useVoice.getState());
+  // 游标拖动/翻页/暂停时打断仍在播的配音（fix round 2，见 lib/replayControls.ts 头注释）与阅读等待。
+  const controls = replayControls(store, stopPlayback);
 
   const goGlobalReplay = (): void => {
     const target = `#/g/${gameId ?? ""}`;
