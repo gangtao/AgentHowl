@@ -2,8 +2,8 @@
 // layout="strip"（规格 §7，设计稿 6b）是卡牌皮肤用的横向发言条：不定位，左侧 44px 徽记。
 // 零过滤：正文来自 SpeechItem（服务端事件），有没有正文只看 item 是否为空；徽记按传入的 role 画。
 
-import { useEffect, useState } from "react";
 import type { SpeechItem } from "../../engine/select";
+import { defaultNow, useCountdown } from "../../lib/useCountdown";
 import type { RoleType } from "../../engine/types";
 import RoleToken from "../RoleToken/RoleToken";
 import styles from "./GameTable.module.css";
@@ -47,24 +47,6 @@ const HEAD: Record<BubbleKind, string> = {
   last_words: "遗言",
 };
 
-const defaultNow = (): number => Date.now() / 1000;
-
-function useLeft(deadline: number | null, now: () => number): number | null {
-  const [left, setLeft] = useState<number | null>(() =>
-    deadline === null ? null : Math.max(0, Math.ceil(deadline - now())),
-  );
-  useEffect(() => {
-    if (deadline === null) {
-      setLeft(null);
-      return;
-    }
-    const tick = (): void => setLeft(Math.max(0, Math.ceil(deadline - now())));
-    tick();
-    const id = setInterval(tick, 1000);
-    return () => clearInterval(id);
-  }, [deadline, now]);
-  return left;
-}
 
 export function SpeechBubble({
   item,
@@ -81,7 +63,7 @@ export function SpeechBubble({
   role = null,
   avatar = null,
 }: SpeechBubbleProps): JSX.Element {
-  const left = useLeft(deadline, now);
+  const left = useCountdown(deadline, now);
   const side = anchor.y < 50 ? "below" : "above";
   // 气泡水平位置跟着座位走，但夹在桌面 8%–92% 之间，免得贴边被裁。
   const x = Math.min(92, Math.max(8, anchor.x));
