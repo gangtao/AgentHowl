@@ -108,4 +108,9 @@ describe("SpeakerStand（规格 §5）", () => {
     expect(screen.queryByTestId("stand-timer")).toBeNull();
     expect(screen.getByTestId("stand-ring").getAttribute("style")).toContain("100%");
   });
+
+  it("不挂全局 .ah-wood（它的 display:flex column 会把两栏 grid 压成一列）", () => {
+    render(<SpeakerStand {...base} item={item} />);
+    expect(screen.getByRole("status").className).not.toMatch(/\bah-wood\b/);
+  });
 });

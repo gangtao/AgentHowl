@@ -70,4 +70,14 @@ describe("GameLog（规格 §6.2）", () => {
     mount([]);
     expect(screen.getByText("尚无记录")).toBeInTheDocument();
   });
+
+  it("回放游标变化时列表回到顶部（最新 ≤ 游标的那条就在顶上），未读归零", () => {
+    const seer = entries.find((e) => e.type === "SEER_CHECKED")!;
+    document.body.innerHTML = "";
+    const { rerender } = render(<GameLog entries={entries} state={last} cursor={seer.seq} />);
+    const scroll = screen.getByRole("region", { name: "对局记录" }).querySelector("[data-testid='log-scroll']") as HTMLElement;
+    scroll.scrollTop = 300;
+    rerender(<GameLog entries={entries} state={last} cursor={seer.seq + 1} />);
+    expect(scroll.scrollTop).toBe(0);
+  });
 });

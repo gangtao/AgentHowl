@@ -1,5 +1,6 @@
 /* 发言台（设计稿 8a / 8b）：木牌面板 + 金边发光；左 120px 计时环与名字，右 标签行 / 羊皮纸正文 / 队列。 */
 
+/* 木牌底自己写，不挂全局 .ah-wood（它是 flex column，会把两栏压成一列） */
 .root {
   display: grid;
   grid-template-columns: 120px minmax(0, 1fr);
@@ -7,8 +8,10 @@
   align-items: start;
   padding: 16px 18px;
   border-radius: 8px;
+  background: linear-gradient(180deg, rgba(58, 42, 30, 0.95), rgba(36, 24, 15, 0.95));
   border: 2px solid var(--ah-gold);
   box-shadow: 0 0 30px rgba(240, 192, 96, 0.18);
+  color: var(--ah-text);
 }
 .root[data-kind='last_words'] {
   border-color: var(--ah-wolf);

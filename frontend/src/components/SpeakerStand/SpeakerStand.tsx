@@ -82,7 +82,7 @@ export default function SpeakerStand({
   if (compact) {
     return (
       <section
-        className={`ah-wood ${styles.root} ${styles.compact}`}
+        className={`${styles.root} ${styles.compact}`}
         role="status"
         aria-label={`${seat}号 ${name} ${head}`}
         data-layout="compact"
@@ -119,7 +119,7 @@ export default function SpeakerStand({
 
   return (
     <section
-      className={`ah-wood ${styles.root}`}
+      className={styles.root}
       role="status"
       aria-label={`${seat}号 ${name} ${head}`}
       data-layout="full"

@@ -53,11 +53,13 @@
   z-index: 2;
 }
 
+/* 上半 fit-content(48%)：按内容高，最多占右栏 48%（百分比按栏高解析）；下半吃掉剩余。
+   注意不能在 .railTop 上写 max-height: 48%——auto 行里的百分比会按「行自身内容高」二次解析，把面板切成一半。 */
 .rail,
 .drawerRail {
   min-height: 0;
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: fit-content(48%) minmax(0, 1fr);
   gap: 12px;
 }
 .drawerRail {
@@ -65,10 +67,9 @@
   padding: 12px;
 }
 
-/* 上半：发言台或信息卡，最多占右栏 48%，内滚动 */
+/* 上半：发言台或信息卡，超出 48% 时内滚动 */
 .railTop {
   min-height: 0;
-  max-height: 48%;
   overflow-y: auto;
 }
 .railTop:empty {

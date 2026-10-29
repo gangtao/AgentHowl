@@ -100,11 +100,13 @@ export default function GameLog({
     }
   }, [entries]);
 
-  // 回放游标变化（拖动 / 单步 / 翻页）时把游标处条目滚到可见；播放中的自然推进新条目在顶，不滚
+  // 回放游标变化（拖动 / 单步 / 播放推进）：条目已按游标截断，最新 ≤ 游标的那条就在顶上，回到顶部即可见；
+  // 直播（cursor 为 null）不动，用户滚到下面看旧记录时不被打断
   useEffect(() => {
     if (cursor === null) return;
-    const el = scrollRef.current?.querySelector<HTMLElement>(`[data-seq="${cursor}"]`);
-    if (el && typeof el.scrollIntoView === "function") el.scrollIntoView({ block: "nearest" });
+    const el = scrollRef.current;
+    if (el !== null) el.scrollTop = 0;
+    setUnread(0);
   }, [cursor]);
 
   const toTop = (): void => {
@@ -138,7 +140,7 @@ export default function GameLog({
           ))}
         </div>
       </header>
-      <div className={styles.scroll} ref={scrollRef} onScroll={onScroll}>
+      <div className={styles.scroll} ref={scrollRef} onScroll={onScroll} data-testid="log-scroll">
         {shown.length === 0 ? (
           <div className={styles.empty}>尚无记录</div>
         ) : (
