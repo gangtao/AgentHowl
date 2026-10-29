@@ -3,11 +3,13 @@
 .root {
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: stretch;
   gap: 18px;
   width: 100%;
-  max-width: 560px;
-  padding-top: 12px;
+  max-width: 506px;
+  margin: 0 auto;
+  /* 发言者抬牌 -8px，顶部留出余量别顶到顶栏 */
+  padding-top: 20px;
 }
 
 .grid {
@@ -267,10 +269,11 @@
   background: var(--ah-wolf);
 }
 
+/* 桌心内容本是圆桌中央的绝对定位块：这里给它一个有高度的相对容器，落在牌阵下方 */
 .center {
+  position: relative;
   width: 100%;
-  display: flex;
-  justify-content: center;
+  min-height: 150px;
 }
 
 @media (max-width: 560px) {

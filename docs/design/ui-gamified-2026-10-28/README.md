@@ -1,4 +1,4 @@
-# UI 改版截图基线（2026-10-28，PR ① 视觉基础 + PR ② 对局页 + PR ③ 大厅 + PR ④ 其余页面）
+# UI 改版截图基线（2026-10-28，PR ① 视觉基础 + PR ② 对局页 + PR ③ 大厅 + PR ④ 其余页面 + PR ⑤ 卡牌皮肤）
 
 对照设计稿：`docs/design/gamified-2026-10-27/options/`。桌面 1440×900，手机 390×844。
 后续 PR（对局页、大厅、其余页面、卡牌皮肤）完成后在本目录追加对应截图。
@@ -63,3 +63,18 @@
 | `08-providers.png` | 「炼金工坊 · 模型服务」药剂木牌：药剂圆、kind 行、测试状态、羊皮纸信息条、引用数、虚线「+ 新建药剂（provider）」 | 1l 左 |
 | `08-admin-users.png` | 「长老名册 · 用户管理」羊皮纸表：用户名 / mono 邮箱 / 身份着色 / 状态 / 操作（管理员会话截取） | 1l 右 |
 | `07-agents-390.png` | 390 宽档案库：两列角色牌 | — |
+
+## PR ⑤ 卡牌皮肤
+
+顶栏「桌面：圆桌 ▾ / 卡牌 ▾」切换并记在 `localStorage["agenthowl.tableStyle"]`。玩家视角截图来自
+`AH_TABLE=cards RUN=cards-wolf AH_SEED=2 RUN_SHERIFF=1 node play.mjs`（狼视角，g_5dd0074d：`finished: true / rejected: [] / mismatches: 0 / stalls: 0`）；
+上帝回放截图来自 `AH_TABLE=cards AH_GAME=g_16fe9066 node screens.mjs`。
+
+| 文件 | 画面 | 设计稿 |
+|---|---|---|
+| `11-cards-night-wolf-turn.png` | 玩家 · 狼刀夜：狼队正面、好人牌背沉入阴影，选中的目标牌篝火边 | 7e |
+| `11-cards-sheriff-candidacy.png` | 警长竞选：上警者右上金签「警」，发言者抬牌金边 | 7e |
+| `11-cards-vote-turn.png` | 投票：票数挂牌底篝火签，领先者金边；桌心票型在牌阵下方 | 7e |
+| `11-cards-day-speech-turn.png` | 白天发言：牌阵下方横向羊皮纸发言条（44px 徽记 + 头行 + 正文 + 进度条） | 6b |
+| `11-cards-gm-replay-{night,sheriff,speech,vote,over,drawer}.png` | 上帝回放：已知身份正面朝上、出局灰牌仍显身份 + ✕ 章 | 6a / 6b |
+| `11-cards-game-1100.png` / `11-cards-game-390.png` | 1100 / 390 宽的牌阵降级 | — |

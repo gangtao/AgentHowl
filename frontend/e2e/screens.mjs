@@ -2,6 +2,7 @@
 // 把游标拖到各阶段截图；再截 1100 / 390 宽的降级布局。
 //
 // 用法：AH_BASE_URL=http://localhost:5173 AH_USER=… AH_PASS=… AH_GAME=g_xxx SHOT_DIR=../../docs/design/ui-gamified-2026-10-28 node screens.mjs
+//   AH_TABLE=cards：切到卡牌皮肤，只截上帝回放 + 390 宽，前缀 11-cards-*（UI 改版 PR ⑤）
 import { chromium } from "playwright-core";
 import fs from "node:fs";
 import os from "node:os";
@@ -12,9 +13,14 @@ const USER = process.env.AH_USER ?? "";
 const PASS = process.env.AH_PASS ?? "";
 const GAME = process.env.AH_GAME ?? "";
 const OUT = process.env.SHOT_DIR ?? "shots";
+const TABLE = process.env.AH_TABLE ?? "round";
+const CARDS = TABLE === "cards";
 const EXE =
   process.env.CHROMIUM ??
-  path.join(os.homedir(), "Library/Caches/ms-playwright/chromium-1148/chrome-mac/Chromium.app/Contents/MacOS/Chromium");
+  path.join(
+    os.homedir(),
+    "Library/Caches/ms-playwright/chromium-1148/chrome-mac/Chromium.app/Contents/MacOS/Chromium",
+  );
 if (!GAME) throw new Error("需要 AH_GAME（已结束的对局 id）");
 fs.mkdirSync(OUT, { recursive: true });
 const log = (...a) => console.log(new Date().toISOString().slice(11, 19), ...a);
@@ -57,9 +63,19 @@ const STOPS = [
   ["vote", (t) => /白天 · 投票/.test(t)],
 ];
 
+/** 切桌面皮肤（偏好记在 localStorage，同一 context 内后续页面沿用）。 */
+async function pickSkin(page) {
+  if (!CARDS) return;
+  const skin = page.locator('select[aria-label="桌面皮肤"]');
+  await skin.waitFor({ timeout: 15000 });
+  await skin.selectOption("cards");
+  await page.waitForSelector('[data-testid="card-board"]', { timeout: 10000 });
+}
+
 async function captureReplay(page, prefix) {
   await page.goto(`${BASE}/#/g/${GAME}`);
   await page.waitForSelector(".ah-plaque", { timeout: 20000 });
+  await pickSkin(page);
   await page.waitForTimeout(800);
   for (const [name, pred] of STOPS) {
     const seq = await seek(page, pred);
@@ -87,12 +103,13 @@ async function captureReplay(page, prefix) {
 // ---- 上帝（建局者登录态）----
 const gmCtx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
 const gm = await login(gmCtx);
-await captureReplay(gm, "05-gm-replay");
+await captureReplay(gm, CARDS ? "11-cards-gm-replay" : "05-gm-replay");
 
-// ---- 观众（share 链接，匿名）----
+// ---- 观众（share 链接，匿名；卡牌皮肤只看上帝视角 + 窄屏）----
 const rows = await gm.evaluate(async () => (await fetch("/api/v1/games?limit=50")).json());
-const row = (Array.isArray(rows) ? rows : rows.items ?? []).find((r) => r.game_id === GAME);
-if (row?.share_token) {
+const row = (Array.isArray(rows) ? rows : (rows.items ?? [])).find((r) => r.game_id === GAME);
+if (CARDS) log("cards: skip spectator");
+else if (row?.share_token) {
   const specCtx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   const spec = await specCtx.newPage();
   await spec.goto(`${BASE}/#/g/${GAME}?share=${row.share_token}`);
@@ -107,15 +124,19 @@ if (row?.share_token) {
 } else log("no share_token for", GAME);
 
 // ---- 窄屏降级：1100 与 390 ----
-for (const [name, vp] of [["1100", { width: 1100, height: 800 }], ["390", { width: 390, height: 844 }]]) {
+for (const [name, vp] of [
+  ["1100", { width: 1100, height: 800 }],
+  ["390", { width: 390, height: 844 }],
+]) {
   const ctx = await browser.newContext({ viewport: vp });
   const p = await login(ctx);
   await p.goto(`${BASE}/#/g/${GAME}`);
   await p.waitForSelector(".ah-plaque", { timeout: 20000 });
+  await pickSkin(p);
   await seek(p, (t) => /白天 · 发言/.test(t));
   await p.waitForTimeout(600);
   const sw = await p.evaluate(() => document.documentElement.scrollWidth);
-  await p.screenshot({ path: `${OUT}/10-game-${name}.png` });
+  await p.screenshot({ path: `${OUT}/${CARDS ? "11-cards-game" : "10-game"}-${name}.png` });
   log(name, "scrollWidth", sw, sw <= vp.width ? "OK" : "OVERFLOW");
   await ctx.close();
 }
