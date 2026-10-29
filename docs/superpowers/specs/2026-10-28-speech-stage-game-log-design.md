@@ -182,11 +182,17 @@ interface LogEntry {
   - `PHASE_CHANGED` 且 `isNight(to)` → 若 `cur.kind !== "night"` 则 `night, cur.n + 1`；
   - 夜间组事件（`GUARD_PROTECTED`、`WOLF_KILL_*`、`WITCH_*`、`SEER_CHECKED`、`NIGHT_RESOLVED`）→ 若 `cur.kind !== "night"`
     则 `night, cur.n + 1`（直播时预言家 / 狼只收到自己的夜间事件，靠它们开夜）；
-  - `DEATH_ANNOUNCED` 或 `PHASE_CHANGED` 且 `!isNight(to)` → 若 `cur.kind === "night"` 则 `day, cur.n`，若 `cur.kind === "day"`
-    不变，若 `start` 则 `day, 1`（观众直播一夜没有任何可见事件，天亮直接开「第 1 天」）；
+  - 夜间组事件含 `ROLE_SKIPPED`（被跳过的女巫 / 守卫 / 预言家只收到这一条 ROLE_SELF 事件，它要能开夜）；
+  - `PHASE_CHANGED` 且 `!isNight(to)` → 若 `cur.kind === "night"` 则 `day, cur.n`，若 `start` 则 `day, 1`，若已是 `day` 不变
+    （从不加天）；
+  - `DEATH_ANNOUNCED` → 同上，**但**扫描要记住「这一天是否已经天亮过」（`dawned`）：已天亮过的白天再遇到天亮 → `day, cur.n + 1`。
+    观众（只有 PUBLIC 事件）一整夜收不到任何事件，夜从未被「开」过，下一次天亮时仍在白天，没有这条规则整局都是「第 1 天」
+    （评审 C1）。第 1 轮上帝流里 `PHASE_CHANGED→SHERIFF_ELECTION` 先于 `DEATH_ANNOUNCED` 开了白天，此时 `dawned=false`，
+    天亮不加天；
   - 其余事件不改 `cur`。`day` 文案：`start` → 「开局」，`night` → 「第 N 夜」，`day` → 「第 N 天」。
   - 同一份事件流在上帝 / 回放（有 `ROUND_STARTED`）与直播玩家（没有）下，公开事件落到的日夜标签必须相同——测试用金样
-    fixture 的全量流与过滤掉 GM_ONLY 的流各跑一遍比对。
+    fixture 的全量流分别与「只剩 PUBLIC」「PUBLIC ∪ ROLE_SELF」「PUBLIC ∪ WOLVES」三种过滤流逐条比对（「非 GM_ONLY」
+    一种不够：狼每夜都有 `WOLF_KILL_PROPOSED`，会掩盖观众流的缺口）。
 - 跳过不入记录：`ROUND_STARTED`、`PHASE_CHANGED`、`VOTE_STARTED`（信息已由分隔线 / 票型行承担）。
 - 分组与签（`label` / `group` / `color`）：
   - `PLAYER_SPOKE` 发言 speech `--ah-gold`；`LAST_WORDS` 遗言 speech `--ah-wolf`。

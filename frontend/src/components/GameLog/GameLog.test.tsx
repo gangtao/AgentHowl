@@ -77,7 +77,11 @@ describe("GameLog（规格 §6.2）", () => {
     const { rerender } = render(<GameLog entries={entries} state={last} cursor={seer.seq} />);
     const scroll = screen.getByRole("region", { name: "对局记录" }).querySelector("[data-testid='log-scroll']") as HTMLElement;
     scroll.scrollTop = 300;
-    rerender(<GameLog entries={entries} state={last} cursor={seer.seq + 1} />);
+    // 播放中的自然推进不回顶（用户可能正在往下读旧记录，规格 §6.2）
+    rerender(<GameLog entries={entries} state={last} cursor={seer.seq + 1} playing />);
+    expect(scroll.scrollTop).toBe(300);
+    // 拖动 / 单步（非播放）回顶
+    rerender(<GameLog entries={entries} state={last} cursor={seer.seq + 2} />);
     expect(scroll.scrollTop).toBe(0);
   });
 });

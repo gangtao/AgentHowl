@@ -76,11 +76,16 @@ describe("logEntries（规格 §6.1）", () => {
     expect(entries.find((e) => e.type === "GAME_CREATED")!.day).toBe("开局");
   });
 
-  it("过滤掉 GM_ONLY 的流：公开条目的 day 与全量流相同", () => {
+  it.each([
+    ["非 GM_ONLY", (v: string) => v !== "GM_ONLY"],
+    ["只剩 PUBLIC（观众）", (v: string) => v === "PUBLIC"],
+    ["PUBLIC ∪ ROLE_SELF（神职）", (v: string) => v === "PUBLIC" || v === "ROLE_SELF"],
+  ])("%s 的流：每条条目的 day 与全量流相同", (_n, keep) => {
     const full = new Map(entries.map((x) => [x.seq, x.day]));
-    for (const x of logEntries(events.filter((e) => e.visibility !== "GM_ONLY"))) {
-      expect(x.day).toBe(full.get(x.seq));
-    }
+    const bad = logEntries(events.filter((e) => keep(e.visibility))).filter(
+      (x) => x.day !== full.get(x.seq),
+    );
+    expect(bad.map((x) => `${x.seq}:${x.type}:${x.day}`)).toEqual([]);
   });
 
   it("currentClaims：只取最新一天的发言自称，按座位去重保留最新，座位升序", () => {

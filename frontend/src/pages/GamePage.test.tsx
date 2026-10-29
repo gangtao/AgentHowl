@@ -689,8 +689,36 @@ describe("GamePage 右栏：发言台 + 对局记录（规格 §3 / §8）", () 
     expect(
       document.querySelector(`button[data-seat="${e1.actor_seat}"] [data-tone="now"]`),
     ).toHaveTextContent("发言中");
+    // 下一位已经说完（游标在 e2），发言台正文仍是正在配音的上一位那句（评审 I3）
+    const stand = screen.getByRole("status", { name: new RegExp(`^${e1.actor_seat}号 `) });
+    expect(stand.querySelector('[data-testid="stand-text"]')).toHaveTextContent(
+      (e1.payload as { content: string }).content.slice(0, 10),
+    );
+    expect(stand.querySelector('[data-testid="stand-bars"]')).not.toBeNull();
     const nextTone = document.querySelector(`button[data-seat="${e2.actor_seat}"] [data-tone]`);
     expect(nextTone?.textContent === "待发言" || nextTone?.textContent === "已发言").toBe(true);
     useVoice.getState().clear();
+  });
+
+  it("语音关：阅读等待中调倍速，等待立即结束（评审 I2）", async () => {
+    stubFetch(() => jsonResponse(200, meta));
+    vi.stubGlobal("WebSocket", vi.fn());
+    useVoice.setState({ enabled: false });
+    render(<GamePage gameId="g_x" token="t" viewer="GM" />);
+    await screen.findByText(new RegExp(`▶ 回放 · ${events.length} 条事件`));
+    const gate = useGameStore.getState().replayGate!;
+    const spoke = events.find((e) => e.type === "PLAYER_SPOKE")!;
+    let done = false;
+    void gate(spoke.seq)!.then(() => {
+      done = true;
+    });
+    await Promise.resolve();
+    expect(done).toBe(false);
+    fireEvent.click(screen.getByRole("button", { name: "播放速度" }));
+    fireEvent.click(screen.getByRole("button", { name: "4×" }));
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(done).toBe(true);
+    expect(useGameStore.getState().speed).toBe(4);
   });
 });

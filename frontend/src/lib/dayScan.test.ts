@@ -49,4 +49,32 @@ describe("dayScan（规格 R12 / §6.1）", () => {
     expect(dayLabel({ kind: "night", n: 2 })).toBe("第 2 夜");
     expect(dayLabel({ kind: "day", n: 2 })).toBe("第 2 天");
   });
+
+  it.each([
+    ["观众（只剩 PUBLIC）", (v: string) => v === "PUBLIC"],
+    ["村民 / 神职（PUBLIC ∪ ROLE_SELF）", (v: string) => v === "PUBLIC" || v === "ROLE_SELF"],
+    ["狼人（PUBLIC ∪ WOLVES）", (v: string) => v === "PUBLIC" || v === "WOLVES"],
+  ])("%s：每条可见事件的日夜与上帝流完全相同（评审 C1）", (_n, keep) => {
+    const fullMarks = dayMarks(events);
+    const full = new Map(events.map((e, i) => [e.seq, dayLabel(fullMarks[i]!)]));
+    const visible = events.filter((e) => keep(e.visibility));
+    const marks = dayMarks(visible);
+    const mismatches = visible.filter((e, i) => dayLabel(marks[i]!) !== full.get(e.seq));
+    expect(mismatches.map((e) => `${e.seq}:${e.type}`)).toEqual([]);
+    // 六次天亮依次是第 1…6 天
+    const dawns = visible
+      .map((e, i) => (e.type === "DEATH_ANNOUNCED" ? dayLabel(marks[i]!) : null))
+      .filter((x): x is string => x !== null);
+    expect(dawns).toEqual(dawns.map((_, i) => `第 ${i + 1} 天`));
+  });
+
+  it("女巫只收到自己的 ROLE_SKIPPED：它也开夜", () => {
+    const visible = events.filter(
+      (e) => e.visibility === "PUBLIC" || (e.type === "ROLE_SKIPPED" && e.visibility === "ROLE_SELF"),
+    );
+    const marks = dayMarks(visible);
+    const i = visible.findIndex((e) => e.type === "ROLE_SKIPPED");
+    expect(i).toBeGreaterThan(-1);
+    expect(marks[i]?.kind).toBe("night");
+  });
 });

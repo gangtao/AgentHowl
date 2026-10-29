@@ -17,6 +17,8 @@ export interface GameLogProps {
   state: GameState;
   /** 回放游标；非 null 时 seq === cursor 的条目高亮。 */
   cursor: number | null;
+  /** 回放正在自动推进：游标变化不回顶（用户可能在往下读旧记录，规格 §6.2）。 */
+  playing?: boolean;
   avatars?: Record<number, string>;
   /** 服务端观察给出的角色覆盖层（本人 / 狼队友）。 */
   knownRoles?: Record<number, RoleType>;
@@ -67,6 +69,7 @@ export default function GameLog({
   entries,
   state,
   cursor,
+  playing = false,
   avatars = {},
   knownRoles = {},
 }: GameLogProps): JSX.Element {
@@ -100,10 +103,12 @@ export default function GameLog({
     }
   }, [entries]);
 
-  // 回放游标变化（拖动 / 单步 / 播放推进）：条目已按游标截断，最新 ≤ 游标的那条就在顶上，回到顶部即可见；
-  // 直播（cursor 为 null）不动，用户滚到下面看旧记录时不被打断
+  // 用户拖动 / 单步 / 翻页改游标：条目已按游标截断，最新 ≤ 游标的那条就在顶上，回到顶部即可见；
+  // 播放中的自然推进与直播（cursor 为 null）不动，用户滚到下面看旧记录时不被打断（规格 §6.2）
+  const playingRef = useRef(playing);
+  playingRef.current = playing;
   useEffect(() => {
-    if (cursor === null) return;
+    if (cursor === null || playingRef.current) return;
     const el = scrollRef.current;
     if (el !== null) el.scrollTop = 0;
     setUnread(0);

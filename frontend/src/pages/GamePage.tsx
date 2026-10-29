@@ -609,7 +609,15 @@ export default function GamePage({ gameId, token, share, viewer }: GamePageProps
 
   const store = useGameStore.getState();
   // 游标拖动/翻页/暂停时打断仍在播的配音（fix round 2，见 lib/replayControls.ts 头注释）与阅读等待。
-  const controls = replayControls(store, stopPlayback);
+  // 调倍速不打断配音，但要取消正在进行的阅读等待——否则 30 s 的等待按旧倍速走完才换挡（评审 I2）。
+  const baseControls = replayControls(store, stopPlayback);
+  const controls = {
+    ...baseControls,
+    onSpeed(speed: number): void {
+      dwell.cancel();
+      baseControls.onSpeed(speed);
+    },
+  };
 
   const goGlobalReplay = (): void => {
     const target = `#/g/${gameId ?? ""}`;
@@ -629,6 +637,14 @@ export default function GamePage({ gameId, token, share, viewer }: GamePageProps
     typeof view.config.speech_time_limit === "number" ? view.config.speech_time_limit : null;
   const standSeat = center.kind === "speechProgress" ? (speaking ?? turnSpeaker) : null;
   const standModel = standSeat === null ? null : (seats.find((s) => s.seat === standSeat) ?? null);
+  // 正在配音的那句优先：下一位已经提交、音频还在读上一位时，发言台正文仍是上一位（评审 I3）；
+  // 否则取该座位这一轮最新的一句（下一位还没说 → null → 占位）。
+  const standItem =
+    standSeat === null
+      ? null
+      : (voicingActor === standSeat && voicingSeq !== null
+          ? standItems.find((it) => it.seq === voicingSeq)
+          : undefined) ?? currentSpeechItem(standItems, standSeat);
   const standOrderIdx = standSeat === null ? -1 : view.speech_order.indexOf(standSeat);
   const stand =
     standSeat === null || standModel === null ? null : (
@@ -638,7 +654,7 @@ export default function GamePage({ gameId, token, share, viewer }: GamePageProps
         role={standModel.role}
         avatar={avatars[standSeat] ?? null}
         kind={standKind}
-        item={currentSpeechItem(standItems, standSeat)}
+        item={standItem}
         mine={isPlayer && standSeat === resolvedViewer}
         deadline={
           isPlayer && turnPrompt !== null && standSeat === resolvedViewer
@@ -680,6 +696,7 @@ export default function GamePage({ gameId, token, share, viewer }: GamePageProps
           entries={entries}
           state={view}
           cursor={cursor}
+          playing={playing}
           avatars={avatars}
           knownRoles={knownRoles}
         />
