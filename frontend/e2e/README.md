@@ -26,6 +26,9 @@ AH_BASE_URL=http://localhost:5173 AH_SESSION=<管理员会话 cookie> PAGES=admi
 发牌只看 seed（`std_12_yn_hunter_idiot`，seat 0 的角色 → seed）：IDIOT 1 / WEREWOLF 2 / VILLAGER 3 / WITCH 4 / HUNTER 9 /
 SEER 22；`std_12_yn_hunter_guard` 同表但 seed 1 = GUARD；`std_9_*`：VILLAGER 1 / SEER 2 / HUNTER 4 / WEREWOLF 5 / WITCH 13。
 
+真实 agent 对局：`AH_AGENTS=1` 把当前账号档案库里的档案按顺序放到 1..n-1 号；`AH_FILL=<档案名>` 用「填满其余座位」
+让其余座位都是同一个无 memory_id 的档案（普通用户的档案须挂自己的 provider）。agent 要思考时间，时限用
+`SPEECH_SEC=120 ACTION_SEC=60 MAX_MIN=60`；并发跑多局时错开登录，后端对 `/auth/login` 有限流（429）。
 `AH_TABLE=cards` 让 `play.mjs` / `screens.mjs` 进对局页后把顶栏「桌面」切成卡牌（UI 改版 PR ⑤）；座位契约
 `button[data-seat]` 两种皮肤相同，玩局循环不变，`screens.mjs` 此时只截上帝回放与窄屏，前缀 `11-cards-*`。
 脚本只用页面上的控件行动（座位胶囊 / 桌上座位 / HUD 主按钮），WebSocket 帧只用来决定「点哪个」；

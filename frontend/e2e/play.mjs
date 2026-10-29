@@ -9,6 +9,8 @@
 //   AH_SEED      发牌 seed（seat 0 角色→seed 见 README）     RUN  本局名字（日志 / 截图前缀）
 //   SPEECH_SEC / ACTION_SEC  时限；MAX_MIN 最长等待分钟；RUN_SHERIFF=1 上警；SELF_DESTRUCT=1 第 2 轮自爆
 //   SHOT_DIR  截图目录（缺省 shots/）      AH_TABLE=cards  进对局页后切到卡牌皮肤（UI 改版 PR ⑤）
+//   AH_FILL=<档案名>  「填满其余座位」选该档案（其余座位全是这个 agent）
+//   AH_AGENTS=1       把档案库里的档案按顺序逐个放到 1..n-1 号（真实 agent 对局）
 import { chromium } from "playwright-core";
 import fs from "node:fs";
 import os from "node:os";
@@ -28,6 +30,8 @@ const RUN_SHERIFF = process.env.RUN_SHERIFF === "1";
 const SELF_DESTRUCT = process.env.SELF_DESTRUCT === "1";
 const SHOT_DIR = process.env.SHOT_DIR ?? "shots";
 const TABLE = process.env.AH_TABLE ?? "round";
+const FILL = process.env.AH_FILL ?? "";
+const AGENTS = process.env.AH_AGENTS === "1";
 const EXE =
   process.env.CHROMIUM ??
   path.join(
@@ -207,6 +211,23 @@ const seat0 = page.locator('button[aria-label="入座 0号"]');
 await seat0.waitFor({ timeout: 10000 });
 await seat0.click();
 await page.locator('[role="menuitem"]:has-text("我自己")').click();
+if (AGENTS) {
+  // 左栏迷你档案卡：点一张卡 → 点一个座位（规格 §5），按库顺序填 1..n-1
+  const cards = page.locator("[data-agent-id]");
+  const nCards = await cards.count();
+  const nSeats = await page.locator('button[aria-label^="入座 "]').count();
+  let placed = 0;
+  for (let i = 0; i < nCards && placed < nSeats - 1; i += 1) {
+    await cards.nth(i).click();
+    await page.locator(`button[aria-label="入座 ${placed + 1}号"]`).click();
+    placed += 1;
+  }
+  log("agents placed", placed, "of", nSeats - 1);
+}
+if (FILL !== "") {
+  await page.locator('select[aria-label="填满其余座位"]').selectOption({ label: FILL });
+  log("fill →", FILL);
+}
 await page.locator('button:has-text("下一步 · 开局卷轴")').click();
 await page.fill('input[aria-label="我的显示名"]', "E2E");
 await page.fill('input[aria-label="发言时限"]', SPEECH_SEC);
