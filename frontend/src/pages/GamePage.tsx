@@ -548,6 +548,7 @@ export default function GamePage({ gameId, token, share, viewer }: GamePageProps
         attempt={attempt}
         detail={detail}
         playerHref={gameId ? `#/g/${gameId}` : undefined}
+        authed={authStatus === "authed"}
       />
     );
   }
