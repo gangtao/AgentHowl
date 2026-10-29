@@ -96,6 +96,9 @@ export default function GameTable({
               {s.badges.tag !== null && <span className={styles.tag}>{s.badges.tag}</span>}
             </span>
             <span className={styles.name}>{s.name}</span>
+            <span className={styles.status} data-tone={s.status.tone}>
+              {s.status.text}
+            </span>
           </button>
         ))}
 

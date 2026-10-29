@@ -212,6 +212,24 @@
   color: #8a92a8;
 }
 
+/* 名字下方状态行（规格 §4.1，设计稿 8a）：空串也占一行高，座位不跳 */
+.status {
+  font-size: 10px;
+  line-height: 12px;
+  min-height: 12px;
+  white-space: nowrap;
+  color: var(--ah-text-dim);
+}
+.status[data-tone='now'] {
+  color: var(--ah-gold);
+}
+.status[data-tone='done'] {
+  color: var(--ah-text-muted);
+}
+.status[data-tone='dead'] {
+  color: var(--ah-dead-fg);
+}
+
 /* ---- 桌心 ---- */
 .center {
   position: absolute;
@@ -643,6 +661,9 @@
   .name {
     font-size: 10px;
     max-width: 64px;
+  }
+  .status {
+    font-size: 9px;
   }
   .bubble {
     width: 70%;

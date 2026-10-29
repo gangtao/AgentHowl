@@ -98,3 +98,21 @@ describe("GameTable（规格 §4.2）", () => {
     expect(screen.getByRole("img", { name: "身份未知" })).toHaveTextContent("G");
   });
 });
+
+describe("GameTable 座位状态行（规格 §4.1）", () => {
+  it("名字下方有状态行，data-tone 与文案来自 SeatModel.status；空串也占位", () => {
+    const seats = [
+      seat({ seat: 0, status: { text: "发言中", tone: "now" } }),
+      seat({ seat: 1, status: { text: "", tone: "none" } }),
+      seat({ seat: 2, alive: false, status: { text: "出局", tone: "dead" } }),
+    ];
+    render(<GameTable seats={seats} night={false} center={{ kind: "none" }} speech={null} avatars={{}} />);
+    const first = document.querySelector('button[data-seat="0"] [data-tone]')!;
+    expect(first).toHaveAttribute("data-tone", "now");
+    expect(first).toHaveTextContent("发言中");
+    expect(document.querySelector('button[data-seat="1"] [data-tone="none"]')).toBeInTheDocument();
+    expect(document.querySelector('button[data-seat="2"] [data-tone="dead"]')).toHaveTextContent("出局");
+    expect(document.querySelectorAll("button[data-seat] [data-tone]").length).toBe(3);
+  });
+});
+

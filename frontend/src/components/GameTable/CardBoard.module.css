@@ -137,13 +137,36 @@
   position: absolute;
   left: 4px;
   right: 4px;
-  bottom: 6px;
+  bottom: 18px;
   text-align: center;
   font-size: 11px;
   color: var(--ah-text);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* 牌底一行状态字（设计稿 8c：bottom 5px） */
+.status {
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  bottom: 5px;
+  text-align: center;
+  font-size: 10px;
+  line-height: 12px;
+  min-height: 12px;
+  white-space: nowrap;
+  color: var(--ah-text-dim);
+}
+.status[data-tone='now'] {
+  color: var(--ah-gold);
+}
+.status[data-tone='done'] {
+  color: var(--ah-text-muted);
+}
+.status[data-tone='dead'] {
+  color: #5a5f6a;
 }
 
 .piece[data-face='dead'] .name {
