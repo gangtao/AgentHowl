@@ -1,5 +1,5 @@
-// 桌心（规格 §4.4）：按 stageContent 的判别联合渲染。bubble 的正文由 SpeechBubble 单独画（它锚在座位上），
-// 这里只画 bubble 附带的「本轮票型（上轮）」；none 什么都不画。
+// 桌心（规格 §4.4）：按 stageContent 的判别联合渲染。发言阶段只画 speechProgress 两行（昨夜 / 昨日票型 /
+// 发言进度，设计稿 8a），正文在右栏发言台；none 什么都不画。
 
 import type { StageContent } from "../../lib/stageContent";
 import type { SeatModel } from "../../lib/seatModel";
@@ -23,14 +23,35 @@ export function TableCenter({ content, seats }: TableCenterProps): JSX.Element |
     case "none":
       return null;
 
-    case "bubble":
-      if (content.lastTally === null) return null;
+    case "speechProgress": {
+      const hasNews = content.lastNight !== null || content.lastTally !== null;
       return (
-        <div className={`${styles.center} ${styles.centerLow}`}>
-          <div className={styles.lastTallyLabel}>本轮票型（上轮）</div>
-          <div className={styles.lastTally}>{content.lastTally}</div>
+        <div className={`${styles.center} ${styles.centerLow} ${styles.progress}`}>
+          {hasNews && (
+            <div className={styles.progressLine}>
+              {content.lastNight !== null && (
+                <>
+                  昨夜{" "}
+                  <span data-tone={content.lastNight === "平安夜" ? "ok" : "wolf"}>
+                    {content.lastNight}
+                  </span>
+                </>
+              )}
+              {content.lastNight !== null && content.lastTally !== null && " · "}
+              {content.lastTally !== null && (
+                <>
+                  昨日票型 <span data-tone="text">{content.lastTally}</span>
+                </>
+              )}
+            </div>
+          )}
+          <div className={styles.progressLine}>
+            发言进度 <b>{content.done}</b> / {content.total}
+            {content.next !== null ? ` · 下一位 ${content.next}号` : " · 最后一位"}
+          </div>
         </div>
       );
+    }
 
     case "campfire":
       return (

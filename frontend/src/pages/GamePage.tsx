@@ -26,6 +26,8 @@ import type { AudioPartInfo, GameAuth } from "../api/rest";
 import type { PlayerObservation, YourTurn } from "../api/player";
 import type { ViewerHint } from "../api/tokens";
 import { useLiveEvents } from "../api/ws";
+import { createDwell } from "../lib/dwell";
+import { readingDwellMs } from "../lib/readingDwell";
 import { replayControls } from "../lib/replayControls";
 import { usePrefs } from "../store/prefs";
 import { useVoice } from "../store/voice";
@@ -39,10 +41,14 @@ import {
   voteTally,
 } from "../engine/select";
 import type { Event, Phase, RoleType } from "../engine/types";
+import { agentLine } from "../lib/agentLine";
+import { currentClaims, logEntries } from "../lib/gameLog";
 import { identityLines } from "../lib/identityLines";
 import { railCards } from "../lib/railCards";
 import { seatModel } from "../lib/seatModel";
+import { speakingSeat } from "../lib/speakingSeat";
 import { stageContent } from "../lib/stageContent";
+import { currentSpeechItem } from "../lib/tableText";
 import { graveyard } from "../lib/village";
 import { useAuth } from "../store/auth";
 import { useGameStore } from "../store/game";
@@ -52,17 +58,17 @@ import ActionBar from "../components/ActionBar/ActionBar";
 import ErrorState from "../components/ErrorState/ErrorState";
 import type { ErrorKind } from "../components/ErrorState/ErrorState";
 import EventDrawer from "../components/EventDrawer/EventDrawer";
+import GameLog from "../components/GameLog/GameLog";
 import GameOverScreen from "../components/GameOverScreen/GameOverScreen";
 import CardBoard from "../components/GameTable/CardBoard";
 import GameTable from "../components/GameTable/GameTable";
-import type { BubbleKind } from "../components/GameTable/SpeechBubble";
 import IdentityCard from "../components/IdentityCard/IdentityCard";
 import InfoRail from "../components/InfoRail/InfoRail";
 import PhaseBar from "../components/PhaseBar/PhaseBar";
 import TableStyleToggle from "../components/PhaseBar/TableStyleToggle";
 import PhasePlaque from "../components/PhasePlaque/PhasePlaque";
 import ReplayBar from "../components/ReplayBar/ReplayBar";
-import SpeechFeed from "../components/SpeechFeed/SpeechFeed";
+import SpeakerStand, { type StandKind } from "../components/SpeakerStand/SpeakerStand";
 import VoiceToggle from "../components/VoiceToggle/VoiceToggle";
 import styles from "./GamePage.module.css";
 import { metaFromState } from "./metaFromState";
@@ -77,6 +83,17 @@ export interface GamePageProps {
 
 /** 未开局轮询间隔（毫秒，规格 §7.3：4409 每 2s 重试）。 */
 const POLL_MS = 2000;
+
+/** 回放阅读停留的可取消 sleep（模块级：与回放门控同生命周期，不需要响应式）。 */
+const dwell = createDwell();
+
+/** 回放控制条的「打断」：停配音 + 取消阅读等待（lib/replayControls 的 VoiceClearControl）。 */
+const stopPlayback = {
+  clear(): void {
+    useVoice.getState().clear();
+    dwell.cancel();
+  },
+};
 
 /** 会出现「当前发言者」的阶段。 */
 const SPEAKING_PHASES: ReadonlySet<Phase> = new Set([
@@ -118,6 +135,7 @@ export default function GamePage({ gameId, token, share, viewer }: GamePageProps
   const switchedRef = useRef(false);
 
   const events = useGameStore((s) => s.events);
+  const meta = useGameStore((s) => s.meta);
   const head = useGameStore((s) => s.head);
   const cursor = useGameStore((s) => s.cursor);
   const mode = useGameStore((s) => s.mode);
@@ -320,15 +338,26 @@ export default function GamePage({ gameId, token, share, viewer }: GamePageProps
   // 就顺序播完它的全部分段再放行时钟继续（store/game.ts 的 makeTick 消费 replayGate）。
   // 直播模式不装（声音已经跟着 WS 帧实时播，不需要卡时钟）。依赖数组特意不含 manifest——
   // 见上面 manifestRef 声明处的注释。
+  // 规格 §7（issue #189）：有配音且语音开着 → 播配音；否则发言 / 遗言按字数等阅读时长（readingDwellMs），
+  // 其它事件不卡。阅读等待可被 stopPlayback() 取消（暂停 / 拖动 / 单步 / 回到直播）。
   useEffect(() => {
     if (mode !== "replay" || !gameId) return;
     useGameStore.getState().setReplayGate((seq) => {
       const parts = manifestRef.current[String(seq)];
-      return parts ? useVoice.getState().playSeq(gameId, seq, parts, auth) : null;
+      if (parts && useVoice.getState().enabled) {
+        return useVoice.getState().playSeq(gameId, seq, parts, auth);
+      }
+      const { events: all, speed: spd } = useGameStore.getState();
+      const ms = readingDwellMs(
+        all.find((e) => e.seq === seq),
+        spd,
+      );
+      return ms > 0 ? dwell.sleep(ms) : null;
     });
     return () => {
       useGameStore.getState().setReplayGate(null);
       useVoice.getState().clear();
+      dwell.cancel();
     };
   }, [mode, gameId, auth]);
 
@@ -371,9 +400,11 @@ export default function GamePage({ gameId, token, share, viewer }: GamePageProps
     () => (cursor === null ? events : events.filter((e) => e.seq <= cursor)),
     [events, cursor],
   );
-  const items = useMemo(() => speechItems(events), [events]);
-  // 气泡只看游标之前的发言：回放时「最后一句」必须是游标处的，不是全局最后一条（终审 Important 5）。
-  const bubbleItems = useMemo(() => speechItems(visibleEvents), [visibleEvents]);
+  // 发言台只看游标之前的发言：回放时「最后一句」必须是游标处的，不是全局最后一条（终审 Important 5）。
+  const standItems = useMemo(() => speechItems(visibleEvents), [visibleEvents]);
+  // 对局记录（规格 2026-10-28-speech-stage §6）：已按游标截断的事件流 → 倒序条目；自称取最新一天的发言。
+  const entries = useMemo(() => logEntries(visibleEvents), [visibleEvents]);
+  const claims = useMemo(() => currentClaims(entries), [entries]);
   const segments = useMemo(() => roundSegments(events), [events]);
   const totalSeq = events.length > 0 ? (events[events.length - 1] as Event).seq : 0;
   const authStatus = useAuth((s) => s.status);
@@ -384,6 +415,9 @@ export default function GamePage({ gameId, token, share, viewer }: GamePageProps
   // 高亮若只看 state 会跑到下一位身上（issue #103 用户反馈）。零过滤：seq 来自服务端帧。
   const voicingSeq = useVoice((s) => s.voicingSeq);
   const voicePlaying = useVoice((s) => s.playing !== null);
+  const voiceEnabled = useVoice((s) => s.enabled);
+  const voiceAvailable = useVoice((s) => s.available);
+  const voiceFinishedSeq = useVoice((s) => s.finishedSeq);
   // 座位（发言/遗言事件）/ "GM"（其它任何事件，含带 actor_seat 的 HUNTER_SHOT 等进程事件，
   // issue #110）/ null（找不到事件 → 退回轮到谁）。只看事件类型与 actor_seat，不看 kind。
   const voicingActor = useMemo<number | "GM" | null>(() => {
@@ -393,20 +427,37 @@ export default function GamePage({ gameId, token, share, viewer }: GamePageProps
     if (e.type === "PLAYER_SPOKE" || e.type === "LAST_WORDS") return e.actor_seat ?? "GM";
     return "GM";
   }, [events, voicingSeq]);
-  let speaking: number | null = null;
-  if (typeof voicingActor === "number") speaking = voicingActor;
-  else if (voicingActor === null) speaking = turnSpeaker;
+  // 直播开语音：发言事件先到、音频几秒后才到（合成 + 分段推送）；这段空档里 state 已把发言权交给下一位，
+  // 只看 voicingSeq 会把发言台跳到下一位再跳回来——那句音频播完前台上仍是这一位（lib/speakingSeat）。
+  const lastSpeech = useMemo<{ seq: number; actor: number | null } | null>(() => {
+    for (let i = visibleEvents.length - 1; i >= 0; i -= 1) {
+      const e = visibleEvents[i] as Event;
+      if (e.type === "PLAYER_SPOKE") return { seq: e.seq, actor: e.actor_seat };
+      if (e.type === "LAST_WORDS") return { seq: e.seq, actor: (e.payload as { seat: number }).seat };
+    }
+    return null;
+  }, [visibleEvents]);
+  const speaking = speakingSeat({
+    voicingActor,
+    turnSpeaker,
+    lastSpeech,
+    voice: { enabled: voiceEnabled, available: voiceAvailable, finishedSeq: voiceFinishedSeq },
+    live: mode === "live",
+  });
 
-  // 票数小标只在投票类阶段显示——否则会把上一轮遗留的票箱画在座位上。
-  const votes = useMemo<Record<number, number>>(() => {
-    if (view === null) return {};
+  // 票数小标与座位状态行的「已投 N号」只在投票类阶段——否则会把上一轮遗留的票箱画在座位上。
+  const ballot = useMemo<{
+    votes: Record<number, number>;
+    voteTargets: Record<number, number | null>;
+  }>(() => {
+    if (view === null) return { votes: {}, voteTargets: {} };
     const election = view.phase === "SHERIFF_ELECTION" || view.phase === "SHERIFF_PK";
     const voting = view.phase === "VOTE" || view.phase === "VOTE_PK" || view.phase === "EXILE";
-    if (!election && !voting) return {};
-    const { tally } = election
+    if (!election && !voting) return { votes: {}, voteTargets: {} };
+    const { tally, votes: cast } = election
       ? sheriffVoteTally(view, visibleEvents)
       : voteTally(view, visibleEvents);
-    return Object.fromEntries(tally);
+    return { votes: Object.fromEntries(tally), voteTargets: cast };
   }, [view, visibleEvents]);
 
   const nightRows = useMemo(
@@ -475,7 +526,8 @@ export default function GamePage({ gameId, token, share, viewer }: GamePageProps
             me: isPlayer ? (resolvedViewer as number) : null,
             knownRoles,
             speaking,
-            votes,
+            votes: ballot.votes,
+            voteTargets: ballot.voteTargets,
             marks,
             tags,
             selectable: isPlayer && turnPrompt !== null ? (selectable ?? []) : [],
@@ -487,7 +539,7 @@ export default function GamePage({ gameId, token, share, viewer }: GamePageProps
       resolvedViewer,
       knownRoles,
       speaking,
-      votes,
+      ballot,
       marks,
       tags,
       selectable,
@@ -574,8 +626,16 @@ export default function GamePage({ gameId, token, share, viewer }: GamePageProps
   const amber = view.phase === "HUNTER_SHOOT";
 
   const store = useGameStore.getState();
-  // 游标拖动/翻页/暂停时打断仍在播的配音（fix round 2，见 lib/replayControls.ts 头注释）。
-  const controls = replayControls(store, useVoice.getState());
+  // 游标拖动/翻页/暂停时打断仍在播的配音（fix round 2，见 lib/replayControls.ts 头注释）与阅读等待。
+  // 调倍速不打断配音，但要取消正在进行的阅读等待——否则 30 s 的等待按旧倍速走完才换挡（评审 I2）。
+  const baseControls = replayControls(store, stopPlayback);
+  const controls = {
+    ...baseControls,
+    onSpeed(speed: number): void {
+      dwell.cancel();
+      baseControls.onSpeed(speed);
+    },
+  };
 
   const goGlobalReplay = (): void => {
     const target = `#/g/${gameId ?? ""}`;
@@ -583,8 +643,9 @@ export default function GamePage({ gameId, token, share, viewer }: GamePageProps
     else window.location.hash = target;
   };
 
-  // 发言气泡：跟着「正在出声 / 轮到谁」的座位走
-  const bubbleKind: BubbleKind =
+  // 发言台（规格 2026-10-28-speech-stage §5）：跟着「正在出声 / 轮到谁」的座位走；旁白在播（voicingActor
+  // 为 "GM"）时 speaking 为 null，发言台退回轮到谁，免得每句旁白都把发言台收起来。
+  const standKind: StandKind =
     view.phase === "LAST_WORDS"
       ? "last_words"
       : view.phase === "SHERIFF_ELECTION" || view.phase === "SHERIFF_PK"
@@ -592,23 +653,39 @@ export default function GamePage({ gameId, token, share, viewer }: GamePageProps
         : "speech";
   const speechLimit =
     typeof view.config.speech_time_limit === "number" ? view.config.speech_time_limit : null;
-  const bubbleSpeaker = center.kind === "bubble" ? (speaking ?? center.speaker) : null;
-  const speech =
-    bubbleSpeaker === null
+  const standSeat = center.kind === "speechProgress" ? (speaking ?? turnSpeaker) : null;
+  const standModel = standSeat === null ? null : (seats.find((s) => s.seat === standSeat) ?? null);
+  // 正在配音的那句优先：下一位已经提交、音频还在读上一位时，发言台正文仍是上一位（评审 I3）；
+  // 否则取该座位这一轮最新的一句（下一位还没说 → null → 占位）。
+  const standItem =
+    standSeat === null
       ? null
-      : {
-          items: bubbleItems,
-          speaker: bubbleSpeaker,
-          kind: bubbleKind,
-          deadline:
-            isPlayer && turnPrompt !== null && bubbleSpeaker === resolvedViewer
-              ? turnPrompt.deadline_ts
-              : null,
-          limit: speechLimit,
-          mine: isPlayer && bubbleSpeaker === resolvedViewer,
-          voicing:
-            voicePlaying && typeof voicingActor === "number" && voicingActor === bubbleSpeaker,
-        };
+      : (voicingActor === standSeat && voicingSeq !== null
+          ? standItems.find((it) => it.seq === voicingSeq)
+          : undefined) ?? currentSpeechItem(standItems, standSeat);
+  const standOrderIdx = standSeat === null ? -1 : view.speech_order.indexOf(standSeat);
+  const stand =
+    standSeat === null || standModel === null ? null : (
+      <SpeakerStand
+        seat={standSeat}
+        name={standModel.name}
+        role={standModel.role}
+        avatar={avatars[standSeat] ?? null}
+        kind={standKind}
+        item={standItem}
+        mine={isPlayer && standSeat === resolvedViewer}
+        deadline={
+          isPlayer && turnPrompt !== null && standSeat === resolvedViewer
+            ? turnPrompt.deadline_ts
+            : null
+        }
+        limit={speechLimit}
+        voicing={voicePlaying && typeof voicingActor === "number" && voicingActor === standSeat}
+        agent={agentLine(meta?.agents, standSeat)}
+        queue={standOrderIdx === -1 ? [] : view.speech_order.slice(standOrderIdx + 1)}
+        claims={claims}
+      />
+    );
 
   const me = isPlayer ? view.players.find((p) => p.seat === resolvedViewer) : undefined;
   const onStage =
@@ -617,16 +694,32 @@ export default function GamePage({ gameId, token, share, viewer }: GamePageProps
       (view.phase === "SHERIFF_PK" && view.sheriff_candidates.includes(resolvedViewer as number)));
   const idleText = night ? "天黑请闭眼" : onStage ? "等待裁决" : "旁听中";
 
-  const rail = (
-    <InfoRail
-      cards={cards}
-      state={view}
-      events={visibleEvents}
-      speakingSeat={speaking}
-      nightRows={nightRows}
-      potions={potions}
-      knownRoles={knownRoles}
-    />
+  // 右栏（规格 2026-10-28-speech-stage §3 / R2）：上半发言台（发言阶段）或信息卡，下半对局记录。
+  const railContent = (
+    <>
+      <div className={styles.railTop}>
+        {stand ?? (
+          <InfoRail
+            cards={cards}
+            state={view}
+            events={visibleEvents}
+            nightRows={nightRows}
+            potions={potions}
+            knownRoles={knownRoles}
+          />
+        )}
+      </div>
+      <div className={styles.railLog}>
+        <GameLog
+          entries={entries}
+          state={view}
+          cursor={cursor}
+          playing={playing}
+          avatars={avatars}
+          knownRoles={knownRoles}
+        />
+      </div>
+    </>
   );
 
   const headerExtra = (
@@ -736,7 +829,6 @@ export default function GamePage({ gameId, token, share, viewer }: GamePageProps
               seats={seats}
               night={night}
               center={center}
-              speech={speech}
               avatars={avatars}
               onSelectSeat={setSelectedTarget}
             />
@@ -745,27 +837,18 @@ export default function GamePage({ gameId, token, share, viewer }: GamePageProps
               seats={seats}
               night={night}
               center={center}
-              speech={speech}
               avatars={avatars}
               onSelectSeat={setSelectedTarget}
             />
           )}
         </div>
-        <div className={styles.rail}>{rail}</div>
+        <div className={styles.rail}>{railContent}</div>
         <EventDrawer
           open={drawerOpen}
           onToggle={() => setDrawerOpen((v) => !v)}
-          tabLabel="事件流 · 发言回顾"
-          top={<div className={styles.drawerRail}>{rail}</div>}
+          tabLabel="发言台 · 对局记录"
         >
-          <SpeechFeed
-            items={items}
-            cursor={cursor}
-            state={view}
-            speakingSeat={speaking}
-            avatars={avatars}
-            knownRoles={knownRoles}
-          />
+          <div className={styles.drawerRail}>{railContent}</div>
         </EventDrawer>
         {showOver && (
           <GameOverScreen

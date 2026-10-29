@@ -15,24 +15,24 @@ const withPhase = (phase: GameState["phase"], extra: Partial<GameState> = {}): G
 
 describe("railCards（规格 §4.5）", () => {
   it.each([
-    ["DAY_SPEECH", withPhase("DAY_SPEECH"), ["order", "news", "graveyard"]],
-    ["LAST_WORDS", withPhase("LAST_WORDS"), ["votes", "news", "graveyard"]],
-    ["VOTE", withPhase("VOTE"), ["votes", "news", "graveyard"]],
-    ["VOTE_PK", withPhase("VOTE_PK"), ["votes", "pkRecap", "news"]],
-    ["EXILE", withPhase("EXILE"), ["votes", "news", "graveyard"]],
+    ["DAY_SPEECH", withPhase("DAY_SPEECH"), ["news", "graveyard"]],
+    ["LAST_WORDS", withPhase("LAST_WORDS"), ["votes", "news"]],
+    ["VOTE", withPhase("VOTE"), ["votes", "news"]],
+    ["VOTE_PK", withPhase("VOTE_PK"), ["votes", "pkRecap"]],
+    ["EXILE", withPhase("EXILE"), ["votes", "news"]],
     [
       "SHERIFF_ELECTION 报名",
       withPhase("SHERIFF_ELECTION", { election_stage: "candidacy" }),
-      ["election", "news", "graveyard"],
+      ["election", "news"],
     ],
     [
       "SHERIFF_ELECTION 发言",
       withPhase("SHERIFF_ELECTION", { election_stage: "speech" }),
-      ["election", "order", "news"],
+      ["election", "news"],
     ],
-    ["SHERIFF_PK", withPhase("SHERIFF_PK"), ["election", "pkRecap", "news"]],
-    ["NIGHT_WEREWOLF 无夜间行动", withPhase("NIGHT_WEREWOLF"), ["nightFlow", "news", "graveyard"]],
-    ["NIGHT 折叠", withPhase("NIGHT"), ["nightFlow", "news", "graveyard"]],
+    ["SHERIFF_PK", withPhase("SHERIFF_PK"), ["election", "pkRecap"]],
+    ["NIGHT_WEREWOLF 无夜间行动", withPhase("NIGHT_WEREWOLF"), ["nightFlow", "news"]],
+    ["NIGHT 折叠", withPhase("NIGHT"), ["nightFlow", "news"]],
     ["DEATH_ANNOUNCE", withPhase("DEATH_ANNOUNCE"), ["news", "graveyard"]],
     ["GAME_OVER", withPhase("GAME_OVER"), ["news", "graveyard"]],
   ])("%s", (_n, state, expected) => {
@@ -44,11 +44,7 @@ describe("railCards（规格 §4.5）", () => {
   });
 
   it("夜间：女巫有药瓶 → potions 在 nightFlow 之前", () => {
-    expect(railCards({ ...base, state: withPhase("NIGHT_WITCH"), hasPotions: true })).toEqual([
-      "potions",
-      "nightFlow",
-      "news",
-    ]);
+    expect(railCards({ ...base, state: withPhase("NIGHT_WITCH"), hasPotions: true })).toEqual(["potions", "nightFlow"]);
   });
 
   it("夜间：回放有本夜行动 → nightActs 排第一", () => {
@@ -68,13 +64,13 @@ describe("railCards（规格 §4.5）", () => {
     const st = withPhase("DAY_SPEECH", {
       seer_log: { "0": [{ round: 1, seat: 3, result: "WOLF" }] },
     });
-    expect(railCards({ ...base, state: st })).toEqual(["order", "seerLog", "news"]);
+    expect(railCards({ ...base, state: st })).toEqual(["seerLog", "news"]);
   });
 
-  it("永远不超过 3 张", () => {
+  it("永远不超过 2 张（右栏下半让给对局记录，规格 §2 R2）", () => {
     const st = withPhase("NIGHT_WITCH", {
       seer_log: { "0": [{ round: 1, seat: 3, result: "GOOD" }] },
     });
-    expect(railCards({ ...base, state: st, hasPotions: true })).toHaveLength(3);
+    expect(railCards({ ...base, state: st, hasPotions: true })).toHaveLength(2);
   });
 });

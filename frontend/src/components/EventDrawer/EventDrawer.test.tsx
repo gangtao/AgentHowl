@@ -21,7 +21,7 @@ describe("EventDrawer（规格 §4.6）", () => {
       </EventDrawer>,
     );
     expect(screen.getByRole("button", { name: /事件流 · 发言回顾/ })).toHaveAttribute("aria-expanded", "true");
-    expect(screen.getByRole("complementary", { name: "事件流" })).toHaveTextContent("feed");
+    expect(screen.getByRole("complementary", { name: "发言台与对局记录" })).toHaveTextContent("feed");
   });
 
   it("打开时 Esc 触发 onToggle；关闭时不触发", () => {
@@ -42,13 +42,12 @@ describe("EventDrawer（规格 §4.6）", () => {
     expect(onToggle).toHaveBeenCalledTimes(1);
   });
 
-  it("top 插槽渲染在 children 之上", () => {
+  it("children 原样渲染在面板里", () => {
     render(
-      <EventDrawer open onToggle={vi.fn()} tabLabel="t" top={<div>rail</div>}>
-        <div>feed</div>
+      <EventDrawer open onToggle={vi.fn()} tabLabel="t">
+        <div>rail-and-log</div>
       </EventDrawer>,
     );
-    const panel = screen.getByRole("complementary");
-    expect(panel.textContent?.indexOf("rail")).toBeLessThan(panel.textContent?.indexOf("feed") ?? -1);
+    expect(screen.getByRole("complementary")).toHaveTextContent("rail-and-log");
   });
 });

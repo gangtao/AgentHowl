@@ -39,6 +39,11 @@ interface VoiceState {
    * （分段之间不闪成 null）。GamePage 用它把发言高亮/聚光牌对准正在出声的人，而不是
    * state 里已经轮到的下一位——引擎提交发言后立刻把发言权交给下一位，但音频还在播上一位。 */
   voicingSeq: number | null;
+  /** 服务端已发 speech_audio_end 的 seq（这句的分段都推完了）。分段之间下一段还没到时 voicingSeq 不清空，
+   * 收到 end 且全部播完才清——否则发言台会在分段空档里跳到下一位（用户反馈「0号正在发言突然跳出 2号」）。 */
+  ended: ReadonlySet<number>;
+  /** 已播完（或被 clear 放弃）的最大配音 seq；GamePage 据此判断「发言事件已到、音频还没播完」。 */
+  finishedSeq: number | null;
   /** 浏览器拒绝了自动播放（🔊 之前记住为开，但本页还没有点击手势）：已自动关闭，等用户再点一次。 */
   blocked: boolean;
   queue: AudioQueueItem[];
@@ -48,6 +53,8 @@ interface VoiceState {
   setEnabled(v: boolean): void;
   markAvailable(): void;
   enqueue(item: AudioQueueItem): void;
+  /** speech_audio_end 帧：记下这句分段已推完；若已无该 seq 的分段在播 / 在队列里，立刻收尾。 */
+  markEnd(seq: number): void;
   /** 停播 + 清队列（不改变 enabled）。resetAvailable=true 时也把 available 清回
    * false——GamePage 引导 effect 卸载/重跑时用，避免上一局配过音的 🔊 开关残留到
    * 还没探测出清单的下一局（fix round 3 的 Minor 项）。默认不改 available。 */
@@ -74,19 +81,35 @@ function drain(get: () => VoiceState, set: (partial: Partial<VoiceState>) => voi
   const { enabled, playing, queue } = get();
   if (!enabled || playing !== null || queue.length === 0) return;
   const item = queue[0] as AudioQueueItem;
-  set({ queue: queue.slice(1), playing: { seq: item.seq, part: item.part }, voicingSeq: item.seq });
+  const prev = get().voicingSeq;
+  set({
+    queue: queue.slice(1),
+    playing: { seq: item.seq, part: item.part },
+    voicingSeq: item.seq,
+    // 换到另一句：上一句到此为止（服务端按事件顺序推，不会再有上一句的分段）
+    ...(prev !== null && prev !== item.seq ? { finishedSeq: maxSeq(get().finishedSeq, prev) } : {}),
+  });
   const gen = generation;
   getPlayer()
     .play(item.url)
     .then(() => {
       if (gen !== generation) return; // 期间被 clear() 打断，播放态已经被重置过
-      // 队列还有后续分段时保持 voicingSeq（下一次 drain 会按新 seq 覆盖），播完才清
-      set({ playing: null, ...(get().queue.length === 0 ? { voicingSeq: null } : {}) });
+      const { queue: rest, voicingSeq, ended, finishedSeq } = get();
+      // 队列空且服务端已发 end → 这句播完；队列空但没 end → 后续分段还在合成，保持 voicingSeq
+      if (rest.length === 0 && voicingSeq !== null && ended.has(voicingSeq)) {
+        set({ playing: null, voicingSeq: null, finishedSeq: maxSeq(finishedSeq, voicingSeq) });
+      } else {
+        set({ playing: null });
+      }
       drain(get, set);
     })
     .catch((err: unknown) => {
       if (err instanceof AutoplayBlockedError) onAutoplayBlocked(get, set);
     });
+}
+
+function maxSeq(a: number | null, b: number): number {
+  return a === null ? b : Math.max(a, b);
 }
 
 /** 自动播放被拒：关掉开关（不写 localStorage——用户的意愿仍是"开"，只是本页缺手势），
@@ -105,6 +128,8 @@ export const useVoice = create<VoiceState>((set, get) => ({
   available: false,
   playing: null,
   voicingSeq: null,
+  ended: new Set<number>(),
+  finishedSeq: null,
   blocked: false,
   queue: [],
 
@@ -131,6 +156,22 @@ export const useVoice = create<VoiceState>((set, get) => ({
     if (!get().available) set({ available: true });
   },
 
+  markEnd(seq) {
+    const { playing, queue, voicingSeq, finishedSeq } = get();
+    const ended = new Set(get().ended);
+    ended.add(seq);
+    const pending = (playing !== null && playing.seq === seq) || queue.some((i) => i.seq === seq);
+    if (pending) {
+      set({ ended });
+      return;
+    }
+    set({
+      ended,
+      finishedSeq: maxSeq(finishedSeq, seq),
+      ...(voicingSeq === seq ? { voicingSeq: null } : {}),
+    });
+  },
+
   enqueue(item) {
     set({ available: true });
     if (!get().enabled) {
@@ -146,10 +187,13 @@ export const useVoice = create<VoiceState>((set, get) => ({
   clear(resetAvailable) {
     generation += 1;
     player?.stop();
+    const { voicingSeq, finishedSeq } = get();
     set({
       queue: [],
       playing: null,
       voicingSeq: null,
+      // 被放弃的那句视为已播完，发言台不再等它
+      ...(voicingSeq !== null ? { finishedSeq: maxSeq(finishedSeq, voicingSeq) } : {}),
       ...(resetAvailable ? { available: false } : {}),
     });
   },

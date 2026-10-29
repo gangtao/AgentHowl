@@ -1,5 +1,6 @@
-/* 对局页布局（规格 §4.1 / §4.9，设计稿 3a）：48px 顶栏 / 舞台 / 底部（玩家 HUD 150px 或绳索条 72px）。
-   舞台：桌子区自适应 + 右栏 340px + 28px 抽屉页签；夜间 / 血色 / 琥珀色由根节点 data-* 切背景。 */
+/* 对局页布局（规格 §4.1 / §4.9 + 2026-10-28-speech-stage §3，设计稿 3a / 8a）：48px 顶栏 / 舞台 / 底部
+   （玩家 HUD 150px 或绳索条 72px）。舞台：桌子区自适应 + 右栏 42%（上半发言台 / 信息卡，下半对局记录）；
+   <1100px 右栏收进 28px 页签的抽屉。夜间 / 血色 / 琥珀色由根节点 data-* 切背景。 */
 
 .root {
   height: 100%;
@@ -22,9 +23,9 @@
 .stage {
   position: relative;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 340px 28px;
+  grid-template-columns: minmax(0, 1fr) minmax(400px, 42%);
   gap: 16px 20px;
-  padding: 16px 0 16px 24px;
+  padding: 16px 24px;
   min-height: 0;
   overflow: hidden;
 }
@@ -52,14 +53,32 @@
   z-index: 2;
 }
 
-.rail {
+/* 上半 fit-content(48%)：按内容高，最多占右栏 48%（百分比按栏高解析）；下半吃掉剩余。
+   注意不能在 .railTop 上写 max-height: 48%——auto 行里的百分比会按「行自身内容高」二次解析，把面板切成一半。 */
+.rail,
+.drawerRail {
   min-height: 0;
-  overflow-y: auto;
-  padding-top: 56px;
+  display: grid;
+  grid-template-rows: fit-content(48%) minmax(0, 1fr);
+  gap: 12px;
+}
+.drawerRail {
+  height: 100%;
+  padding: 12px;
 }
 
-.drawerRail {
+/* 上半：发言台或信息卡，超出 48% 时内滚动 */
+.railTop {
+  min-height: 0;
+  overflow-y: auto;
+}
+.railTop:empty {
   display: none;
+}
+
+/* 下半：对局记录吃掉剩余高度 */
+.railLog {
+  min-height: 0;
 }
 
 .loading {
@@ -109,19 +128,17 @@
 /* ---- 响应式（规格 §4.9） ---- */
 @media (max-width: 1199px) {
   .stage {
-    grid-template-columns: minmax(0, 1fr) 300px 28px;
+    grid-template-columns: minmax(0, 1fr) minmax(360px, 40%);
   }
 }
 
 @media (max-width: 1099px) {
   .stage {
     grid-template-columns: minmax(0, 1fr) 28px;
+    padding-right: 0;
   }
   .rail {
     display: none;
-  }
-  .drawerRail {
-    display: block;
   }
 }
 

@@ -212,6 +212,24 @@
   color: #8a92a8;
 }
 
+/* 名字下方状态行（规格 §4.1，设计稿 8a）：空串也占一行高，座位不跳 */
+.status {
+  font-size: 10px;
+  line-height: 12px;
+  min-height: 12px;
+  white-space: nowrap;
+  color: var(--ah-text-dim);
+}
+.status[data-tone='now'] {
+  color: var(--ah-gold);
+}
+.status[data-tone='done'] {
+  color: var(--ah-text-muted);
+}
+.status[data-tone='dead'] {
+  color: var(--ah-dead-fg);
+}
+
 /* ---- 桌心 ---- */
 .center {
   position: absolute;
@@ -227,6 +245,26 @@
   top: 72%;
   width: 60%;
 }
+/* 发言阶段桌心两行（设计稿 8a：篝火下方 11px/1.7） */
+.progress {
+  width: 60%;
+  font-size: 11px;
+  line-height: 1.7;
+  color: var(--ah-text-dim);
+}
+.progressLine b {
+  color: var(--ah-gold);
+}
+.progressLine [data-tone='ok'] {
+  color: var(--ah-ok);
+}
+.progressLine [data-tone='wolf'] {
+  color: var(--ah-wolf);
+}
+.progressLine [data-tone='text'] {
+  color: var(--ah-text);
+}
+
 .lastTallyLabel {
   font-size: 12px;
   color: var(--ah-text-muted);
@@ -446,167 +484,6 @@
   background: var(--ah-wolf);
 }
 
-/* ---- 发言气泡 ---- */
-.bubble {
-  position: absolute;
-  transform: translateX(-50%);
-  width: 60%;
-  max-width: 300px;
-  padding: 12px 16px;
-  background: var(--ah-parch);
-  color: var(--ah-parch-ink);
-  border-radius: 8px;
-  font-size: 13px;
-  line-height: 1.7;
-  box-shadow:
-    0 14px 40px rgba(0, 0, 0, 0.6),
-    inset 0 0 30px rgba(120, 90, 40, 0.12);
-  z-index: 3;
-}
-.bubble[data-kind='last_words'] {
-  box-shadow:
-    0 14px 40px rgba(0, 0, 0, 0.6),
-    0 0 0 1px var(--ah-wolf);
-}
-.bubbleArrow {
-  position: absolute;
-  left: 50%;
-  width: 0;
-  height: 0;
-  margin-left: -10px;
-  border: 10px solid transparent;
-}
-.bubble[data-side='below'] .bubbleArrow {
-  top: -10px;
-  border-top: 0;
-  border-bottom-color: var(--ah-parch);
-}
-.bubble[data-side='above'] .bubbleArrow {
-  bottom: -10px;
-  border-bottom: 0;
-  border-top-color: var(--ah-parch);
-}
-.bubbleHead {
-  display: flex;
-  justify-content: space-between;
-  gap: 8px;
-  font-size: 11px;
-  color: var(--ah-parch-muted);
-  margin-bottom: 4px;
-}
-.bubbleTimer {
-  font-family: var(--font-mono);
-  color: var(--ah-parch-danger);
-}
-.bubbleText {
-  max-height: 10.5em;
-  overflow-y: auto;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-.placeholder {
-  color: var(--ah-parch-muted);
-  font-style: italic;
-}
-.caret {
-  display: inline-block;
-  margin-left: 2px;
-  color: var(--ah-parch-ink);
-  animation: ah-pulse 1s steps(2) infinite;
-}
-.voicing {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-top: 8px;
-  font-size: 11px;
-  color: var(--ah-parch-muted);
-}
-.bars {
-  display: flex;
-  gap: 3px;
-  align-items: flex-end;
-  height: 12px;
-}
-.bars i {
-  display: block;
-  width: 3px;
-  background: var(--ah-fire-lo);
-  animation: ah-bars 0.9s ease-in-out infinite;
-}
-.bars i:nth-child(1) {
-  height: 6px;
-}
-.bars i:nth-child(2) {
-  height: 12px;
-  animation-delay: 0.15s;
-}
-.bars i:nth-child(3) {
-  height: 8px;
-  animation-delay: 0.3s;
-}
-.bars i:nth-child(4) {
-  height: 10px;
-  animation-delay: 0.45s;
-}
-@keyframes ah-bars {
-  0%,
-  100% {
-    transform: scaleY(0.5);
-  }
-  50% {
-    transform: scaleY(1);
-  }
-}
-.progress {
-  margin-top: 8px;
-  height: 4px;
-  border-radius: 2px;
-  background: var(--ah-parch-shade);
-  overflow: hidden;
-}
-.progress > span {
-  display: block;
-  height: 100%;
-  background: var(--ah-fire-lo);
-}
-.bubble[data-kind='last_words'] .progress > span,
-.strip[data-kind='last_words'] .progress > span {
-  background: var(--ah-parch-danger);
-}
-
-/* ---- 横向发言条（卡牌皮肤，规格 §7） ---- */
-.strip {
-  display: flex;
-  gap: 14px;
-  align-items: flex-start;
-  padding: 12px 16px;
-  border-radius: 8px;
-  background: var(--ah-parch);
-  color: var(--ah-parch-ink);
-  font-size: 13px;
-  line-height: 1.6;
-  box-shadow:
-    0 10px 30px rgba(0, 0, 0, 0.5),
-    inset 0 0 30px rgba(120, 90, 40, 0.12);
-}
-.strip[data-kind='last_words'] {
-  box-shadow:
-    0 10px 30px rgba(0, 0, 0, 0.5),
-    0 0 0 1px var(--ah-wolf);
-}
-.stripToken {
-  flex: none;
-  display: inline-flex;
-}
-.stripToken > :first-child {
-  border-color: var(--ah-gold);
-}
-.stripMain {
-  flex: 1;
-  min-width: 0;
-}
-
 @media (max-width: 900px) {
   .seat {
     width: 56px;
@@ -624,9 +501,7 @@
     font-size: 10px;
     max-width: 64px;
   }
-  .bubble {
-    width: 70%;
-    font-size: 12px;
-    padding: 8px 10px;
+  .status {
+    font-size: 9px;
   }
 }

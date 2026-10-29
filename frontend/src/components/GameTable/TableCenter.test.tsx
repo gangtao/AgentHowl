@@ -78,23 +78,30 @@ describe("TableCenter（规格 §4.4）", () => {
     expect(screen.getByText(/解药尚在 · 毒药已用/)).toBeInTheDocument();
   });
 
-  it("none 与 bubble 不由 TableCenter 渲染", () => {
+  it("none 不由 TableCenter 渲染", () => {
     const { container } = render(<TableCenter content={{ kind: "none" }} seats={[]} />);
     expect(container).toBeEmptyDOMElement();
-    const { container: c2 } = render(
-      <TableCenter content={{ kind: "bubble", speaker: 0, lastTally: null }} seats={[]} />,
-    );
-    expect(c2).toBeEmptyDOMElement();
   });
+});
 
-  it("bubble 的上轮票型由 lastTally 单独渲染", () => {
+describe("TableCenter speechProgress（规格 §4.2）", () => {
+  it("渲染两行；无昨夜与票型时只剩进度行", () => {
     render(
       <TableCenter
-        content={{ kind: "bubble", speaker: 0, lastTally: "4号 ·4 ← 2 5 9 7" }}
+        content={{ kind: "speechProgress", lastNight: "平安夜", lastTally: "4号 ·4 ｜ 8号 ·2", done: 6, total: 9, next: 8 }}
         seats={[]}
       />,
     );
-    expect(screen.getByText("本轮票型（上轮）")).toBeInTheDocument();
-    expect(screen.getByText("4号 ·4 ← 2 5 9 7")).toBeInTheDocument();
+    expect(screen.getByText(/昨夜/)).toHaveTextContent("昨夜 平安夜 · 昨日票型 4号 ·4 ｜ 8号 ·2");
+    expect(screen.getByText(/发言进度/)).toHaveTextContent("发言进度 6 / 9 · 下一位 8号");
+    document.body.innerHTML = "";
+    render(
+      <TableCenter
+        content={{ kind: "speechProgress", lastNight: null, lastTally: null, done: 9, total: 9, next: null }}
+        seats={[]}
+      />,
+    );
+    expect(screen.queryByText(/昨夜/)).toBeNull();
+    expect(screen.getByText(/发言进度/)).toHaveTextContent("发言进度 9 / 9 · 最后一位");
   });
 });

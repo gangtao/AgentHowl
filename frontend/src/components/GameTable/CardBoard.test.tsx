@@ -16,6 +16,7 @@ function seat(over: Partial<SeatModel> & { seat: number }): SeatModel {
     x: 50,
     y: 9,
     badges: { sheriff: false, candidate: false, votes: null, mark: null, tag: null },
+    status: { text: "", tone: "none" },
     ...over,
   };
 }
@@ -24,7 +25,6 @@ const many = (n: number): SeatModel[] => Array.from({ length: n }, (_, i) => sea
 const base = {
   night: false,
   center: { kind: "campfire", note: "x" } as const,
-  speech: null,
   avatars: {},
 };
 
@@ -115,23 +115,8 @@ describe("CardBoard（规格 §7 卡牌皮肤）", () => {
     expect(b(3)).toHaveAttribute("data-speaking", "true");
   });
 
-  it("发言条在牌阵下方（role=status，不定位）；center 为 tally 时渲染桌心内容，campfire 不渲染", () => {
-    const { rerender } = render(
-      <CardBoard
-        {...base}
-        seats={many(4)}
-        speech={{
-          items: [],
-          speaker: 1,
-          kind: "speech",
-          deadline: null,
-          voicing: false,
-          mine: false,
-        }}
-      />,
-    );
-    const status = screen.getByRole("status", { name: "1号 P1 发言中" });
-    expect(status.style.left).toBe("");
+  it("center 为 campfire 不渲染桌心内容；tally 时渲染", () => {
+    const { rerender } = render(<CardBoard {...base} seats={many(4)} />);
     expect(screen.queryByText("x")).toBeNull();
     rerender(
       <CardBoard
@@ -150,23 +135,19 @@ describe("CardBoard（规格 §7 卡牌皮肤）", () => {
     expect(screen.getByText(/已投 1\/3|1\/3/)).toBeInTheDocument();
   });
 
-  it("发言阶段没有上轮票型时不渲染桌心容器（否则空盒子把发言条挤出视口）；有票型才渲染", () => {
+  it("篝火不渲染桌心容器（空盒子会把下方内容挤出视口）；发言进度一行与月亮都渲染", () => {
     const { rerender } = render(
-      <CardBoard
-        {...base}
-        seats={many(4)}
-        center={{ kind: "bubble", speaker: 1, lastTally: null }}
-      />,
+      <CardBoard {...base} seats={many(4)} center={{ kind: "campfire", note: "x" }} />,
     );
     expect(screen.queryByTestId("card-center")).toBeNull();
     rerender(
       <CardBoard
         {...base}
         seats={many(4)}
-        center={{ kind: "bubble", speaker: 1, lastTally: "4号 ·4 ← 2 5" }}
+        center={{ kind: "speechProgress", lastNight: null, lastTally: null, done: 2, total: 4, next: 3 }}
       />,
     );
-    expect(screen.getByTestId("card-center")).toBeInTheDocument();
+    expect(screen.getByTestId("card-center")).toHaveTextContent("发言进度 2 / 4 · 下一位 3号");
     rerender(<CardBoard {...base} seats={many(4)} center={{ kind: "moon", sub: "x" }} />);
     expect(screen.getByTestId("card-center")).toBeInTheDocument();
   });
@@ -180,3 +161,21 @@ describe("CardBoard（规格 §7 卡牌皮肤）", () => {
     expect(screen.getByTestId("card-center").querySelector("[data-orb]")).not.toBeNull();
   });
 });
+
+describe("CardBoard 座位状态行（规格 §4.1）", () => {
+  it("名字下方有状态行，data-tone 与文案来自 SeatModel.status；空串也占位", () => {
+    const seats = [
+      seat({ seat: 0, status: { text: "发言中", tone: "now" } }),
+      seat({ seat: 1, status: { text: "", tone: "none" } }),
+      seat({ seat: 2, alive: false, status: { text: "出局", tone: "dead" } }),
+    ];
+    render(<CardBoard seats={seats} night={false} center={{ kind: "none" }} avatars={{}} />);
+    const first = document.querySelector('button[data-seat="0"] [data-tone]')!;
+    expect(first).toHaveAttribute("data-tone", "now");
+    expect(first).toHaveTextContent("发言中");
+    expect(document.querySelector('button[data-seat="1"] [data-tone="none"]')).toBeInTheDocument();
+    expect(document.querySelector('button[data-seat="2"] [data-tone="dead"]')).toHaveTextContent("出局");
+    expect(document.querySelectorAll("button[data-seat] [data-tone]").length).toBe(3);
+  });
+});
+

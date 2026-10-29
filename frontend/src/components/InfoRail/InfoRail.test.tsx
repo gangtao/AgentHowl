@@ -69,9 +69,8 @@ describe("InfoRail（规格 §4.5）", () => {
     expect(screen.getByText(/^8号/)).toBeInTheDocument();
   });
 
-  it("旧卡换皮后仍能渲染：order / election / votes / nightActs", () => {
-    render(<InfoRail {...base} cards={["order", "election", "votes", "nightActs"]} />);
-    expect(screen.getByText("发言顺序")).toBeInTheDocument();
+  it("旧卡换皮后仍能渲染：election / votes / nightActs", () => {
+    render(<InfoRail {...base} cards={["election", "votes", "nightActs"]} />);
     expect(screen.getByText("警长竞选")).toBeInTheDocument();
     expect(screen.getByText(/投票 · 第/)).toBeInTheDocument();
     expect(screen.getByText("夜晚")).toBeInTheDocument();

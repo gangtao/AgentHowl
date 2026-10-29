@@ -1,4 +1,4 @@
-// 右栏卡片选择（规格 §4.5）：按阶段决定 InfoRail 显示哪几张卡，最多 3 张。纯函数，不收 viewer——
+// 右栏卡片选择（规格 §4.5）：按阶段决定 InfoRail 显示哪几张卡，最多 2 张。纯函数，不收 viewer——
 // nightActs 只看 nightSummary 是否有行（观众收不到夜间事件自然没有），potions 只看观察里有没有药瓶。
 
 import { isNight } from "../engine/phases";
@@ -8,7 +8,6 @@ import type { Event, GameState } from "../engine/types";
 export type RailCardId =
   | "news"
   | "graveyard"
-  | "order"
   | "election"
   | "votes"
   | "nightFlow"
@@ -28,7 +27,8 @@ export interface RailInput {
   hasDeaths: boolean;
 }
 
-const MAX_CARDS = 3;
+/** 右栏上半最多 2 张（下半是对局记录，规格 2026-10-28-speech-stage R2）；发言顺序卡已由座位状态行取代。 */
+const MAX_CARDS = 2;
 
 export function railCards(input: RailInput): RailCardId[] {
   const { state, events, hasPotions, hasDeaths } = input;
@@ -50,7 +50,6 @@ export function railCards(input: RailInput): RailCardId[] {
     order = [
       "election",
       ...(phase === "SHERIFF_PK" ? (["pkRecap"] as const) : []),
-      ...(state.election_stage === "speech" ? (["order"] as const) : []),
       ...(seerLog ? (["seerLog"] as const) : []),
       "news",
       "graveyard",
@@ -68,8 +67,6 @@ export function railCards(input: RailInput): RailCardId[] {
       "news",
       "graveyard",
     ];
-  } else if (phase === "DAY_SPEECH") {
-    order = ["order", ...(seerLog ? (["seerLog"] as const) : []), "news", "graveyard"];
   } else {
     order = [...(seerLog ? (["seerLog"] as const) : []), "news", "graveyard"];
   }

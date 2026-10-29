@@ -1,34 +1,18 @@
-// 全景圆桌（规格 §4.2，设计稿 3a）：正方形桌面，座位沿 41% 半径分布，桌心由 TableCenter 画，
-// 发言气泡锚在发言者座位上。只收 seatModel / stageContent 的结果与头像表——不收 viewer。
+// 全景圆桌（规格 §4.2，设计稿 3a / 8a）：正方形桌面，座位沿 41% 半径分布，桌心由 TableCenter 画；
+// 座位只留状态行，发言正文在右栏发言台。只收 seatModel / stageContent 的结果与头像表——不收 viewer。
 
-import type { SpeechItem } from "../../engine/select";
 import type { SeatModel } from "../../lib/seatModel";
 import type { StageContent } from "../../lib/stageContent";
-import { currentSpeechItem, seatLabel } from "../../lib/tableText";
+import { seatLabel } from "../../lib/tableText";
 import RoleToken from "../RoleToken/RoleToken";
-import { SpeechBubble, type BubbleKind } from "./SpeechBubble";
 import styles from "./GameTable.module.css";
 import { TableCenter } from "./TableCenter";
-
-export interface TableSpeech {
-  items: SpeechItem[];
-  speaker: number;
-  kind: BubbleKind;
-  deadline: number | null;
-  limit?: number | null;
-  now?: () => number;
-  voicing: boolean;
-  /** 发言者是本人。 */
-  mine: boolean;
-}
 
 export interface GameTableProps {
   seats: SeatModel[];
   /** 夜间：月光调色板。 */
   night: boolean;
   center: StageContent;
-  /** 发言气泡；null 不渲染。 */
-  speech: TableSpeech | null;
   avatars: Record<number, string>;
   /** 只对 selectable 的座位触发。 */
   onSelectSeat?(seat: number): void;
@@ -38,12 +22,9 @@ export default function GameTable({
   seats,
   night,
   center,
-  speech,
   avatars,
   onSelectSeat,
 }: GameTableProps): JSX.Element {
-  const speakerSeat =
-    speech === null ? null : (seats.find((s) => s.seat === speech.speaker) ?? null);
   return (
     <div className={styles.root} data-night={night ? "true" : undefined}>
       <div className={styles.table}>
@@ -96,23 +77,11 @@ export default function GameTable({
               {s.badges.tag !== null && <span className={styles.tag}>{s.badges.tag}</span>}
             </span>
             <span className={styles.name}>{s.name}</span>
+            <span className={styles.status} data-tone={s.status.tone}>
+              {s.status.text}
+            </span>
           </button>
         ))}
-
-        {speech !== null && speakerSeat !== null && (
-          <SpeechBubble
-            item={currentSpeechItem(speech.items, speech.speaker)}
-            seat={speakerSeat.seat}
-            name={speakerSeat.name}
-            kind={speech.kind}
-            deadline={speech.deadline}
-            limit={speech.limit ?? null}
-            {...(speech.now ? { now: speech.now } : {})}
-            voicing={speech.voicing}
-            mine={speech.mine}
-            anchor={{ x: speakerSeat.x, y: speakerSeat.y }}
-          />
-        )}
       </div>
     </div>
   );

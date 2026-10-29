@@ -1,0 +1,200 @@
+/* 对局记录（设计稿 8a 右下）：深色面板，头部过滤签，列表最新在上，日夜分隔线，事件行 / 发言行两种。 */
+
+.root {
+  position: relative;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-height: 0;
+  height: 100%;
+  border-radius: 8px;
+  background: rgba(22, 27, 40, 0.9);
+  border: 1px solid var(--ah-panel-edge);
+  overflow: hidden;
+}
+:global([data-night]) .root {
+  background: rgba(14, 17, 28, 0.92);
+  border-color: var(--ah-night-panel-edge);
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--ah-panel-edge);
+  font-size: 12px;
+  color: var(--ah-text-dim);
+}
+.title {
+  font-family: var(--font-heading);
+  font-size: 15px;
+  color: var(--ah-text);
+}
+.sub {
+  color: var(--ah-text-muted);
+}
+.spacer {
+  flex: 1;
+}
+.tabs {
+  display: flex;
+  gap: 2px;
+}
+.tab {
+  padding: 2px 8px;
+  border: 0;
+  border-radius: 3px;
+  background: none;
+  color: var(--ah-text-dim);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.tab:hover {
+  color: var(--ah-text);
+}
+.tab[aria-selected='true'] {
+  background: #2a3042;
+  color: var(--ah-text);
+}
+
+.scroll {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 6px 16px 12px;
+}
+
+.empty {
+  padding: 24px 0;
+  text-align: center;
+  font-size: 12px;
+  color: var(--ah-text-muted);
+}
+
+/* 日夜分隔 */
+.day {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0 2px;
+}
+.dayLine {
+  flex: 1;
+  height: 1px;
+  background: var(--ah-panel-edge);
+}
+.dayText {
+  font-family: var(--font-heading);
+  font-size: 13px;
+  color: var(--ah-text-dim);
+}
+
+/* 事件行 */
+.event {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  padding: 6px 0;
+  border-left: 2px solid transparent;
+}
+.icon {
+  width: 36px;
+  display: grid;
+  place-items: center;
+  font-size: 16px;
+}
+.eventBody {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 12px;
+}
+.label {
+  flex: none;
+  padding: 1px 7px;
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid;
+  font-size: 11px;
+}
+.eventText {
+  color: var(--ah-text);
+  line-height: 1.6;
+  min-width: 0;
+}
+.seq {
+  flex: none;
+  margin-left: auto;
+  font: 11px var(--font-mono);
+  color: #5a5f6a;
+}
+
+/* 发言行 */
+.speech {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr);
+  gap: 12px;
+  padding: 8px 0;
+  border-top: 1px dashed var(--ah-panel-edge);
+  border-left: 2px solid transparent;
+}
+.speechBody {
+  min-width: 0;
+}
+.speechHead {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 12px;
+  margin-bottom: 3px;
+}
+.who {
+  color: var(--ah-gold);
+}
+.tagGold,
+.tagWolf {
+  padding: 1px 6px;
+  border-radius: 3px;
+  border: 1px solid var(--ah-god);
+  color: var(--ah-god);
+  font-size: 10px;
+}
+.tagWolf {
+  border-color: var(--ah-wolf);
+  color: var(--ah-wolf);
+}
+.speechText {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--ah-text);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* 私有行（夜间 / 本人可见）：左边线取行的主色 */
+.event[data-private],
+.speech[data-private] {
+  padding-left: 8px;
+}
+
+/* 回放游标处 */
+.event[data-current],
+.speech[data-current] {
+  border-left-color: var(--ah-gold);
+  background: rgba(240, 192, 96, 0.08);
+  padding-left: 8px;
+}
+
+.unread {
+  position: absolute;
+  top: 52px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 12px;
+  z-index: 2;
+}

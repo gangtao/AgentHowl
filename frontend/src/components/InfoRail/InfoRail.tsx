@@ -6,7 +6,6 @@ import type { Event, GameState, RoleType } from "../../engine/types";
 import type { RailCardId } from "../../lib/railCards";
 import ElectionPanel from "../ElectionPanel/ElectionPanel";
 import NightSummary from "../NightSummary/NightSummary";
-import PlayerStatusPanel from "../PlayerStatusPanel/PlayerStatusPanel";
 import VotePanel from "../VotePanel/VotePanel";
 import { Graveyard } from "./Graveyard";
 import styles from "./InfoRail.module.css";
@@ -21,7 +20,8 @@ export interface InfoRailProps {
   state: GameState;
   /** 已按回放游标截断的事件流。 */
   events: readonly Event[];
-  speakingSeat: number | null;
+  /** 发言顺序卡已由座位状态行取代；保留字段兼容旧调用。 */
+  speakingSeat?: number | null;
   nightRows: NightSummaryRow[];
   /** 女巫观察里的药瓶；没有则不渲染药瓶卡。 */
   potions?: { antidote: boolean; poison: boolean } | null;
@@ -33,7 +33,6 @@ export default function InfoRail({
   cards,
   state,
   events,
-  speakingSeat,
   nightRows,
   potions = null,
   knownRoles = {},
@@ -44,8 +43,6 @@ export default function InfoRail({
         return <TownNews state={state} events={events} />;
       case "graveyard":
         return <Graveyard state={state} events={events} knownRoles={knownRoles} />;
-      case "order":
-        return <PlayerStatusPanel state={state} speakingSeat={speakingSeat} />;
       case "election":
         return <ElectionPanel state={state} events={[...events]} />;
       case "votes":

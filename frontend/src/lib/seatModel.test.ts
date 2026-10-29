@@ -76,6 +76,19 @@ describe("seatModel（规格 §4.2）", () => {
     expect(m[1]?.speaking).toBe(false);
   });
 
+  it("状态行：发言阶段 speaking 座位「发言中」、出局座位「出局」；投票阶段票箱给「已投 N号」", () => {
+    const speech = states.find((s) => s.phase === "DAY_SPEECH" && s.speech_order.length > 0) as GameState;
+    const cur = speech.speech_order[speech.speech_idx] as number;
+    const m = seatModel({ state: speech, speaking: cur });
+    expect(m.find((s) => s.seat === cur)?.status).toEqual({ text: "发言中", tone: "now" });
+    const dead = seatModel({ state: last }).find((s) => !s.alive);
+    expect(dead?.status).toEqual({ text: "出局", tone: "dead" });
+    const vote = states.find((s) => s.phase === "VOTE") as GameState;
+    const voter = vote.players.find((p) => p.alive && p.can_vote) as GameState["players"][number];
+    const v = seatModel({ state: vote, voteTargets: { [voter.seat]: 3 } });
+    expect(v.find((s) => s.seat === voter.seat)?.status).toEqual({ text: "已投 3号", tone: "done" });
+  });
+
   it("speaking 标在指定座位", () => {
     const m = seatModel({ state: last, speaking: 4 });
     expect(m[4]?.speaking).toBe(true);

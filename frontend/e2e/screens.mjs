@@ -83,12 +83,7 @@ async function captureReplay(page, prefix) {
     await page.screenshot({ path: `${OUT}/${prefix}-${name}.png` });
     log(prefix, name, "seq", seq);
   }
-  // 事件流抽屉（在拖到末尾之前：结算页覆盖舞台后页签点不到）
-  await page.click('button[aria-controls="event-drawer"]');
-  await page.waitForTimeout(500);
-  await page.screenshot({ path: `${OUT}/${prefix}-drawer.png` });
-  await page.keyboard.press("Escape");
-  await page.waitForTimeout(200);
+  // 宽屏没有抽屉页签（右栏常驻：发言台 + 对局记录）；抽屉截图见下方窄屏段
   // 末尾：结算页
   const max = Number(await page.locator('[aria-label="回放进度"]').getAttribute("max"));
   await page.evaluate((v) => {
@@ -123,9 +118,9 @@ else if (row?.share_token) {
   await specCtx.close();
 } else log("no share_token for", GAME);
 
-// ---- 窄屏降级：1100 与 390 ----
+// ---- 窄屏降级：1024（<1100，右栏收进抽屉）与 390 ----
 for (const [name, vp] of [
-  ["1100", { width: 1100, height: 800 }],
+  ["1024", { width: 1024, height: 800 }],
   ["390", { width: 390, height: 844 }],
 ]) {
   const ctx = await browser.newContext({ viewport: vp });
@@ -136,8 +131,14 @@ for (const [name, vp] of [
   await seek(p, (t) => /白天 · 发言/.test(t));
   await p.waitForTimeout(600);
   const sw = await p.evaluate(() => document.documentElement.scrollWidth);
-  await p.screenshot({ path: `${OUT}/${CARDS ? "11-cards-game" : "10-game"}-${name}.png` });
+  const stem = `${OUT}/${CARDS ? "11-cards-game" : "10-game"}-${name}`;
+  await p.screenshot({ path: `${stem}.png` });
   log(name, "scrollWidth", sw, sw <= vp.width ? "OK" : "OVERFLOW");
+  // 抽屉：发言台 + 对局记录（只在 <1100px 存在页签）
+  await p.click('button[aria-controls="event-drawer"]');
+  await p.waitForTimeout(500);
+  await p.screenshot({ path: `${stem}-drawer.png` });
+  await p.keyboard.press("Escape");
   await ctx.close();
 }
 

@@ -388,7 +388,7 @@ function kindOf(e: Event): SpeechItemKind {
 }
 
 /** 对齐 render.py::render_event 的分支集合；未显式处理的类型走与后端相同的通用回退。 */
-function renderEventText(e: Event): string {
+export function renderEventText(e: Event): string {
   const p = e.payload as Record<string, unknown>;
   switch (e.type) {
     case "ROUND_STARTED":
