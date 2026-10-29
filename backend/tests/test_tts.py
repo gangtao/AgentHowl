@@ -17,6 +17,7 @@ from app.runtime.tts import (
     TtsConfig,
     TtsError,
     concat_wav,
+    normalize_for_tts,
     split_sentences,
     trim_trailing_silence,
     wav_duration,
@@ -67,6 +68,24 @@ def test_split_sentences_rules() -> None:
     assert split_sentences("   \n ") == []
     many = "好。" * (SENTENCE_LIMIT * 10)
     assert len(split_sentences(many)) == SENTENCE_LIMIT
+
+
+def test_normalize_for_tts_replaces_english_role_tokens() -> None:
+    """Agent 发言里夹着英文角色 / 阵营枚举（「首夜验4号，GOOD；昨夜验8号，WOLF」），
+    中文声线会逐字母念 W-O-L-F；送 TTS 前整词替换成中文，大小写不敏感，只替换完整单词，
+    其它英文（PK、GM、模型名）不动。"""
+    assert (
+        normalize_for_tts("首夜验4号，GOOD；昨夜验8号，WOLF。8号是狼")
+        == "首夜验4号，好人；昨夜验8号，狼人。8号是狼"
+    )
+    assert normalize_for_tts("我是 Seer，werewolf 在 3 号") == "我是 预言家，狼人 在 3 号"
+    assert normalize_for_tts("WITCH HUNTER GUARD IDIOT VILLAGER") == "女巫 猎人 守卫 白痴 村民"
+    # 不是完整单词 / 非角色英文不动
+    assert (
+        normalize_for_tts("GOODBYE wolfpack PK GM claude-sonnet")
+        == "GOODBYE wolfpack PK GM claude-sonnet"
+    )
+    assert normalize_for_tts("") == ""
 
 
 def test_wav_duration_and_rejects_non_wav() -> None:

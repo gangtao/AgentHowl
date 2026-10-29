@@ -96,6 +96,30 @@ class TtsStatus(BaseModel):
     supports_style: bool = False
 
 
+# Agent 发言里偶尔夹着英文角色 / 阵营枚举（LLM 照搬提示词里的枚举名：
+# 「首夜验4号，GOOD；昨夜验8号，WOLF」），中文声线会逐字母念成 W-O-L-F。
+# 送 TTS 前整词替换成中文；大小写不敏感、只匹配完整单词，PK / GM / 模型名不动。
+_ROLE_TOKEN_ZH: dict[str, str] = {
+    "WEREWOLF": "狼人",
+    "WOLF": "狼人",
+    "SEER": "预言家",
+    "WITCH": "女巫",
+    "HUNTER": "猎人",
+    "GUARD": "守卫",
+    "IDIOT": "白痴",
+    "VILLAGER": "村民",
+    "GOOD": "好人",
+}
+_ROLE_TOKEN_RE = re.compile(
+    r"\b(" + "|".join(sorted(_ROLE_TOKEN_ZH, key=len, reverse=True)) + r")\b", re.IGNORECASE
+)
+
+
+def normalize_for_tts(text: str) -> str:
+    """把发言正文里的英文角色 / 阵营枚举换成中文读法（只影响 TTS 输入，事件正文不变）。"""
+    return _ROLE_TOKEN_RE.sub(lambda m: _ROLE_TOKEN_ZH[m.group(1).upper()], text)
+
+
 def split_sentences(text: str) -> list[str]:
     """按 。！？；换行 切句并保留标点；连续短句合并到 ≥ MIN_SENTENCE_CHARS；上限 SENTENCE_LIMIT。
 

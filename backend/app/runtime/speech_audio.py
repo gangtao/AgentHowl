@@ -26,7 +26,14 @@ from app.agent.profile import VoiceSpec
 from app.engine.events import Event
 from app.runtime.connection import ConnectionManager
 from app.runtime.narration import NARRATOR_WARM_TEXT, NarrationCache, NarrationConfig, narrate
-from app.runtime.tts import AudioPart, TtsClient, TtsError, concat_wav, wav_duration
+from app.runtime.tts import (
+    AudioPart,
+    TtsClient,
+    TtsError,
+    concat_wav,
+    normalize_for_tts,
+    wav_duration,
+)
 from app.runtime.voice_anchors import VoiceAnchorStore
 
 logger = logging.getLogger(__name__)
@@ -111,7 +118,8 @@ class SpeechAudioSink:
         await self._emit(
             game_id,
             seq,
-            self._tts.synthesize_sentences(text, voice, ref_audio),
+            # 英文角色枚举（WOLF / GOOD…）换成中文读法，否则中文声线逐字母念
+            self._tts.synthesize_sentences(normalize_for_tts(text), voice, ref_audio),
             connections,
             event,
             "speech",
