@@ -35,8 +35,9 @@ export default function PlayerStatusPanel({
       {order.length > 0 ? (
         <div className={styles.order}>
           {order.map((seat, i) => {
+            // 正在出声优先（配音还在播上一位时引擎已把 speech_idx 推到下一位，issue #103 同一症结）
             const status =
-              i < state.speech_idx ? "已发言" : seat === speakingSeat ? "发言中" : "待发言";
+              seat === speakingSeat ? "发言中" : i < state.speech_idx ? "已发言" : "待发言";
             return (
               <div
                 key={seat}
