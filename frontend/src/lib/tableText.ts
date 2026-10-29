@@ -4,11 +4,11 @@
 import type { SpeechItem } from "../engine/select";
 import type { SeatModel } from "./seatModel";
 
-/** `{seat}号 {name} 存活|出局 [警长] [发言中]`。 */
+/** `{seat}号 {name} 存活|出局 [警长] [状态行文案]`（状态行见 lib/seatStatus；出局时状态行就是「出局」，不重复）。 */
 export function seatLabel(s: SeatModel): string {
   const parts = [`${s.seat}号`, s.name, s.alive ? "存活" : "出局"];
   if (s.badges.sheriff) parts.push("警长");
-  if (s.speaking) parts.push("发言中");
+  if (s.alive && s.status.text !== "") parts.push(s.status.text);
   return parts.join(" ");
 }
 

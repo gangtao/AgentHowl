@@ -9,6 +9,7 @@
 import { isNight } from "../engine/phases";
 import { rolesKnown } from "../engine/select";
 import type { GameState, RoleType } from "../engine/types";
+import { seatStatus, type SeatStatus } from "./seatStatus";
 
 export interface SeatBadges {
   /** state.sheriff_seat === seat */
@@ -40,6 +41,8 @@ export interface SeatModel {
   x: number;
   y: number;
   badges: SeatBadges;
+  /** 名字下方的状态行（规格 §4.1：发言中 / 已发言 / 待发言 / 已投 / 出局 …，空串占位）。 */
+  status: SeatStatus;
 }
 
 export interface SeatModelInput {
@@ -53,6 +56,8 @@ export interface SeatModelInput {
   tags?: Record<number, string>;
   selectable?: readonly number[];
   selected?: number | null;
+  /** 投票类阶段的票箱 voter → target（null = 弃票），给状态行用；非投票阶段省略。 */
+  voteTargets?: Record<number, number | null>;
 }
 
 export interface SeatPosition {
@@ -87,6 +92,7 @@ export function seatModel(input: SeatModelInput): SeatModel[] {
     tags = {},
     selectable = [],
     selected = null,
+    voteTargets = {},
   } = input;
   const players = [...state.players].sort((a, b) => a.seat - b.seat);
   const pos = new Map(seatPositions(players.map((p) => p.seat)).map((p) => [p.seat, p]));
@@ -121,6 +127,7 @@ export function seatModel(input: SeatModelInput): SeatModel[] {
         mark: marks[p.seat] ?? null,
         tag: tags[p.seat] ?? null,
       },
+      status: seatStatus(state, p.seat, { speaking, voteTargets }),
     };
   });
 }

@@ -16,6 +16,7 @@ function seat(over: Partial<SeatModel> & { seat: number }): SeatModel {
     x: 50,
     y: 9,
     badges: { sheriff: false, candidate: false, votes: null, mark: null, tag: null },
+    status: { text: "", tone: "none" },
     ...over,
   };
 }
