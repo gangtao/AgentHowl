@@ -1,6 +1,6 @@
 // 发言台（规格 §5，设计稿 8a / 8b / 8c 右上）：右栏上半的木牌面板——当前发言人的大头像 + 计时环 + 正文、
 // 自称 / 警徽流签、配音音柱、之后的发言队列；本人未开口时切紧凑版「轮到你」+ 本轮自称提示（输入框仍在 HUD）。
-// 零过滤：props 里没有 viewer。mine 由 GamePage 推出；agent 行只在 meta.agents 有这个座位时由调用方传入。
+// 零过滤：props 里没有视角参数。mine 由 GamePage 推出；agent 行只在 meta.agents 有这个座位时由调用方传入。
 
 import type { CSSProperties } from "react";
 import type { SpeechItem } from "../../engine/select";
@@ -21,7 +21,7 @@ export interface SpeakerStandProps {
   kind: StandKind;
   /** 该座位这一轮的发言（currentSpeechItem），还没说为 null。 */
   item: SpeechItem | null;
-  /** 本人回合（GamePage 由 viewer 推出）。 */
+  /** 本人回合（GamePage 由视角推出）。 */
   mine: boolean;
   deadline: number | null;
   limit: number | null;

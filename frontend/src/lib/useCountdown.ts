@@ -1,4 +1,4 @@
-// 倒计时 hook（从 SpeechBubble.useLeft 搬出，发言台 / HUD 共用）：按服务端截止时间（秒）每秒刷新剩余秒数。
+// 倒计时 hook（从旧 SpeechBubble 搬出，发言台 / HUD 共用）：按服务端截止时间（秒）每秒刷新剩余秒数。
 // deadline 为 null 时返回 null；now 可注入（测试）。
 
 import { useEffect, useState } from "react";

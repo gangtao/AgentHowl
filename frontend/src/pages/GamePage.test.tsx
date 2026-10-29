@@ -563,7 +563,7 @@ describe("GamePage 终审修复（PR ② 评审）", () => {
     expect(screen.getByRole("img", { name: "已出局" })).toBeInTheDocument();
   });
 
-  it("回放：配音正在读第一轮某句时，气泡显示的是游标处那句而不是全局最后一句（Important 5）", async () => {
+  it("回放：配音正在读第一轮某句时，发言台显示的是游标处那句而不是全局最后一句（Important 5）", async () => {
     stubFetch(() => jsonResponse(200, meta));
     vi.stubGlobal("WebSocket", vi.fn());
     render(<GamePage gameId="g_x" token="t" viewer="GM" />);
@@ -572,11 +572,11 @@ describe("GamePage 终审修复（PR ② 评审）", () => {
     const content = (first.payload as { content: string }).content;
     act(() => useGameStore.getState().setCursor(first.seq));
     act(() => useVoice.setState({ voicingSeq: first.seq, playing: { seq: first.seq, part: 0 } }));
-    // 第一句发言可能是竞选发言：气泡头行按阶段写「发言中 / 竞选发言 / 遗言」
-    const bubble = await screen.findByRole("status", {
-      name: new RegExp(`^${first.actor_seat}号 .* (发言中|竞选发言|遗言)`),
+    // 第一句发言可能是竞选发言：发言台头部按阶段写「发言中 / 竞选发言 / 遗言」
+    const stand = await screen.findByRole("status", {
+      name: new RegExp(`^${first.actor_seat}号 .* (发言中|竞选发言|遗言)$`),
     });
-    expect(bubble).toHaveTextContent(content.slice(0, 20));
+    expect(stand.querySelector('[data-testid="stand-text"]')).toHaveTextContent(content.slice(0, 20));
     useVoice.getState().clear();
   });
 
@@ -640,5 +640,57 @@ describe("GamePage 回放阅读停留（规格 §7 / issue #189）", () => {
     await Promise.resolve();
     await Promise.resolve();
     expect(done).toBe(true);
+  });
+});
+
+describe("GamePage 右栏：发言台 + 对局记录（规格 §3 / §8）", () => {
+  async function mountReplay(): Promise<void> {
+    stubFetch(() => jsonResponse(200, meta));
+    vi.stubGlobal("WebSocket", vi.fn());
+    render(<GamePage gameId="g_x" token="t" viewer="GM" />);
+    await screen.findByText(new RegExp(`▶ 回放 · ${events.length} 条事件`));
+  }
+
+  it("回放到发言阶段：右栏上半是发言台、下半是对局记录；不再有气泡与事件流页签", async () => {
+    await mountReplay();
+    const spoke = events.find((e) => e.type === "PLAYER_SPOKE") as Event;
+    act(() => useGameStore.getState().setCursor(spoke.seq));
+    expect(await screen.findByRole("status", { name: /(发言中|竞选发言)$/ })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "对局记录" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /事件流/ })).toBeNull();
+    expect(document.querySelector(`article[data-seq="${spoke.seq}"]`)).toHaveAttribute(
+      "data-current",
+      "true",
+    );
+  });
+
+  it("回放到投票阶段：右栏上半是信息卡（票型），记录仍在", async () => {
+    await mountReplay();
+    const vote = events.find((e) => e.type === "VOTE_CAST") as Event;
+    act(() => useGameStore.getState().setCursor(vote.seq));
+    await screen.findByLabelText("信息栏");
+    expect(screen.queryByRole("status", { name: /(发言中|竞选发言|遗言)$/ })).toBeNull();
+    expect(screen.getByRole("region", { name: "对局记录" })).toBeInTheDocument();
+  });
+
+  it("配音读上一位时发言台显示上一位，座位状态行上一位「发言中」下一位「待发言」", async () => {
+    await mountReplay();
+    const spokes = events.filter((e) => e.type === "PLAYER_SPOKE");
+    // 找同一阶段相邻的两句（seq 连续，中间没有阶段切换）
+    const idx = spokes.findIndex((e, i) => i > 0 && e.seq === (spokes[i - 1] as Event).seq + 1);
+    expect(idx).toBeGreaterThan(0);
+    const e1 = spokes[idx - 1] as Event;
+    const e2 = spokes[idx] as Event;
+    act(() => useGameStore.getState().setCursor(e2.seq));
+    act(() => useVoice.setState({ voicingSeq: e1.seq, playing: { seq: e1.seq, part: 0 } }));
+    expect(
+      await screen.findByRole("status", { name: new RegExp(`^${e1.actor_seat}号 `) }),
+    ).toBeInTheDocument();
+    expect(
+      document.querySelector(`button[data-seat="${e1.actor_seat}"] [data-tone="now"]`),
+    ).toHaveTextContent("发言中");
+    const nextTone = document.querySelector(`button[data-seat="${e2.actor_seat}"] [data-tone]`);
+    expect(nextTone?.textContent === "待发言" || nextTone?.textContent === "已发言").toBe(true);
+    useVoice.getState().clear();
   });
 });

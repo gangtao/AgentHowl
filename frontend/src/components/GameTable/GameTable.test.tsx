@@ -24,7 +24,6 @@ function seat(over: Partial<SeatModel> & { seat: number }): SeatModel {
 const base = {
   night: false,
   center: { kind: "campfire", note: "x" } as const,
-  speech: null,
   avatars: {},
 };
 
@@ -106,7 +105,7 @@ describe("GameTable 座位状态行（规格 §4.1）", () => {
       seat({ seat: 1, status: { text: "", tone: "none" } }),
       seat({ seat: 2, alive: false, status: { text: "出局", tone: "dead" } }),
     ];
-    render(<GameTable seats={seats} night={false} center={{ kind: "none" }} speech={null} avatars={{}} />);
+    render(<GameTable seats={seats} night={false} center={{ kind: "none" }} avatars={{}} />);
     const first = document.querySelector('button[data-seat="0"] [data-tone]')!;
     expect(first).toHaveAttribute("data-tone", "now");
     expect(first).toHaveTextContent("发言中");

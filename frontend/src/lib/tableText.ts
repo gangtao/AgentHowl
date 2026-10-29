@@ -1,5 +1,5 @@
-// 桌面共用的文本选择器（规格 §4.2 / §7）：座位按钮的无障碍名、当前发言者这一轮的发言。
-// 圆桌（GameTable）与卡牌（CardBoard）共用，纯函数。
+// 桌面 / 发言台共用的文本选择器（规格 §4.2 / §7 / 2026-10-28-speech-stage §5）：座位按钮的无障碍名、
+// 当前发言者这一轮的发言。纯函数。
 
 import type { SpeechItem } from "../engine/select";
 import type { SeatModel } from "./seatModel";
