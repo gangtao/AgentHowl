@@ -721,4 +721,53 @@ describe("GamePage 右栏：发言台 + 对局记录（规格 §3 / §8）", () 
     expect(done).toBe(true);
     expect(useGameStore.getState().speed).toBe(4);
   });
+
+  it("直播开语音：收到 speech_audio_begin 后，该 seq 之后的事件与状态压住不展示，播完才放行（issue #193）", async () => {
+    // 直播 GM：/meta 403、/state 200、WS 桩掉，事件直接灌 store
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (rawUrl: string) => {
+        const url = rawUrl.split("?")[0] as string;
+        if (url.endsWith("/meta")) return jsonResponse(403, { detail: "对局未结束" });
+        if (url.endsWith("/state")) {
+          return jsonResponse(200, {
+            viewer: "GM",
+            game_id: "g_x",
+            phase: "LOBBY",
+            round: 0,
+            players: meta.roster.map((r) => ({ ...r, alive: true })),
+            config: meta.config,
+            sheriff_seat: null,
+            winner: null,
+          });
+        }
+        return jsonResponse(200, {});
+      }),
+    );
+    vi.stubGlobal("WebSocket", vi.fn(() => ({ readyState: 1, send() {}, close() {} })));
+    render(<GamePage gameId="g_x" token="t" viewer="GM" />);
+    await waitFor(() => expect(screen.queryByText("正在载入对局…")).toBeNull());
+    expect(useGameStore.getState().mode).toBe("live");
+
+    const spokeIdx = events.findIndex((e) => e.type === "PLAYER_SPOKE");
+    const spoke = events[spokeIdx] as Event;
+    // 语音开、本局有音频，服务端已开始合成这句（begin），后面又到了 5 条事件
+    act(() => {
+      useVoice.setState({ enabled: true, available: true, begun: new Set([spoke.seq]), finishedSeq: null });
+      useGameStore.getState().appendEvents(events.slice(0, spokeIdx + 6));
+    });
+    const seqs = (): number[] =>
+      [...document.querySelectorAll("article[data-seq]")].map((a) => Number(a.getAttribute("data-seq")));
+    await waitFor(() => expect(seqs()).toContain(spoke.seq));
+    expect(Math.max(...seqs())).toBe(spoke.seq); // 之后的 5 条压住
+    // 这句播完 → 放行
+    act(() => useVoice.setState({ begun: new Set(), finishedSeq: spoke.seq }));
+    await waitFor(() => expect(Math.max(...seqs())).toBe((events[spokeIdx + 5] as Event).seq));
+    // 语音关着时不门控
+    act(() => {
+      useVoice.setState({ enabled: false, begun: new Set([spoke.seq]), finishedSeq: null });
+    });
+    await waitFor(() => expect(Math.max(...seqs())).toBe((events[spokeIdx + 5] as Event).seq));
+    useVoice.setState({ begun: new Set(), finishedSeq: null, available: false });
+  });
 });

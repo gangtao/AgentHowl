@@ -42,6 +42,9 @@ interface VoiceState {
   /** 服务端已发 speech_audio_end 的 seq（这句的分段都推完了）。分段之间下一段还没到时 voicingSeq 不清空，
    * 收到 end 且全部播完才清——否则发言台会在分段空档里跳到下一位（用户反馈「0号正在发言突然跳出 2号」）。 */
   ended: ReadonlySet<number>;
+  /** 服务端已发 speech_audio_begin（开始合成）、尚未播完的 seq（issue #193）：直播开语音时展示游标只推进到
+   * 其中最早的那条（firstPendingSeq），之后的事件压住，播完再放行。 */
+  begun: ReadonlySet<number>;
   /** 已播完（或被 clear 放弃）的最大配音 seq；GamePage 据此判断「发言事件已到、音频还没播完」。 */
   finishedSeq: number | null;
   /** 浏览器拒绝了自动播放（🔊 之前记住为开，但本页还没有点击手势）：已自动关闭，等用户再点一次。 */
@@ -53,6 +56,8 @@ interface VoiceState {
   setEnabled(v: boolean): void;
   markAvailable(): void;
   enqueue(item: AudioQueueItem): void;
+  /** speech_audio_begin 帧：这句开始合成，之后的展示压住。 */
+  markBegin(seq: number): void;
   /** speech_audio_end 帧：记下这句分段已推完；若已无该 seq 的分段在播 / 在队列里，立刻收尾。 */
   markEnd(seq: number): void;
   /** 停播 + 清队列（不改变 enabled）。resetAvailable=true 时也把 available 清回
@@ -112,6 +117,16 @@ function maxSeq(a: number | null, b: number): number {
   return a === null ? b : Math.max(a, b);
 }
 
+/** 最早「已开始合成、尚未播完」的 seq；没有则 null。纯函数，GamePage 据此截断直播展示（issue #193）。 */
+export function firstPendingSeq(s: Pick<VoiceState, "begun" | "finishedSeq">): number | null {
+  const floor = s.finishedSeq ?? -1;
+  let best: number | null = null;
+  for (const seq of s.begun) {
+    if (seq > floor && (best === null || seq < best)) best = seq;
+  }
+  return best;
+}
+
 /** 自动播放被拒：关掉开关（不写 localStorage——用户的意愿仍是"开"，只是本页缺手势），
  * 标记 blocked 让 VoiceToggle 提示再点一次。 */
 function onAutoplayBlocked(
@@ -129,6 +144,7 @@ export const useVoice = create<VoiceState>((set, get) => ({
   playing: null,
   voicingSeq: null,
   ended: new Set<number>(),
+  begun: new Set<number>(),
   finishedSeq: null,
   blocked: false,
   queue: [],
@@ -154,6 +170,12 @@ export const useVoice = create<VoiceState>((set, get) => ({
 
   markAvailable() {
     if (!get().available) set({ available: true });
+  },
+
+  markBegin(seq) {
+    const begun = new Set(get().begun);
+    begun.add(seq);
+    set({ begun });
   },
 
   markEnd(seq) {
@@ -192,7 +214,8 @@ export const useVoice = create<VoiceState>((set, get) => ({
       queue: [],
       playing: null,
       voicingSeq: null,
-      // 被放弃的那句视为已播完，发言台不再等它
+      // 被放弃的那句视为已播完，发言台不再等它；待播集合整个释放（关语音 / 重连不该压住展示）
+      begun: new Set<number>(),
       ...(voicingSeq !== null ? { finishedSeq: maxSeq(finishedSeq, voicingSeq) } : {}),
       ...(resetAvailable ? { available: false } : {}),
     });

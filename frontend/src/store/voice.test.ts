@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { AutoplayBlockedError } from "../lib/audioPlayer";
-import { useVoice } from "./voice";
+import { firstPendingSeq, useVoice } from "./voice";
 
 function fakePlayer() {
   const calls: string[] = [];
@@ -264,5 +264,32 @@ describe("useVoice 自动播放被拒（issue #108）", () => {
     // 没有任何音频帧就收到 end（不该发生，防御）：finishedSeq 仍推进
     useVoice.getState().markEnd(8);
     expect(useVoice.getState().finishedSeq).toBe(8);
+  });
+
+  it("markBegin 记下待播 seq；firstPendingSeq 给出最早未播完的；播完 / clear 后释放（issue #193）", async () => {
+    const p = fakePlayer();
+    useVoice.getState().setPlayer(p);
+    useVoice.getState().setEnabled(true);
+    expect(firstPendingSeq(useVoice.getState())).toBeNull();
+    useVoice.getState().markBegin(40);
+    expect(firstPendingSeq(useVoice.getState())).toBe(40);
+    // 还没有任何分段到达也算待播（合成中）
+    useVoice.getState().enqueue({ seq: 40, part: 0, url: "/a/40/0", duration: 1 });
+    await Promise.resolve();
+    useVoice.getState().markEnd(40);
+    expect(firstPendingSeq(useVoice.getState())).toBe(40); // 还在播
+    p.finishOne();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(firstPendingSeq(useVoice.getState())).toBeNull();
+    expect(useVoice.getState().finishedSeq).toBe(40);
+    // 两句先后 begin：最早的那句是门
+    useVoice.getState().markBegin(41);
+    useVoice.getState().markBegin(43);
+    expect(firstPendingSeq(useVoice.getState())).toBe(41);
+    useVoice.getState().markEnd(41); // 一段都没合成出来（parts=0）→ 立即放行
+    expect(firstPendingSeq(useVoice.getState())).toBe(43);
+    useVoice.getState().clear(); // 关语音 / 重连：全部释放
+    expect(firstPendingSeq(useVoice.getState())).toBeNull();
   });
 });

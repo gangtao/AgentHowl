@@ -8,6 +8,7 @@
 // / {type:"speech_audio", seq, part, url, duration, kind}（配音分段，issue #103；`kind` 为 `speech|narration`（issue #110，缺省按 speech）：转给 useVoice.enqueue，
 // 不进 appendEvents——零信息过滤原则下也不代表任何游戏状态变化；url 会拼上本连接的 ?token=，
 // 因为直播期间 /audio/{seq}/{part} 匿名必 401，而 <audio> 元素发不出 Authorization 头，fix round 1）
+// / {type:"speech_audio_begin", seq, kind}：转给 useVoice.markBegin（开始合成，直播展示压到这句，issue #193），
 // / {type:"speech_audio_end", seq, parts}：转给 useVoice.markEnd（这句分段推完，播完才释放 voicingSeq）。
 // 关闭码：4401 token 无效、4403 无权、4404 对局不存在、4409 对局尚未开始、4500 对局运行异常——均为终局，不重连；
 // 其余意外关闭（如 1006）且未收到 game_over → 指数退避重连，从 lastSeq+1 补发。
@@ -238,6 +239,9 @@ export function useLiveEvents({ gameId, auth, enabled }: UseLiveEventsArgs): Liv
             duration: frame.duration ?? 0,
             kind: frame.kind ?? "speech",
           });
+        } else if (frame.type === "speech_audio_begin" && typeof frame.seq === "number") {
+          // 这句开始合成：直播开语音时该 seq 之后的展示压住，播完再放行（issue #193）
+          useVoice.getState().markBegin(frame.seq);
         } else if (frame.type === "speech_audio_end" && typeof frame.seq === "number") {
           // 这句的分段都推完了：分段空档里 voicingSeq 不再提前清空（见 store/voice.ts::markEnd）
           useVoice.getState().markEnd(frame.seq);
