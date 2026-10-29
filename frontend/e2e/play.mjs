@@ -8,7 +8,7 @@
 //   AH_SESSION   直接注入会话 cookie（与 AH_USER 二选一）     AH_PRESET  板子（缺省 std_12_yn_hunter_idiot）
 //   AH_SEED      发牌 seed（seat 0 角色→seed 见 README）     RUN  本局名字（日志 / 截图前缀）
 //   SPEECH_SEC / ACTION_SEC  时限；MAX_MIN 最长等待分钟；RUN_SHERIFF=1 上警；SELF_DESTRUCT=1 第 2 轮自爆
-//   SHOT_DIR  截图目录（缺省 shots/）
+//   SHOT_DIR  截图目录（缺省 shots/）      AH_TABLE=cards  进对局页后切到卡牌皮肤（UI 改版 PR ⑤）
 import { chromium } from "playwright-core";
 import fs from "node:fs";
 import os from "node:os";
@@ -27,6 +27,7 @@ const MAX_MIN = Number(process.env.MAX_MIN ?? "12");
 const RUN_SHERIFF = process.env.RUN_SHERIFF === "1";
 const SELF_DESTRUCT = process.env.SELF_DESTRUCT === "1";
 const SHOT_DIR = process.env.SHOT_DIR ?? "shots";
+const TABLE = process.env.AH_TABLE ?? "round";
 const EXE =
   process.env.CHROMIUM ??
   path.join(
@@ -216,6 +217,14 @@ const gameId = page.url().match(/#\/g\/([^?]+)/)?.[1];
 const playerToken = page.url().match(/player=([^&]+)/)?.[1];
 S.gameId = gameId;
 log("game page", gameId);
+if (TABLE === "cards") {
+  // 规格 §7：顶栏「桌面」下拉；座位契约（button[data-seat]）两种皮肤相同，下面的玩局循环不用改
+  const skin = page.locator('select[aria-label="桌面皮肤"]');
+  await skin.waitFor({ timeout: 15000 });
+  await skin.selectOption("cards");
+  await page.waitForSelector('[data-testid="card-board"]', { timeout: 10000 });
+  log("table style → cards");
+}
 
 // ---- 玩局循环（新 DOM：阶段木牌 .ah-plaque、HUD 行动区 [aria-label=行动区]、结算页 [aria-label=游戏结束]）----
 const region = page.locator('[role="region"][aria-label="行动区"]');

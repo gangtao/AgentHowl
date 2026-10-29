@@ -570,8 +570,41 @@
   height: 100%;
   background: var(--ah-fire-lo);
 }
-.bubble[data-kind='last_words'] .progress > span {
+.bubble[data-kind='last_words'] .progress > span,
+.strip[data-kind='last_words'] .progress > span {
   background: var(--ah-parch-danger);
+}
+
+/* ---- 横向发言条（卡牌皮肤，规格 §7） ---- */
+.strip {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  padding: 12px 16px;
+  border-radius: 8px;
+  background: var(--ah-parch);
+  color: var(--ah-parch-ink);
+  font-size: 13px;
+  line-height: 1.6;
+  box-shadow:
+    0 10px 30px rgba(0, 0, 0, 0.5),
+    inset 0 0 30px rgba(120, 90, 40, 0.12);
+}
+.strip[data-kind='last_words'] {
+  box-shadow:
+    0 10px 30px rgba(0, 0, 0, 0.5),
+    0 0 0 1px var(--ah-wolf);
+}
+.stripToken {
+  flex: none;
+  display: inline-flex;
+}
+.stripToken > :first-child {
+  border-color: var(--ah-gold);
+}
+.stripMain {
+  flex: 1;
+  min-width: 0;
 }
 
 @media (max-width: 900px) {

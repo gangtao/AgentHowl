@@ -1,8 +1,11 @@
-// 发言气泡（规格 §4.3，设计稿 3a / 3d / 4b / 4d）：羊皮纸卡锚在发言者座位朝桌心一侧。
-// 零过滤：正文来自 SpeechItem（服务端事件），有没有正文只看 item 是否为空。
+// 发言气泡（规格 §4.3，设计稿 3a / 3d / 4b / 4d）：羊皮纸卡锚在发言者座位朝桌心一侧；
+// layout="strip"（规格 §7，设计稿 6b）是卡牌皮肤用的横向发言条：不定位，左侧 44px 徽记。
+// 零过滤：正文来自 SpeechItem（服务端事件），有没有正文只看 item 是否为空；徽记按传入的 role 画。
 
 import { useEffect, useState } from "react";
 import type { SpeechItem } from "../../engine/select";
+import type { RoleType } from "../../engine/types";
+import RoleToken from "../RoleToken/RoleToken";
 import styles from "./GameTable.module.css";
 
 export type BubbleKind = "speech" | "last_words" | "campaign";
@@ -22,8 +25,14 @@ export interface SpeechBubbleProps {
   voicing: boolean;
   /** 发言者是本人（占位文案「轮到你发言…」只对本人说）。 */
   mine?: boolean;
-  /** 座位百分比坐标，决定气泡在座位的上方还是下方。 */
+  /** 座位百分比坐标，决定气泡在座位的上方还是下方（strip 不用）。 */
   anchor: { x: number; y: number };
+  /** 缺省气泡；"strip" = 牌阵下方的横向发言条。 */
+  layout?: "bubble" | "strip";
+  /** strip 左侧徽记用：发言者的已知角色（null = 首字）。 */
+  role?: RoleType | null;
+  /** strip 左侧徽记用：头像 id。 */
+  avatar?: string | null;
 }
 
 const PLACEHOLDER: Record<BubbleKind, string> = {
@@ -68,6 +77,9 @@ export function SpeechBubble({
   voicing,
   anchor,
   mine = false,
+  layout = "bubble",
+  role = null,
+  avatar = null,
 }: SpeechBubbleProps): JSX.Element {
   const left = useLeft(deadline, now);
   const side = anchor.y < 50 ? "below" : "above";
@@ -79,20 +91,8 @@ export function SpeechBubble({
       : null;
   const text = item === null ? null : (item.content ?? item.text);
 
-  return (
-    <div
-      className={styles.bubble}
-      data-side={side}
-      data-kind={kind}
-      role="status"
-      aria-label={`${seat}号 ${name} ${HEAD[kind]}`}
-      style={{
-        left: `${x}%`,
-        top: side === "below" ? `${anchor.y + 9}%` : undefined,
-        bottom: side === "above" ? `${100 - anchor.y + 9}%` : undefined,
-      }}
-    >
-      <span className={styles.bubbleArrow} aria-hidden="true" />
+  const body = (
+    <>
       <div className={styles.bubbleHead}>
         <span>
           {seat}号 {name} · {HEAD[kind]}
@@ -125,6 +125,46 @@ export function SpeechBubble({
           <span style={{ width: `${progress}%` }} />
         </div>
       )}
+    </>
+  );
+
+  if (layout === "strip") {
+    return (
+      <div
+        className={styles.strip}
+        data-kind={kind}
+        role="status"
+        aria-label={`${seat}号 ${name} ${HEAD[kind]}`}
+      >
+        <span className={styles.stripToken}>
+          <RoleToken
+            role={role}
+            variant="seat"
+            size={44}
+            initial={name.slice(0, 1)}
+            avatar={avatar}
+          />
+        </span>
+        <div className={styles.stripMain}>{body}</div>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className={styles.bubble}
+      data-side={side}
+      data-kind={kind}
+      role="status"
+      aria-label={`${seat}号 ${name} ${HEAD[kind]}`}
+      style={{
+        left: `${x}%`,
+        top: side === "below" ? `${anchor.y + 9}%` : undefined,
+        bottom: side === "above" ? `${100 - anchor.y + 9}%` : undefined,
+      }}
+    >
+      <span className={styles.bubbleArrow} aria-hidden="true" />
+      {body}
     </div>
   );
 }

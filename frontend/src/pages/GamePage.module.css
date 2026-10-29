@@ -38,6 +38,13 @@
   --table-max: 560px;
 }
 
+/* 卡牌皮肤（规格 §7）：牌阵顶对齐、给左上阶段木牌让位，放不下时纵向滚动而不是被裁 */
+.tableArea[data-table='cards'] {
+  padding-top: 72px;
+  overflow-y: auto;
+  place-items: start center;
+}
+
 .plaque {
   position: absolute;
   left: 0;

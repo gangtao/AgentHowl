@@ -26,6 +26,8 @@ AH_BASE_URL=http://localhost:5173 AH_SESSION=<管理员会话 cookie> PAGES=admi
 发牌只看 seed（`std_12_yn_hunter_idiot`，seat 0 的角色 → seed）：IDIOT 1 / WEREWOLF 2 / VILLAGER 3 / WITCH 4 / HUNTER 9 /
 SEER 22；`std_12_yn_hunter_guard` 同表但 seed 1 = GUARD；`std_9_*`：VILLAGER 1 / SEER 2 / HUNTER 4 / WEREWOLF 5 / WITCH 13。
 
+`AH_TABLE=cards` 让 `play.mjs` / `screens.mjs` 进对局页后把顶栏「桌面」切成卡牌（UI 改版 PR ⑤）；座位契约
+`button[data-seat]` 两种皮肤相同，玩局循环不变，`screens.mjs` 此时只截上帝回放与窄屏，前缀 `11-cards-*`。
 脚本只用页面上的控件行动（座位胶囊 / 桌上座位 / HUD 主按钮），WebSocket 帧只用来决定「点哪个」；
 `RUN_SHERIFF=1` 上警、`SELF_DESTRUCT=1` 第 2 轮自爆、`AH_SESSION` 可代替账号密码直接注入会话 cookie。
 Chromium 路径缺省取 `~/Library/Caches/ms-playwright/chromium-1148/...`，可用 `CHROMIUM` 覆盖。
