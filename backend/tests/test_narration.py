@@ -16,19 +16,33 @@ from app.engine.events import (
     ElectionStageChangedPayload,
     Event,
     EventType,
+    GameCreatedPayload,
     GameOverPayload,
+    GameStartedPayload,
+    GuardProtectedPayload,
     HunterShotPayload,
+    IdiotRevealedPayload,
     NightResolvedPayload,
     PhaseChangedPayload,
     PlayerExiledPayload,
     PlayerSpokePayload,
     RoundStartedPayload,
+    SeerCheckedPayload,
+    SheriffBadgeLostPayload,
+    SheriffCandidacyPayload,
+    SheriffDirectionSetPayload,
     SheriffElectedPayload,
+    SheriffVoteCastPayload,
     SheriffVoteStartedPayload,
+    SheriffWithdrewPayload,
     Visibility,
     VoteCastPayload,
     VoteResultPayload,
     VoteStartedPayload,
+    WitchActedPayload,
+    WolfKillDecidedPayload,
+    WolfKillProposedPayload,
+    WolfKillRevotePayload,
     WolfSelfDestructPayload,
 )
 from app.engine.phases import ElectionStage, Phase
@@ -241,9 +255,91 @@ def test_templates(event: Event, expected: list[str]) -> None:
     assert narrate(event, DEFAULT_NARRATION_EVENTS) == expected
 
 
+@pytest.mark.parametrize(
+    ("event", "expected"),
+    [
+        (_evt(EventType.GAME_STARTED, GameStartedPayload()), ["游戏开始。"]),
+        (
+            _evt(EventType.SHERIFF_CANDIDACY, SheriffCandidacyPayload(seat=4, running=True)),
+            ["4号上警。"],
+        ),
+        (_evt(EventType.SHERIFF_CANDIDACY, SheriffCandidacyPayload(seat=4, running=False)), []),
+        (_evt(EventType.SHERIFF_WITHDREW, SheriffWithdrewPayload(seat=4)), ["4号退水。"]),
+        (
+            _evt(EventType.SHERIFF_VOTE_CAST, SheriffVoteCastPayload(voter=1, target=4)),
+            ["1号投给4号。"],
+        ),
+        (
+            _evt(EventType.SHERIFF_VOTE_CAST, SheriffVoteCastPayload(voter=1, target=None)),
+            ["1号弃票。"],
+        ),
+        (_evt(EventType.VOTE_CAST, VoteCastPayload(voter=2, target=5)), ["2号投给5号。"]),
+        (_evt(EventType.VOTE_CAST, VoteCastPayload(voter=2, target=None)), ["2号弃票。"]),
+        (
+            _evt(EventType.SHERIFF_DIRECTION_SET, SheriffDirectionSetPayload(direction="RIGHT")),
+            ["警长决定顺时针发言。"],
+        ),
+        (
+            _evt(EventType.SHERIFF_DIRECTION_SET, SheriffDirectionSetPayload(direction="LEFT")),
+            ["警长决定逆时针发言。"],
+        ),
+        (
+            _evt(EventType.SHERIFF_BADGE_LOST, SheriffBadgeLostPayload(reason="NO_CANDIDATES")),
+            ["本局无警长。"],
+        ),
+        (_evt(EventType.IDIOT_REVEALED, IdiotRevealedPayload(seat=7)), ["7号翻牌白痴，免于放逐。"]),
+        # 以下是夜间私有事件：帧按来源事件可见性过滤，只有上帝（或当事人 / 狼队）听得到
+        (_evt(EventType.GUARD_PROTECTED, GuardProtectedPayload(target=3)), ["守卫守护3号。"]),
+        (_evt(EventType.GUARD_PROTECTED, GuardProtectedPayload(target=None)), ["守卫空守。"]),
+        (
+            _evt(EventType.WOLF_KILL_PROPOSED, WolfKillProposedPayload(wolf_seat=5, target=2)),
+            ["5号狼人提议刀2号。"],
+        ),
+        (
+            _evt(EventType.WOLF_KILL_PROPOSED, WolfKillProposedPayload(wolf_seat=5, target=None)),
+            ["5号狼人提议空刀。"],
+        ),
+        (_evt(EventType.WOLF_KILL_DECIDED, WolfKillDecidedPayload(target=2)), ["狼人今夜刀2号。"]),
+        (
+            _evt(EventType.WOLF_KILL_DECIDED, WolfKillDecidedPayload(target=None)),
+            ["狼人今夜空刀。"],
+        ),
+        (
+            _evt(
+                EventType.WOLF_KILL_REVOTE,
+                WolfKillRevotePayload(round_no=1, proposals=((5, 2), (6, 3))),
+            ),
+            ["狼队意见不一致，再商量一轮。"],
+        ),
+        (_evt(EventType.WITCH_SAVED, WitchActedPayload(save=True)), ["女巫使用解药。"]),
+        (_evt(EventType.WITCH_POISONED, WitchActedPayload(poison_target=6)), ["女巫毒了6号。"]),
+        (
+            _evt(EventType.SEER_CHECKED, SeerCheckedPayload(target=3, result="GOOD")),
+            ["预言家查验3号，是好人。"],
+        ),
+        (
+            _evt(EventType.SEER_CHECKED, SeerCheckedPayload(target=3, result="WOLF")),
+            ["预言家查验3号，是狼人。"],
+        ),
+    ],
+)
+def test_extra_templates(event: Event, expected: list[str]) -> None:
+    """用户反馈：上帝视角应该听到所有事件——上警 / 退水 / 逐票 / 方向 / 夜间行动都有旁白。"""
+    assert event.type in DEFAULT_NARRATION_EVENTS
+    assert narrate(event, DEFAULT_NARRATION_EVENTS) == expected
+
+
 def test_outside_whitelist_is_empty() -> None:
-    e = _evt(EventType.VOTE_CAST, VoteCastPayload(voter=1, target=2))
+    e = _evt(EventType.GAME_CREATED, GameCreatedPayload(num_players=9))
     assert narrate(e, DEFAULT_NARRATION_EVENTS) == []
+    # 白名单只含 VOTE_STARTED 时，VOTE_CAST 也不播
+    assert (
+        narrate(
+            _evt(EventType.VOTE_CAST, VoteCastPayload(voter=1, target=2)),
+            frozenset({EventType.VOTE_STARTED}),
+        )
+        == []
+    )
     # 白名单只含 VOTE_STARTED 时，ROUND_STARTED 也不播
     r = _evt(EventType.ROUND_STARTED, RoundStartedPayload(round=1))
     assert narrate(r, frozenset({EventType.VOTE_STARTED})) == []
@@ -289,6 +385,9 @@ def test_full_game_coverage(preset: str) -> None:
         if e.type == EventType.PHASE_CHANGED and e.payload.to in _SILENT_PHASES:  # type: ignore[attr-defined]
             assert out == []
             continue
+        if e.type == EventType.SHERIFF_CANDIDACY and not e.payload.running:  # type: ignore[attr-defined]
+            assert out == []  # 「不上警」不报
+            continue
         assert out, f"{preset}: {e.type} 无旁白"
         assert all(s.endswith("。") for s in out)
         narrated += 1
@@ -328,7 +427,7 @@ def test_config_from_env_custom(tmp_path: Path) -> None:
     [
         {"AGENTHOWL_NARRATOR_VOICE": "nobody"},
         {"AGENTHOWL_NARRATION_EVENTS": "VOTE_STARTED,NOT_AN_EVENT"},
-        {"AGENTHOWL_NARRATION_EVENTS": "VOTE_CAST"},  # 合法类型但没有模板
+        {"AGENTHOWL_NARRATION_EVENTS": "GAME_CREATED"},  # 合法类型但没有模板
     ],
 )
 def test_config_fail_loud(tmp_path: Path, env: dict[str, str]) -> None:
